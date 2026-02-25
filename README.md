@@ -17,6 +17,14 @@ To build and run the shuffler, use the following command:
 bazel run //src:main
 ```
 
+## Running tests
+
+To run the shuffler tests, use the following command:
+
+```bash
+bazel test //...
+```
+
 ## Regenerating compile comands
 
 To regenerate `compile_commands.json`, use the following command:
