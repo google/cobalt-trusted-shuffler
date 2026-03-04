@@ -1,11 +1,43 @@
 #include <cstdlib>
-#include <iostream>
+#include <memory>
 
-#include "src/containers/simple/session.h"
+#include "absl/log/check.h"
+#include "absl/log/log.h"
+#include "cc/containers/sdk/encryption_key_handle.h"
+#include "cc/containers/sdk/orchestrator_client.h"
+#include "cc/containers/sdk/signing_key_handle.h"
+#include "grpcpp/server.h"
+#include "grpcpp/server_builder.h"
+#include "src/containers/simple/simple_transform.h"
 
-int main() {
-  cobalt::trusted_shuffler::Session session;
-  std::cout << "Hello, Trusted Shuffler!\n";
-  std::cout << "Instantiated a session\n";
+using ::grpc::Server;
+using ::grpc::ServerBuilder;
+using ::oak::containers::sdk::InstanceEncryptionKeyHandle;
+using ::oak::containers::sdk::InstanceSigningKeyHandle;
+using ::oak::containers::sdk::OrchestratorClient;
+
+namespace cobalt::trusted_shuffler {
+namespace {
+
+void RunServer() {
+  std::string server_address("[::]:8080");
+
+  SimpleTransform service(std::make_unique<InstanceSigningKeyHandle>(),
+                          std::make_unique<InstanceEncryptionKeyHandle>());
+  ServerBuilder builder;
+  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  builder.RegisterService(&service);
+  std::unique_ptr<Server> server = builder.BuildAndStart();
+  LOG(INFO) << "Simple Transform Server listening on " << server_address;
+
+  CHECK_OK(OrchestratorClient().NotifyAppReady());
+  server->Wait();
+}
+
+}  // namespace
+}  // namespace cobalt::trusted_shuffler
+
+int main(int argc, char** argv) {
+  cobalt::trusted_shuffler::RunServer();
   return EXIT_SUCCESS;
 }

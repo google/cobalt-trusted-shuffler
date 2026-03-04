@@ -8,6 +8,18 @@ cc_library(
     deps = [
         "@confidential-federated-compute//containers:session",
         "@federated-compute//fcp/protos/confidentialcompute:confidential_transform_cc_proto",
+        "@oak//cc/containers/sdk:encryption_key_handle",
+        "@oak//cc/containers/sdk:signing_key_handle",
+    ],
+)
+
+cc_library(
+    name = "fake_keys",
+    hdrs = ["fake_keys.h"],
+    deps = [
+        "@federated-compute//fcp/protos/confidentialcompute:confidential_transform_cc_proto",
+        "@oak//cc/crypto:encryption_key",
+        "@oak//cc/crypto:signing_key",
     ],
 )
 

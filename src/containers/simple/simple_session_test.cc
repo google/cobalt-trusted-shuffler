@@ -1,4 +1,4 @@
-#include "src/containers/simple/session.h"
+#include "src/containers/simple/simple_session.h"
 
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
@@ -10,6 +10,8 @@
 namespace cobalt::trusted_shuffler {
 namespace {
 
+using ::absl_testing::IsOk;
+using ::absl_testing::StatusIs;
 using ::fcp::confidentialcompute::BlobMetadata;
 using ::fcp::confidentialcompute::CommitRequest;
 using ::fcp::confidentialcompute::CommitResponse;
@@ -20,20 +22,20 @@ using ::fcp::confidentialcompute::FinalizeResponse;
 using ::fcp::confidentialcompute::WriteFinishedResponse;
 using ::fcp::confidentialcompute::WriteRequest;
 using ::testing::IsEmpty;
-using ::absl_testing::StatusIs;
+using ::testing::SizeIs;
 
-TEST(SessionTest, ConfigureReturnsUnimplemented) {
+TEST(SimpleSessionTest, ConfigureReturnsOk) {
   testing::FakeContext context;
-  Session session;
+  SimpleSession session;
 
   const absl::StatusOr<ConfigureResponse> response = session.Configure(ConfigureRequest(), context);
 
-  EXPECT_THAT(response, StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(response, IsOk());
 }
 
-TEST(SessionTest, ConfigureIsNoOp) {
+TEST(SimpleSessionTest, ConfigureIsNoOp) {
   testing::FakeContext context;
-  Session session;
+  SimpleSession session;
 
   const absl::StatusOr<ConfigureResponse> _ = session.Configure(ConfigureRequest(), context);
 
@@ -42,18 +44,18 @@ TEST(SessionTest, ConfigureIsNoOp) {
   EXPECT_THAT(context.ReadResponses(), IsEmpty());
 }
 
-TEST(SessionTest, WriteReturnsUnimplemented) {
+TEST(SimpleSessionTest, WriteReturnsOk) {
   testing::FakeContext context;
-  Session session;
+  SimpleSession session;
 
   const absl::StatusOr<WriteFinishedResponse> response = session.Write(WriteRequest(), "", context);
 
-  EXPECT_THAT(response, StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(response, IsOk());
 }
 
-TEST(SessionTest, WriteIsNoOp) {
+TEST(SimpleSessionTest, WriteIsNoOp) {
   testing::FakeContext context;
-  Session session;
+  SimpleSession session;
 
   const absl::StatusOr<WriteFinishedResponse> _ = session.Write(WriteRequest(), "", context);
 
@@ -62,28 +64,36 @@ TEST(SessionTest, WriteIsNoOp) {
   EXPECT_THAT(context.ReadResponses(), IsEmpty());
 }
 
-TEST(SessionTest, CommitReturnsUnimplemented) {
+TEST(SimpleSessionTest, CommitReturnsOk) {
   testing::FakeContext context;
-  Session session;
+  SimpleSession session;
 
   const absl::StatusOr<CommitResponse> response = session.Commit(CommitRequest(), context);
 
-  EXPECT_THAT(response, StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(response, IsOk());
 }
-TEST(SessionTest, CommitIsNoOp) {
+TEST(SimpleSessionTest, CommitWorks) {
   testing::FakeContext context;
-  Session session;
+  SimpleSession session;
+
+  ASSERT_THAT(session.Write(WriteRequest(), "a", context), IsOk());
+  ASSERT_THAT(session.Write(WriteRequest(), "b", context), IsOk());
 
   const absl::StatusOr<CommitResponse> _ = session.Commit(CommitRequest(), context);
 
+  int reencryption_key_index = 0;
   EXPECT_THAT(context.Unencrypted(), IsEmpty());
-  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  ASSERT_THAT(context.Encrypted(), SizeIs(2));
+  EXPECT_THAT(context.Encrypted()[0].first, reencryption_key_index);
+  EXPECT_THAT(context.Encrypted()[1].first, reencryption_key_index);
+  EXPECT_THAT(context.Encrypted()[0].second.data, "a");
+  EXPECT_THAT(context.Encrypted()[1].second.data, "b");
   EXPECT_THAT(context.ReadResponses(), IsEmpty());
 }
 
-TEST(SessionTest, FinalizeReturnsUnimplemented) {
+TEST(SimpleSessionTest, FinalizeReturnsUnimplemented) {
   testing::FakeContext context;
-  Session session;
+  SimpleSession session;
 
   const absl::StatusOr<FinalizeResponse> response =
       session.Finalize(FinalizeRequest(), BlobMetadata(), context);
@@ -91,9 +101,9 @@ TEST(SessionTest, FinalizeReturnsUnimplemented) {
   EXPECT_THAT(response, StatusIs(absl::StatusCode::kUnimplemented));
 }
 
-TEST(SessionTest, FinalizeIsNoOp) {
+TEST(SimpleSessionTest, FinalizeIsNoOp) {
   testing::FakeContext context;
-  Session session;
+  SimpleSession session;
 
   const absl::StatusOr<FinalizeResponse> _ =
       session.Finalize(FinalizeRequest(), BlobMetadata(), context);

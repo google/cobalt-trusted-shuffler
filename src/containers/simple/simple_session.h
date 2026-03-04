@@ -2,6 +2,7 @@
 #define SRC_CONTAINERS_SIMPLE_SESSION_H_
 
 #include <string>
+#include <vector>
 
 #include "absl/status/statusor.h"
 #include "containers/session.h"
@@ -9,23 +10,29 @@
 
 namespace cobalt::trusted_shuffler {
 
-class Session : public confidential_federated_compute::Session {
+// SimpleSession collects the a list of all blobs written to it and then emits
+// them encrypted in the same order in which they were received when Commit is
+// called.
+class SimpleSession : public confidential_federated_compute::Session {
  public:
-  ~Session() override = default;
+  ~SimpleSession() override = default;
 
   absl::StatusOr<fcp::confidentialcompute::ConfigureResponse> Configure(
-      fcp::confidentialcompute::ConfigureRequest request, Context &context) override;
+      fcp::confidentialcompute::ConfigureRequest request, Context& context) override;
 
   absl::StatusOr<fcp::confidentialcompute::WriteFinishedResponse> Write(
       fcp::confidentialcompute::WriteRequest request, std::string unencrypted_data,
-      Context &context) override;
+      Context& context) override;
 
   absl::StatusOr<fcp::confidentialcompute::CommitResponse> Commit(
-      fcp::confidentialcompute::CommitRequest request, Context &context) override;
+      fcp::confidentialcompute::CommitRequest request, Context& context) override;
 
   absl::StatusOr<fcp::confidentialcompute::FinalizeResponse> Finalize(
       fcp::confidentialcompute::FinalizeRequest request,
-      fcp::confidentialcompute::BlobMetadata input_metadata, Context &context) override;
+      fcp::confidentialcompute::BlobMetadata input_metadata, Context& context) override;
+
+ private:
+  std::vector<std::string> blobs_;
 };
 
 }  // namespace cobalt::trusted_shuffler
