@@ -7,5 +7,7 @@ set -e
 # The final directory name in this path is determined by the scm name specified
 # in the job configuration.
 cd "${KOKORO_ARTIFACTS_DIR}/git/trusted-shuffler"
+
+source ./kokoro/vm_setup.sh
 ./build.sh
 

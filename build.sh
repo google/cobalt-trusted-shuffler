@@ -12,5 +12,40 @@ set -e
 #  parameters, will print the full command, with credentials, in the build logs.
 # set -x
 
-echo "Hello"
+# Function for logging messages to the build output in a consistent format.
+log() {
+  echo "+ $1"
+}
+
+# Generate an invocation ID.
+INVOCATION_ID=`cat /proc/sys/kernel/random/uuid`
+if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
+  # If KOKORO_ARTIFACTS_DIR is set, append to the list of invocation ids.
+  echo "${INVOCATION_ID}" >> ${KOKORO_ARTIFACTS_DIR}/bazel_invocation_ids
+fi
+
+log "Running bazel test."
+bazel test //... \
+  --spawn_strategy=dynamic \
+  --strategy=Javac=dynamic \
+  --strategy=Closure=dynamic \
+  --genrule_strategy=dynamic \
+  --google_default_credentials=true \
+  --google_auth_scopes=https://www.googleapis.com/auth/cloud-platform \
+  --remote_cache=${KOKORO_FOUNDRY_BACKEND_ADDRESS=remotebuildexecution.googleapis.com} \
+  --remote_executor=remotebuildexecution.googleapis.com \
+  --bes_backend=${KOKORO_BES_BACKEND_ADDRESS=buildeventservice.googleapis.com} \
+  --bes_timeout=20s \
+  --remote_timeout=20s \
+  --project_id=cobalt-tee-shuffler \
+  --remote_instance_name=projects/cobalt-tee-shuffler/instances/default_instance \
+  --remote_local_fallback=true \
+  --remote_retries=1 \
+  --show_timestamps \
+  --internal_spawn_scheduler \
+  --strategy=Javac=dynamic \
+  --dynamic_local_strategy=sandboxed,worker,local \
+  --remote_accept_cached=true \
+  --remote_default_exec_properties=cache-silo-key=${SILO_KEY=${USER}} \
+  --invocation_id=${INVOCATION_ID}
 
