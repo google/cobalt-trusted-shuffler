@@ -9,6 +9,18 @@ This repo contains the necessary elements to run Cobalt's Trusted Shuffler.
 This project uses a specific version of Bazel (defined in [.bazelversion](.bazelversion)). It is
 recommended to use [Bazelisk](https://github.com/bazelbuild/bazelisk) to manage your Bazel versions.
 
+### Additional libraries
+
+The following dependencies are also needed for development:
+
+-  libxml2
+
+They can be installed through apt-get:
+
+```bash
+sudo apt-get install libxml2
+```
+
 ## Running the shuffler
 
 To build and run the shuffler, use the following command:
