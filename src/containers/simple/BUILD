@@ -1,4 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@oak//bazel:defs.bzl", "oci_runtime_bundle")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 cc_binary(
     name = "main",
@@ -63,4 +66,21 @@ cc_test(
         "@abseil-cpp//absl/status:statusor",
         "@googletest//:gtest_main",
     ],
+)
+
+pkg_tar(
+    name = "tar",
+    srcs = [":main"],
+)
+
+oci_image(
+    name = "oci_image",
+    base = "@distroless_cc_debian12_linux_amd64",
+    entrypoint = ["/main"],
+    tars = [":tar"],
+)
+
+oci_runtime_bundle(
+    name = "oci_runtime_bundle",
+    image = ":oci_image",
 )

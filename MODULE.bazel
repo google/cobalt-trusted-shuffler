@@ -5,9 +5,20 @@ bazel_dep(name = "grpc", version = "1.76.0")
 bazel_dep(name = "protobuf", version = "33.4")
 bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "toolchains_llvm", version = "1.4.0")
+bazel_dep(name = "rules_oci", version = "2.2.6")
+bazel_dep(name = "rules_pkg", version = "1.1.0")
 
 cfc_deps = use_extension("@confidential-federated-compute//:extensions.bzl", "cfc_deps")
 use_repo(cfc_deps, "federated-compute", "oak")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "distroless_cc_debian12",
+    digest = "sha256:6714977f9f02632c31377650c15d89a7efaebf43bab0f37c712c30fc01edb973",
+    image = "gcr.io/distroless/cc-debian12",
+    platforms = ["linux/amd64"],
+)
+use_repo(oci, "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
