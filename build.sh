@@ -49,3 +49,17 @@ bazel test //... \
   --remote_default_exec_properties=cache-silo-key=${SILO_KEY=${USER}} \
   --invocation_id=${INVOCATION_ID}
 
+# If running in Kokoro, copy any potential output artifacts to the
+# artifacts directory so that they can be found by the post-build
+# upload artifact globs.
+if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
+  log "Copying bazel-bin to kokoro artifacts dir."
+  cp -Rp ./bazel-bin/* ${KOKORO_ARTIFACTS_DIR}/bazel-bin/.
+
+  # Kokoro tooling uses the `bazel_invocation_ids` file, but add a .txt
+  # extension to it before also uploading it as an output artifact so
+  # that the MIME type in GCS  gets set to something easily openable in
+  # a browser.
+  cp ${KOKORO_ARTIFACTS_DIR}/bazel_invocation_ids ${KOKORO_ARTIFACTS_DIR}/bazel_invocation_ids.txt
+fi
+
