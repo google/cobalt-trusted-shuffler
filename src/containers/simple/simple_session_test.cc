@@ -91,14 +91,14 @@ TEST(SimpleSessionTest, CommitWorks) {
   EXPECT_THAT(context.ReadResponses(), IsEmpty());
 }
 
-TEST(SimpleSessionTest, FinalizeReturnsUnimplemented) {
+TEST(SimpleSessionTest, FinalizeReturnsOk) {
   testing::FakeContext context;
   SimpleSession session;
 
   const absl::StatusOr<FinalizeResponse> response =
       session.Finalize(FinalizeRequest(), BlobMetadata(), context);
 
-  EXPECT_THAT(response, StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(response, IsOk());
 }
 
 TEST(SimpleSessionTest, FinalizeIsNoOp) {

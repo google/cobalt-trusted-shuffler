@@ -42,7 +42,35 @@ class FakeContext : public confidential_federated_compute::Session::Context {
     return encrypted_;
   }
 
+  bool EmitReleasable(int reencryption_key_index, confidential_federated_compute::Session::KV kv,
+                      std::optional<absl::string_view> src_state,
+                      absl::string_view dst_state,
+                      std::string& release_token) override {
+    releasable_.push_back({reencryption_key_index, std::move(kv),
+                           src_state ? std::make_optional(std::string(*src_state)) : std::nullopt,
+                           std::string(dst_state)});
+    release_token = "fake_release_token";
+    return true;
+  }
+
+  bool EmitError(absl::Status status) override {
+    errors_.push_back(std::move(status));
+    return true;
+  }
+
+  struct ReleasableInfo {
+    int reencryption_key_index;
+    confidential_federated_compute::Session::KV kv;
+    std::optional<std::string> src_state;
+    std::string dst_state;
+  };
+
+  std::vector<ReleasableInfo> Releasable() const { return releasable_; }
+  std::vector<absl::Status> Errors() const { return errors_; }
+
  private:
+  std::vector<ReleasableInfo> releasable_;
+  std::vector<absl::Status> errors_;
   std::vector<fcp::confidentialcompute::ReadResponse> read_responses_;
   std::vector<confidential_federated_compute::Session::KV> unencrypted_;
   std::vector<std::pair<int, confidential_federated_compute::Session::KV>> encrypted_;

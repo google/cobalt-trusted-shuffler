@@ -8,7 +8,6 @@
 #include "containers/confidential_transform_server_base.h"
 #include "containers/session.h"
 #include "fcp/protos/confidentialcompute/confidential_transform.pb.h"
-#include "google/protobuf/struct.pb.h"
 
 namespace cobalt::trusted_shuffler {
 
@@ -21,8 +20,9 @@ class SimpleTransform : public confidential_federated_compute::ConfidentialTrans
                   std::unique_ptr<::oak::crypto::EncryptionKeyHandle> encryption_key_handle);
 
  protected:
-  absl::StatusOr<google::protobuf::Struct> StreamInitializeTransform(
-      const fcp::confidentialcompute::InitializeRequest* request) override;
+  absl::Status StreamInitializeTransform(
+      const ::google::protobuf::Any& configuration,
+      const ::google::protobuf::Any& config_constraints) override;
 
   absl::Status ReadWriteConfigurationRequest(
       const fcp::confidentialcompute::WriteConfigurationRequest& write_configuration) override;

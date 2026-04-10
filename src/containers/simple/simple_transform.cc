@@ -3,9 +3,9 @@
 #include <memory>
 
 #include "absl/status/statusor.h"
+#include "containers/blob_metadata.h"
 #include "containers/session.h"
 #include "fcp/protos/confidentialcompute/confidential_transform.pb.h"
-#include "google/protobuf/struct.pb.h"
 #include "src/containers/simple/simple_session.h"
 
 using ::confidential_federated_compute::ConfidentialTransformBase;
@@ -22,9 +22,10 @@ SimpleTransform::SimpleTransform(std::unique_ptr<SigningKeyHandle> signing_key_h
                                  std::unique_ptr<EncryptionKeyHandle> encryption_key_handle)
     : ConfidentialTransformBase(std::move(signing_key_handle), std::move(encryption_key_handle)) {}
 
-absl::StatusOr<google::protobuf::Struct> SimpleTransform::StreamInitializeTransform(
-    const InitializeRequest* request) {
-  return google::protobuf::Struct();
+absl::Status SimpleTransform::StreamInitializeTransform(
+    const ::google::protobuf::Any& configuration,
+    const ::google::protobuf::Any& config_constraints) {
+  return absl::OkStatus();
 }
 
 absl::Status SimpleTransform::ReadWriteConfigurationRequest(
@@ -37,7 +38,7 @@ absl::StatusOr<std::unique_ptr<Session>> SimpleTransform::CreateSession() {
 }
 
 absl::StatusOr<std::string> SimpleTransform::GetKeyId(const BlobMetadata& metadata) {
-  return absl::UnimplementedError("Not implemented");
+  return confidential_federated_compute::GetKeyIdFromMetadata(metadata);
 }
 
 }  // namespace cobalt::trusted_shuffler

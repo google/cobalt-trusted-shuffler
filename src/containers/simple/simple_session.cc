@@ -48,7 +48,7 @@ absl::StatusOr<CommitResponse> SimpleSession::Commit(CommitRequest request, Cont
 absl::StatusOr<FinalizeResponse> SimpleSession::Finalize(FinalizeRequest request,
                                                          BlobMetadata input_metadata,
                                                          Context& context) {
-  return absl::UnimplementedError("Not implemented");
+  return FinalizeResponse();
 }
 
 }  // namespace cobalt::trusted_shuffler
