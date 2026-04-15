@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package cobalt.trusted_shuffler;
+
+option java_package = "com.google.cobalt.trustedshuffler";
+option java_multiple_files = true;
+
+// Payload uploaded by devices to the Trusted Shuffler.
+message TrustedShufflerUpload {
+  // A unique identifier for the project.
+  uint32 project_id = 1;
+
+  // A unique identifier for the metric, namespaced under the project_id.
+  uint32 metric_id = 2;
+
+  // The serialized customer message.
+  bytes serialized_payload = 3;
+}
