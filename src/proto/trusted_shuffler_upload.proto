@@ -18,6 +18,7 @@ package cobalt.trusted_shuffler;
 
 option java_package = "com.google.cobalt.trustedshuffler";
 option java_multiple_files = true;
+option java_outer_classname = "TrustedShufflerUploadProto";
 
 // Payload uploaded by devices to the Trusted Shuffler.
 message TrustedShufflerUpload {
