@@ -29,6 +29,7 @@ using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
 using ::confidential_federated_compute::Session;
 using ::fcp::confidentialcompute::BlobMetadata;
+using ::fcp::confidentialcompute::BlobMetadata_Unencrypted;
 using ::fcp::confidentialcompute::InitializeRequest;
 using ::testing::IsEmpty;
 
@@ -46,10 +47,8 @@ TEST(SimpleTransformTest, ConfigureReturnsOk) {
   TestSimpleTransform simple_transform(std::make_unique<testing::FakeSigningKey>(),
                                        std::make_unique<testing::FakeEncryptionKeyHandle>());
 
-  InitializeRequest request;
-
-  absl::StatusOr<google::protobuf::Struct> response =
-      simple_transform.StreamInitializeTransform(&request);
+  absl::Status response =
+      simple_transform.StreamInitializeTransform(google::protobuf::Any(), google::protobuf::Any());
 
   EXPECT_THAT(response, IsOk());
 
@@ -88,7 +87,20 @@ TEST(SimpleTransformTest, ReadWriteConfigurationRequestReturnsOk) {
   EXPECT_THAT(context.ReadResponses(), IsEmpty());
 }
 
-TEST(SimpleSessionTest, FinalizeReturnsUnimplemented) {
+TEST(SimpleTransformTest, GetKeyIdWithEmptyStringReturnsUnencryptedEmptyString) {
+  testing::FakeContext context;
+  TestSimpleTransform simple_transform(std::make_unique<testing::FakeSigningKey>(),
+                                       std::make_unique<testing::FakeEncryptionKeyHandle>());
+  BlobMetadata metadata;
+  metadata.mutable_unencrypted();
+
+  const absl::StatusOr<std::string> response = simple_transform.GetKeyId(metadata);
+
+  ASSERT_THAT(response, IsOk());
+  EXPECT_THAT(response.value(), IsEmpty());
+}
+
+TEST(SimpleTransformTest, GetKeyIdWithEmptyMetadataReturnsInvalidArgument) {
   testing::FakeContext context;
   TestSimpleTransform simple_transform(std::make_unique<testing::FakeSigningKey>(),
                                        std::make_unique<testing::FakeEncryptionKeyHandle>());
@@ -96,7 +108,7 @@ TEST(SimpleSessionTest, FinalizeReturnsUnimplemented) {
 
   const absl::StatusOr<std::string> response = simple_transform.GetKeyId(metadata);
 
-  EXPECT_THAT(response, StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(response, StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 }  // namespace

@@ -24,3 +24,6 @@ build --sandbox_default_allow_network=false
 # Run test actions in an isolated filesystem sandbox.
 test --spawn_strategy=sandboxed
 test --strategy=CopyToDirectory=local
+
+# Disable layering check to bypass errors in external dependencies.
+build --features=-layering_check

@@ -59,5 +59,32 @@ TEST(FakeContextTest, EmitEncrypted_StoresKeyIndexAndKV) {
   EXPECT_THAT(encrypted[0].second.data, Eq("crypto_value"));
 }
 
+TEST(FakeContextTest, EmitReleasable_StoresInfo) {
+  FakeContext context;
+  const int key_index = 7;
+  std::string release_token;
+
+  ASSERT_TRUE(context.EmitReleasable(key_index, "value", "src", "dst", release_token));
+
+  std::vector<FakeContext::ReleasableInfo> releasable = context.Releasable();
+  ASSERT_THAT(releasable, SizeIs(1));
+  EXPECT_THAT(releasable[0].reencryption_key_index, Eq(key_index));
+  EXPECT_THAT(releasable[0].kv.data, Eq("value"));
+  EXPECT_THAT(releasable[0].src_state, Eq("src"));
+  EXPECT_THAT(releasable[0].dst_state, Eq("dst"));
+  EXPECT_THAT(release_token, Eq("fake_release_token"));
+}
+
+TEST(FakeContextTest, EmitError_StoresStatus) {
+  FakeContext context;
+  absl::Status status = absl::InvalidArgumentError("error");
+
+  ASSERT_TRUE(context.EmitError(status));
+
+  std::vector<absl::Status> errors = context.Errors();
+  ASSERT_THAT(errors, SizeIs(1));
+  EXPECT_THAT(errors[0], Eq(status));
+}
+
 }  // namespace
 }  // namespace cobalt::trusted_shuffler::testing
