@@ -67,8 +67,8 @@ bazel test //... \
 # artifacts directory so that they can be found by the post-build
 # upload artifact globs.
 if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
-  log "Copying bazel-bin to kokoro artifacts dir."
-  cp -Rp ./bazel-bin/* ${KOKORO_ARTIFACTS_DIR}/bazel-bin/.
+  log "Copying simple container output to kokoro artifacts dir."
+  cp -Rp ./bazel-bin/src/containers/simple/* ${KOKORO_ARTIFACTS_DIR}/simple_container/.
 
   # Kokoro tooling uses the `bazel_invocation_ids` file, but add a .txt
   # extension to it before also uploading it as an output artifact so
