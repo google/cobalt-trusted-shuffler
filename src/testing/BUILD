@@ -37,6 +37,15 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "testable_transform",
+    hdrs = ["testable_transform.h"],
+    deps = [
+        "@confidential-federated-compute//containers:session",
+        "@federated-compute//fcp/protos/confidentialcompute:confidential_transform_cc_proto",
+    ],
+)
+
 cc_test(
     name = "fake_context_test",
     srcs = ["fake_context_test.cc"],
