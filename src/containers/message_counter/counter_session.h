@@ -35,7 +35,7 @@ class CounterSession : public confidential_federated_compute::Session {
   absl::StatusOr<fcp::confidentialcompute::ConfigureResponse> Configure(
       fcp::confidentialcompute::ConfigureRequest request, Context& context) override;
 
-  // Counts the message and forwards it encrypted.
+  // Counts the message and forwards it encrypted as a `MESSAGE` output.
   absl::StatusOr<fcp::confidentialcompute::WriteFinishedResponse> Write(
       fcp::confidentialcompute::WriteRequest request, std::string unencrypted_data,
       Context& context) override;
@@ -44,7 +44,7 @@ class CounterSession : public confidential_federated_compute::Session {
   absl::StatusOr<fcp::confidentialcompute::CommitResponse> Commit(
       fcp::confidentialcompute::CommitRequest request, Context& context) override;
 
-  // Emits the final count report.
+  // Emits the final count report as a `REPORT` output.
   absl::StatusOr<fcp::confidentialcompute::FinalizeResponse> Finalize(
       fcp::confidentialcompute::FinalizeRequest request,
       fcp::confidentialcompute::BlobMetadata input_metadata, Context& context) override;

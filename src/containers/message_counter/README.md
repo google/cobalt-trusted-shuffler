@@ -14,7 +14,7 @@ This container implements the `ConfidentialTransformBase` API to process incomin
 
 The container must be configured before processing data. This is done by sending a `ConfigureRequest` containing a `CounterConfig` protocol buffer.
 
-### `CounterConfig` Proto
+### The `CounterConfig` Proto
 - **`counter_name`** (`string`): A name to identify this specific counter. This name will be included in the final output report.
 
 ---
@@ -23,7 +23,7 @@ The container must be configured before processing data. This is done by sending
 
 ### Inputs
 
-#### 1. Data Stream (`WriteRequest`)
+#### 1. Data Stream via `WriteRequest`
 The container receives a sequence of data payloads through the `Write` method:
 - **`unencrypted_data`** (`string`): The raw message payload.
 
@@ -33,7 +33,7 @@ The container receives a sequence of data payloads through the `Write` method:
 
 The container produces outputs during both the streaming and finalization phases. All outputs are emitted as Key-Value (`KV`) pairs, where the key is a serialized `OutputKey` proto that describes the type of the output.
 
-#### `OutputKey` Proto
+#### The `OutputKey` Proto
 - **`type`** (`enum OutputType`):
   - `MESSAGE` (2): Represents an individual forwarded message.
   - `REPORT` (1): Represents the final aggregation report.
@@ -48,6 +48,6 @@ When the session is finalized, the container emits a single unencrypted report:
 - **Key**: An `OutputKey` with `type = REPORT`.
 - **Value**: A serialized `CountReport` protocol buffer.
 
-### `CountReport` Proto
+### The `CountReport` Proto
 - **`counter_name`** (`string`): The name specified during configuration.
 - **`count`** (`int64`): The total number of messages received and processed during the session.
