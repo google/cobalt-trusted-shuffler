@@ -73,6 +73,9 @@ if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
   log "Copying message_counter container output to kokoro artifacts dir."
   cp -Rp ./bazel-bin/src/containers/message_counter/* ${KOKORO_ARTIFACTS_DIR}/message_counter/.
 
+  log "Copying releaser container output to kokoro artifacts dir."
+  cp -Rp ./bazel-bin/src/containers/releaser/* ${KOKORO_ARTIFACTS_DIR}/releaser/.
+
   # Kokoro tooling uses the `bazel_invocation_ids` file, but add a .txt
   # extension to it before also uploading it as an output artifact so
   # that the MIME type in GCS  gets set to something easily openable in
