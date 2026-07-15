@@ -33,17 +33,16 @@ cc_binary(
 )
 
 cc_library(
-    name = "counter_session",
-    srcs = ["counter_session.cc"],
-    hdrs = ["counter_session.h"],
+    name = "counter_fn",
+    srcs = ["counter_fn.cc"],
+    hdrs = ["counter_fn.h"],
     deps = [
         "//src/containers/message_counter/proto:count_report_cc_proto",
         "//src/containers/message_counter/proto:counter_config_cc_proto",
         "//src/containers/message_counter/proto:output_key_cc_proto",
         "@abseil-cpp//absl/status",
-        "@abseil-cpp//absl/status:statusor",
-        "@confidential-federated-compute//containers:session",
-        "@federated-compute//fcp/protos/confidentialcompute:confidential_transform_cc_proto",
+        "@confidential-federated-compute//containers/fns:fns",
+        "@protobuf//:any_cc_proto",
     ],
 )
 
@@ -52,20 +51,18 @@ cc_library(
     srcs = ["counter_transform.cc"],
     hdrs = ["counter_transform.h"],
     deps = [
-        ":counter_session",
-        "@abseil-cpp//absl/status",
+        ":counter_fn",
         "@abseil-cpp//absl/status:statusor",
-        "@confidential-federated-compute//containers:confidential_transform_server_base",
-        "@confidential-federated-compute//containers:session",
-        "@federated-compute//fcp/protos/confidentialcompute:confidential_transform_cc_proto",
+        "@confidential-federated-compute//containers/fns:fns",
+        "@protobuf//:any_cc_proto",
     ],
 )
 
 cc_test(
-    name = "counter_session_test",
-    srcs = ["counter_session_test.cc"],
+    name = "counter_fn_test",
+    srcs = ["counter_fn_test.cc"],
     deps = [
-        ":counter_session",
+        ":counter_fn",
         "//src/containers/message_counter/proto:count_report_cc_proto",
         "//src/containers/message_counter/proto:counter_config_cc_proto",
         "//src/containers/message_counter/proto:output_key_cc_proto",

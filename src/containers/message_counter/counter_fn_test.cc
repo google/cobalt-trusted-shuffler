@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/containers/message_counter/counter_session.h"
+#include "src/containers/message_counter/counter_fn.h"
 
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
-#include "absl/status/statusor.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "src/containers/message_counter/proto/count_report.pb.h"
@@ -31,60 +30,64 @@ static constexpr int kKeyId = 1;
 
 using absl_testing::IsOk;
 using absl_testing::StatusIs;
-using fcp::confidentialcompute::BlobMetadata;
-using fcp::confidentialcompute::CommitRequest;
-using fcp::confidentialcompute::CommitResponse;
-using fcp::confidentialcompute::ConfigureRequest;
-using fcp::confidentialcompute::ConfigureResponse;
-using fcp::confidentialcompute::FinalizeRequest;
-using fcp::confidentialcompute::FinalizeResponse;
-using fcp::confidentialcompute::WriteFinishedResponse;
-using fcp::confidentialcompute::WriteRequest;
 using ::testing::Eq;
 using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
-TEST(CounterSessionTest, ConfigureFailsOnEmptyRequest) {
+TEST(CounterFnTest, InitializeReplicaFailsOnEmptyRequest) {
   testing::FakeContext context;
-  CounterSession session(kKeyId);
+  CounterFn fn(kKeyId);
 
-  const absl::StatusOr<ConfigureResponse> response = session.Configure(ConfigureRequest(), context);
-
-  EXPECT_THAT(response, StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(fn.InitializeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(CounterSessionTest, ConfigureSucceedsWithCounterName) {
+TEST(CounterFnTest, InitializeReplicaSucceedsWithCounterName) {
   testing::FakeContext context;
-  CounterSession session(kKeyId);
+  CounterFn fn(kKeyId);
   const std::string counter_name = "the_counter_name";
 
   CounterConfig config;
   config.set_counter_name(counter_name);
 
-  ConfigureRequest config_request;
-  config_request.mutable_configuration()->PackFrom(config);
+  google::protobuf::Any config_any;
+  config_any.PackFrom(config);
 
-  EXPECT_THAT(session.Configure(config_request, context), IsOk());
+  EXPECT_THAT(fn.InitializeReplica(config_any, context), IsOk());
 }
 
-TEST(CounterSessionTest, WriteReturnsOk) {
+TEST(CounterFnTest, InitializeReplicaFailsOnMissingCounterName) {
   testing::FakeContext context;
-  CounterSession session(kKeyId);
+  CounterFn fn(kKeyId);
 
-  EXPECT_THAT(session.Write(WriteRequest(), "", context), IsOk());
+  CounterConfig config;
+  // counter_name is not set.
+
+  google::protobuf::Any config_any;
+  config_any.PackFrom(config);
+
+  EXPECT_THAT(fn.InitializeReplica(config_any, context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(CounterSessionTest, WriteWritesMessages) {
-  CounterSession session(kKeyId);
+TEST(CounterFnTest, DoReturnsOk) {
+  testing::FakeContext context;
+  CounterFn fn(kKeyId);
+
+  EXPECT_THAT(fn.Do(CounterFn::KV(), context), IsOk());
+}
+
+TEST(CounterFnTest, DoEmitsMessages) {
+  CounterFn fn(kKeyId);
 
   testing::FakeContext context;
 
   const std::string message = "a message";
-  ASSERT_THAT(session.Write(WriteRequest(), message, context), IsOk());
+  ASSERT_THAT(fn.Do(CounterFn::KV(google::protobuf::Any(), message), context), IsOk());
 
   ASSERT_THAT(context.Encrypted(), SizeIs(1));
 
-  const std::pair<int, CounterSession::KV> encrypted = context.Encrypted()[0];
+  const std::pair<int, CounterFn::KV> encrypted = context.Encrypted()[0];
 
   EXPECT_THAT(encrypted.first, Eq(kKeyId));
 
@@ -98,22 +101,15 @@ TEST(CounterSessionTest, WriteWritesMessages) {
   EXPECT_THAT(context.ReadResponses(), IsEmpty());
 }
 
-TEST(CounterSessionTest, CommitReturnsOk) {
+TEST(CounterFnTest, FinalizeReplicaReturnsOk) {
   testing::FakeContext context;
-  CounterSession session(kKeyId);
+  CounterFn fn(kKeyId);
 
-  EXPECT_THAT(session.Commit(CommitRequest(), context), IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 }
 
-TEST(CounterSessionTest, FinalizeReturnsOk) {
-  testing::FakeContext context;
-  CounterSession session(kKeyId);
-
-  EXPECT_THAT(session.Finalize(FinalizeRequest(), BlobMetadata(), context), IsOk());
-}
-
-TEST(CounterSessionTest, FinalizeEmitsReport) {
-  CounterSession session(kKeyId);
+TEST(CounterFnTest, FinalizeReplicaEmitsReport) {
+  CounterFn fn(kKeyId);
 
   testing::FakeContext context;
 
@@ -122,23 +118,23 @@ TEST(CounterSessionTest, FinalizeEmitsReport) {
   CounterConfig config;
   config.set_counter_name(counter_name);
 
-  ConfigureRequest config_request;
-  config_request.mutable_configuration()->PackFrom(config);
+  google::protobuf::Any config_any;
+  config_any.PackFrom(config);
 
-  ASSERT_THAT(session.Configure(config_request, context), IsOk());
+  ASSERT_THAT(fn.InitializeReplica(config_any, context), IsOk());
 
   int message_count = 10;
   for (int i = 0; i < message_count; i++) {
-    ASSERT_THAT(session.Write(WriteRequest(), "message", context), IsOk());
+    ASSERT_THAT(fn.Do(CounterFn::KV(google::protobuf::Any(), "message"), context), IsOk());
   }
 
-  ASSERT_THAT(session.Finalize(FinalizeRequest(), BlobMetadata(), context), IsOk());
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
   EXPECT_THAT(context.Encrypted(), SizeIs(message_count));
   EXPECT_THAT(context.ReadResponses(), IsEmpty());
 
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
-  CounterSession::KV kv = std::move(context.Unencrypted()[0]);
+  CounterFn::KV kv = std::move(context.Unencrypted()[0]);
 
   OutputKey output_key;
   ASSERT_TRUE(kv.key.UnpackTo(&output_key));

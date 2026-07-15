@@ -16,34 +16,24 @@
 #define SRC_CONTAINERS_MESSAGE_COUNTER_COUNTER_TRANSFORM_H_
 
 #include <memory>
-#include <string>
 
 #include "absl/status/statusor.h"
-#include "containers/confidential_transform_server_base.h"
-#include "containers/session.h"
-#include "fcp/protos/confidentialcompute/confidential_transform.pb.h"
+#include "containers/fns/confidential_transform_server.h"
+#include "containers/fns/fn_factory.h"
 
 namespace cobalt::trusted_shuffler {
 
-// CounterTransform implements the ConfidentialTransformBase API and provides a
-// CounterSession which counts messages it receives.
-class CounterTransform : public confidential_federated_compute::ConfidentialTransformBase {
+class CounterFnFactory : public confidential_federated_compute::fns::FnFactory {
  public:
-  CounterTransform(std::unique_ptr<oak::crypto::SigningKeyHandle> signing_key_handle,
-                   std::unique_ptr<oak::crypto::EncryptionKeyHandle> encryption_key_handle);
-
- protected:
-  absl::Status StreamInitializeTransform(const google::protobuf::Any& configuration,
-                                         const google::protobuf::Any& config_constraints) override;
-
-  absl::Status ReadWriteConfigurationRequest(
-      const fcp::confidentialcompute::WriteConfigurationRequest& write_configuration) override;
-
-  absl::StatusOr<std::unique_ptr<confidential_federated_compute::Session>> CreateSession() override;
-
-  absl::StatusOr<std::string> GetKeyId(
-      const fcp::confidentialcompute::BlobMetadata& metadata) override;
+  absl::StatusOr<std::unique_ptr<confidential_federated_compute::fns::Fn>>
+  CreateFn() const override;
 };
+
+// Creates a CounterTransform service (instance of FnConfidentialTransform).
+std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform>
+CreateCounterTransform(
+    std::unique_ptr<oak::crypto::SigningKeyHandle> signing_key_handle,
+    std::unique_ptr<oak::crypto::EncryptionKeyHandle> encryption_key_handle);
 
 }  // namespace cobalt::trusted_shuffler
 

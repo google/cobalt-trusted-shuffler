@@ -19,90 +19,30 @@
 #include "absl/status/status_matchers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "src/testing/fake_context.h"
+#include "src/containers/message_counter/counter_fn.h"
 #include "src/testing/fake_keys.h"
-#include "src/testing/testable_transform.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
 
-using absl_testing::IsOk;
-using absl_testing::StatusIs;
-using confidential_federated_compute::Session;
-using fcp::confidentialcompute::BlobMetadata;
-using fcp::confidentialcompute::BlobMetadata_Unencrypted;
-using fcp::confidentialcompute::InitializeRequest;
-using ::testing::IsEmpty;
+using ::absl_testing::IsOk;
 
-using TestCounterTransform = cobalt::trusted_shuffler::testing::TestableTransform<CounterTransform>;
+TEST(CounterTransformTest, CreateCounterTransformReturnsNonNull) {
+  std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform>
+      counter_transform = CreateCounterTransform(
+          std::make_unique<testing::FakeSigningKey>(),
+          std::make_unique<testing::FakeEncryptionKeyHandle>());
 
-TEST(CounterTransformTest, ConfigureReturnsOk) {
-  testing::FakeContext context;
-  TestCounterTransform counter_transform(std::make_unique<testing::FakeSigningKey>(),
-                                         std::make_unique<testing::FakeEncryptionKeyHandle>());
-
-  absl::Status response =
-      counter_transform.StreamInitializeTransform(google::protobuf::Any(), google::protobuf::Any());
-
-  EXPECT_THAT(response, IsOk());
-
-  EXPECT_THAT(context.Unencrypted(), IsEmpty());
-  EXPECT_THAT(context.Encrypted(), IsEmpty());
-  EXPECT_THAT(context.ReadResponses(), IsEmpty());
+  EXPECT_NE(counter_transform, nullptr);
 }
 
-TEST(CounterTransformTest, CreateSessionReturnsOk) {
-  testing::FakeContext context;
-  TestCounterTransform counter_transform(std::make_unique<testing::FakeSigningKey>(),
-                                         std::make_unique<testing::FakeEncryptionKeyHandle>());
+TEST(CounterTransformTest, CounterFnFactoryReturnsCounterFn) {
+  CounterFnFactory factory;
+  absl::StatusOr<std::unique_ptr<confidential_federated_compute::fns::Fn>> fn = factory.CreateFn();
+  ASSERT_THAT(fn, IsOk());
 
-  absl::StatusOr<std::unique_ptr<Session>> response = counter_transform.CreateSession();
-
-  ASSERT_THAT(response, IsOk());
-  EXPECT_NE(response.value(), nullptr);
-
-  EXPECT_THAT(context.Unencrypted(), IsEmpty());
-  EXPECT_THAT(context.Encrypted(), IsEmpty());
-  EXPECT_THAT(context.ReadResponses(), IsEmpty());
-}
-
-TEST(CounterTransformTest, ReadWriteConfigurationRequestReturnsOk) {
-  testing::FakeContext context;
-  TestCounterTransform counter_transform(std::make_unique<testing::FakeSigningKey>(),
-                                         std::make_unique<testing::FakeEncryptionKeyHandle>());
-
-  auto response = counter_transform.ReadWriteConfigurationRequest(
-      fcp::confidentialcompute::WriteConfigurationRequest());
-
-  EXPECT_THAT(response, IsOk());
-
-  EXPECT_THAT(context.Unencrypted(), IsEmpty());
-  EXPECT_THAT(context.Encrypted(), IsEmpty());
-  EXPECT_THAT(context.ReadResponses(), IsEmpty());
-}
-
-TEST(CounterTransformTest, GetKeyIdWithEmptyStringReturnsUnencryptedEmptyString) {
-  testing::FakeContext context;
-  TestCounterTransform counter_transform(std::make_unique<testing::FakeSigningKey>(),
-                                         std::make_unique<testing::FakeEncryptionKeyHandle>());
-  BlobMetadata metadata;
-  metadata.mutable_unencrypted();
-
-  const absl::StatusOr<std::string> response = counter_transform.GetKeyId(metadata);
-
-  ASSERT_THAT(response, IsOk());
-  EXPECT_THAT(response.value(), IsEmpty());
-}
-
-TEST(CounterTransformTest, GetKeyIdWithEmptyMetadataReturnsInvalidArgument) {
-  testing::FakeContext context;
-  TestCounterTransform counter_transform(std::make_unique<testing::FakeSigningKey>(),
-                                         std::make_unique<testing::FakeEncryptionKeyHandle>());
-  BlobMetadata metadata;
-
-  const absl::StatusOr<std::string> response = counter_transform.GetKeyId(metadata);
-
-  EXPECT_THAT(response, StatusIs(absl::StatusCode::kInvalidArgument));
+  CounterFn* counter_fn = dynamic_cast<CounterFn*>(fn.value().get());
+  ASSERT_NE(counter_fn, nullptr);
 }
 
 }  // namespace
