@@ -19,81 +19,31 @@
 #include "absl/status/status_matchers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/containers/releaser/releaser_fn.h"
 #include "src/testing/fake_keys.h"
-#include "src/testing/testable_transform.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
 
-using absl_testing::IsOk;
-using absl_testing::StatusIs;
-using confidential_federated_compute::Session;
-using fcp::confidentialcompute::BlobMetadata;
-using fcp::confidentialcompute::BlobMetadata_Unencrypted;
-using fcp::confidentialcompute::InitializeRequest;
-using ::testing::IsEmpty;
+using ::absl_testing::IsOk;
 
-using TestReleaserTransform =
-    cobalt::trusted_shuffler::testing::TestableTransform<ReleaserTransform>;
+TEST(ReleaserTransformTest, CreateReleaserTransformReturnsNonNull) {
+  std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform>
+      releaser_transform = CreateReleaserTransform(
+          std::make_unique<testing::FakeSigningKey>(),
+          std::make_unique<testing::FakeEncryptionKeyHandle>());
 
-TEST(ReleaserTransformTest, ConfigureReturnsOk) {
-  TestReleaserTransform releaser_transform(
-      std::make_unique<testing::FakeSigningKey>(),
-      std::make_unique<testing::FakeEncryptionKeyHandle>());
-
-  const absl::Status response = releaser_transform.StreamInitializeTransform(
-      google::protobuf::Any(), google::protobuf::Any());
-
-  EXPECT_THAT(response, IsOk());
+  EXPECT_NE(releaser_transform, nullptr);
 }
 
-TEST(ReleaserTransformTest, CreateSessionReturnsOk) {
-  TestReleaserTransform releaser_transform(
-      std::make_unique<testing::FakeSigningKey>(),
-      std::make_unique<testing::FakeEncryptionKeyHandle>());
+TEST(ReleaserTransformTest, ReleaserFnFactoryReturnsReleaserFn) {
+  ReleaserFnFactory factory;
+  absl::StatusOr<std::unique_ptr<confidential_federated_compute::fns::Fn>> fn =
+      factory.CreateFn();
+  ASSERT_THAT(fn, IsOk());
 
-  const absl::StatusOr<std::unique_ptr<Session>> response = releaser_transform.CreateSession();
-
-  ASSERT_THAT(response, IsOk());
-  EXPECT_NE(response.value(), nullptr);
-}
-
-TEST(ReleaserTransformTest, ReadWriteConfigurationRequestReturnsOk) {
-  TestReleaserTransform releaser_transform(
-      std::make_unique<testing::FakeSigningKey>(),
-      std::make_unique<testing::FakeEncryptionKeyHandle>());
-
-  const absl::Status response = releaser_transform.ReadWriteConfigurationRequest(
-      fcp::confidentialcompute::WriteConfigurationRequest());
-
-  EXPECT_THAT(response, IsOk());
-}
-
-TEST(ReleaserTransformTest,
-     GetKeyIdWithEmptyStringReturnsUnencryptedEmptyString) {
-  TestReleaserTransform releaser_transform(
-      std::make_unique<testing::FakeSigningKey>(),
-      std::make_unique<testing::FakeEncryptionKeyHandle>());
-  BlobMetadata metadata;
-  metadata.mutable_unencrypted();
-
-  const absl::StatusOr<std::string> response =
-      releaser_transform.GetKeyId(metadata);
-
-  ASSERT_THAT(response, IsOk());
-  EXPECT_THAT(response.value(), IsEmpty());
-}
-
-TEST(ReleaserTransformTest, GetKeyIdWithEmptyMetadataReturnsInvalidArgument) {
-  TestReleaserTransform releaser_transform(
-      std::make_unique<testing::FakeSigningKey>(),
-      std::make_unique<testing::FakeEncryptionKeyHandle>());
-  BlobMetadata metadata;
-
-  const absl::StatusOr<std::string> response =
-      releaser_transform.GetKeyId(metadata);
-
-  EXPECT_THAT(response, StatusIs(absl::StatusCode::kInvalidArgument));
+  ReleaserFn* releaser_fn = dynamic_cast<ReleaserFn*>(fn.value().get());
+  ASSERT_NE(releaser_fn, nullptr);
 }
 
 }  // namespace

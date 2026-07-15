@@ -18,50 +18,36 @@
 #include <utility>
 
 #include "absl/status/statusor.h"
-#include "containers/blob_metadata.h"
-#include "containers/session.h"
-#include "fcp/protos/confidentialcompute/confidential_transform.pb.h"
-#include "src/containers/releaser/releaser_session.h"
+#include "containers/fns/confidential_transform_server.h"
+#include "containers/fns/fn_factory.h"
+#include "src/containers/releaser/releaser_fn.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
 
-using confidential_federated_compute::ConfidentialTransformBase;
-using confidential_federated_compute::Session;
-using fcp::confidentialcompute::BlobMetadata;
-using fcp::confidentialcompute::WriteConfigurationRequest;
-using oak::crypto::EncryptionKeyHandle;
-using oak::crypto::SigningKeyHandle;
+using confidential_federated_compute::fns::Fn;
+using confidential_federated_compute::fns::FnConfidentialTransform;
+using confidential_federated_compute::fns::FnFactory;
+using confidential_federated_compute::fns::WriteConfigurationMap;
 
 }  // namespace
 
-ReleaserTransform::ReleaserTransform(
-    std::unique_ptr<SigningKeyHandle> signing_key_handle,
-    std::unique_ptr<EncryptionKeyHandle> encryption_key_handle)
-    : ConfidentialTransformBase(std::move(signing_key_handle),
-                                std::move(encryption_key_handle)) {}
-
-absl::Status ReleaserTransform::StreamInitializeTransform(
-    const google::protobuf::Any& configuration,
-    const google::protobuf::Any& config_constraints) {
-  return absl::OkStatus();
+absl::StatusOr<std::unique_ptr<Fn>> ReleaserFnFactory::CreateFn() const {
+  return std::make_unique<ReleaserFn>();
 }
 
-absl::Status ReleaserTransform::ReadWriteConfigurationRequest(
-    const WriteConfigurationRequest& write_configuration) {
-  return absl::OkStatus();
-}
-
-absl::StatusOr<std::unique_ptr<Session>> ReleaserTransform::CreateSession() {
-  // TODO(b/515521859): Pick the right reencryption key id. This likely should
-  // be extracted from the DataAccessPolicy.
-  int reencryption_key_index = 1;
-  return std::make_unique<ReleaserSession>(reencryption_key_index);
-}
-
-absl::StatusOr<std::string> ReleaserTransform::GetKeyId(
-    const BlobMetadata& metadata) {
-  return confidential_federated_compute::GetKeyIdFromMetadata(metadata);
+std::unique_ptr<FnConfidentialTransform> CreateReleaserTransform(
+    std::unique_ptr<oak::crypto::SigningKeyHandle> signing_key_handle,
+    std::unique_ptr<oak::crypto::EncryptionKeyHandle> encryption_key_handle) {
+  return std::make_unique<FnConfidentialTransform>(
+      std::move(signing_key_handle),
+      [](const google::protobuf::Any& configuration,
+         const google::protobuf::Any& config_constraints,
+         const WriteConfigurationMap& write_configuration_map)
+          -> absl::StatusOr<std::unique_ptr<FnFactory>> {
+        return std::make_unique<ReleaserFnFactory>();
+      },
+      std::move(encryption_key_handle));
 }
 
 }  // namespace cobalt::trusted_shuffler

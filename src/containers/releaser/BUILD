@@ -33,14 +33,13 @@ cc_binary(
 )
 
 cc_library(
-    name = "releaser_session",
-    srcs = ["releaser_session.cc"],
-    hdrs = ["releaser_session.h"],
+    name = "releaser_fn",
+    srcs = ["releaser_fn.cc"],
+    hdrs = ["releaser_fn.h"],
     deps = [
         "@abseil-cpp//absl/status",
-        "@abseil-cpp//absl/status:statusor",
-        "@confidential-federated-compute//containers:session",
-        "@federated-compute//fcp/protos/confidentialcompute:confidential_transform_cc_proto",
+        "@abseil-cpp//absl/strings",
+        "@confidential-federated-compute//containers/fns:fns",
     ],
 )
 
@@ -49,20 +48,17 @@ cc_library(
     srcs = ["releaser_transform.cc"],
     hdrs = ["releaser_transform.h"],
     deps = [
-        ":releaser_session",
-        "@abseil-cpp//absl/status",
+        ":releaser_fn",
         "@abseil-cpp//absl/status:statusor",
-        "@confidential-federated-compute//containers:confidential_transform_server_base",
-        "@confidential-federated-compute//containers:session",
-        "@federated-compute//fcp/protos/confidentialcompute:confidential_transform_cc_proto",
+        "@confidential-federated-compute//containers/fns:fns",
     ],
 )
 
 cc_test(
-    name = "releaser_session_test",
-    srcs = ["releaser_session_test.cc"],
+    name = "releaser_fn_test",
+    srcs = ["releaser_fn_test.cc"],
     deps = [
-        ":releaser_session",
+        ":releaser_fn",
         "//src/testing:fake_context",
         "@abseil-cpp//absl/status:status",
         "@abseil-cpp//absl/status:status_matchers",
@@ -75,9 +71,9 @@ cc_test(
     name = "releaser_transform_test",
     srcs = ["releaser_transform_test.cc"],
     deps = [
+        ":releaser_fn",
         ":releaser_transform",
         "//src/testing:fake_keys",
-        "//src/testing:testable_transform",
         "@abseil-cpp//absl/status:status",
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/status:statusor",
