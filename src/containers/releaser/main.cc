@@ -36,11 +36,13 @@ namespace {
 void RunServer() {
   std::string server_address("[::]:8080");
 
-  ReleaserTransform service(std::make_unique<InstanceSigningKeyHandle>(),
-                            std::make_unique<InstanceEncryptionKeyHandle>());
+  std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform>
+      service = CreateReleaserTransform(
+          std::make_unique<InstanceSigningKeyHandle>(),
+          std::make_unique<InstanceEncryptionKeyHandle>());
   ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-  builder.RegisterService(&service);
+  builder.RegisterService(service.get());
   std::unique_ptr<Server> server = builder.BuildAndStart();
   LOG(INFO) << "Releaser Transform Server listening on " << server_address;
 
