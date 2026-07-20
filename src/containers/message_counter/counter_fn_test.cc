@@ -18,9 +18,9 @@
 #include "absl/status/status_matchers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "src/containers/message_counter/proto/count_report.pb.h"
-#include "src/containers/message_counter/proto/counter_config.pb.h"
-#include "src/containers/message_counter/proto/output_key.pb.h"
+#include "src/proto/message_counter/count_report.pb.h"
+#include "src/proto/message_counter/counter_config.pb.h"
+#include "src/proto/message_counter/output_key.pb.h"
 #include "src/testing/fake_context.h"
 
 namespace cobalt::trusted_shuffler {
