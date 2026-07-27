@@ -27,7 +27,7 @@ namespace cobalt::trusted_shuffler {
 // messages it receives and outputs the total count in the finalize step.
 class CounterFn : public confidential_federated_compute::fns::DoFn {
  public:
-  explicit CounterFn(int key_id) : key_id_(key_id), count_(0L) {}
+  explicit CounterFn(int key_index) : key_index_(key_index), count_(0L) {}
 
   ~CounterFn() override = default;
 
@@ -44,7 +44,7 @@ class CounterFn : public confidential_federated_compute::fns::DoFn {
 
  private:
   std::string counter_name_;
-  int key_id_;
+  int key_index_;
   int64_t count_;
 };
 

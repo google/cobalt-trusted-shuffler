@@ -45,7 +45,7 @@ absl::Status CounterFn::Do(KV input, Context& context) {
   google::protobuf::Any key;
   key.PackFrom(output_key);
 
-  context.EmitEncrypted(key_id_, KV(std::move(key), std::move(input.data)));
+  context.EmitEncrypted(key_index_, KV(std::move(key), std::move(input.data)));
   return absl::OkStatus();
 }
 

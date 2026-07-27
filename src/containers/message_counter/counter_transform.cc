@@ -30,13 +30,14 @@ using confidential_federated_compute::fns::FnConfidentialTransform;
 using confidential_federated_compute::fns::FnFactory;
 using confidential_federated_compute::fns::WriteConfigurationMap;
 
+// Index of the key in the list of destination nodes. Only one destination node
+// is expected for this transform.
+constexpr int kKeyIndex = 0;
+
 }  // namespace
 
 absl::StatusOr<std::unique_ptr<Fn>> CounterFnFactory::CreateFn() const {
-  // TODO(b/515521859): Pick the right reencryption key id. This likely should
-  // be extracted from the DataAccessPolicy.
-  int reencryption_key_index = 1;
-  return std::make_unique<CounterFn>(reencryption_key_index);
+  return std::make_unique<CounterFn>(kKeyIndex);
 }
 
 std::unique_ptr<FnConfidentialTransform> CreateCounterTransform(
