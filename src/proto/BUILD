@@ -23,3 +23,13 @@ cc_proto_library(
     name = "trusted_shuffler_upload_cc_proto",
     deps = [":trusted_shuffler_upload_proto"],
 )
+
+proto_library(
+    name = "run_context_proto",
+    srcs = ["run_context.proto"],
+)
+
+cc_proto_library(
+    name = "run_context_cc_proto",
+    deps = [":run_context_proto"],
+)
