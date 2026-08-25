@@ -30,7 +30,7 @@ class ReleaserFn : public confidential_federated_compute::fns::DoFn {
 
   ~ReleaserFn() override = default;
 
-  // Marks the input data for release and forwards it encrypted.
+  // Emits the input data unencrypted for release.
   absl::Status Do(KV input, Context& context) override;
 };
 
