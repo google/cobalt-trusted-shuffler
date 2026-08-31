@@ -15,51 +15,64 @@
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
 
 #include "absl/status/status_matchers.h"
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/proto/config_constraints.pb.h"
 #include "src/testing/fake_context.h"
+#include "src/testing/matchers.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
 
 using ::absl_testing::IsOk;
+using ::cobalt::trusted_shuffler::testing::EquivToProto;
 using ::cobalt::trusted_shuffler::testing::FakeContext;
 using ::fcp::confidentialcompute::CommitRequest;
 using ::fcp::confidentialcompute::ConfigureRequest;
+using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 
 TEST(IngestionVerificationFnTest, ConfigureReturnsOk) {
   FakeContext context;
-  IngestionVerificationFn fn;
+  IngestionVerificationFn fn(TrustedShufflerConfigConstraints{});
 
   EXPECT_THAT(fn.Configure(ConfigureRequest(), context), IsOk());
 }
 
 TEST(IngestionVerificationFnTest, DoDoesNothing) {
   FakeContext context;
-  IngestionVerificationFn fn;
+  IngestionVerificationFn fn(TrustedShufflerConfigConstraints{});
 
   // The container does nothing right now and emits no outputs.
-  EXPECT_THAT(
-      fn.Do(IngestionVerificationFn::KV(google::protobuf::Any(), "value"),
-            context),
-      IsOk());
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(google::protobuf::Any(), "value"), context),
+              IsOk());
 
   EXPECT_THAT(context.Unencrypted(), IsEmpty());
   EXPECT_THAT(context.Encrypted(), IsEmpty());
   EXPECT_THAT(context.Releasable(), IsEmpty());
 }
 
+TEST(IngestionVerificationFnTest, ConfigConstraintsAccessor) {
+  TrustedShufflerConfigConstraints constraints;
+  auto* metric_threshold = constraints.add_metric_thresholds();
+  metric_threshold->set_project_id(1001);
+  metric_threshold->set_metric_id(2);
+  metric_threshold->set_threshold(100);
+
+  IngestionVerificationFn fn(constraints);
+  EXPECT_THAT(fn.ConfigConstraints().metric_thresholds(),
+              ElementsAre(EquivToProto(*metric_threshold)));
+}
+
 TEST(IngestionVerificationFnTest, CommitReturnsOk) {
   FakeContext context;
-  IngestionVerificationFn fn;
+  IngestionVerificationFn fn(TrustedShufflerConfigConstraints{});
 
   EXPECT_THAT(fn.Commit(CommitRequest(), context), IsOk());
 }
 
 TEST(IngestionVerificationFnTest, FinalizeReplicaReturnsOk) {
   FakeContext context;
-  IngestionVerificationFn fn;
+  IngestionVerificationFn fn(TrustedShufflerConfigConstraints{});
 
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 }

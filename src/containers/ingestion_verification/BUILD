@@ -36,6 +36,7 @@ cc_library(
     srcs = ["ingestion_verification_fn.cc"],
     hdrs = ["ingestion_verification_fn.h"],
     deps = [
+        "//src/proto:config_constraints_cc_proto",
         "@abseil-cpp//absl/status",
         "@confidential-federated-compute//containers/fns:fns",
     ],
@@ -47,7 +48,10 @@ cc_library(
     hdrs = ["ingestion_verification_transform.h"],
     deps = [
         ":ingestion_verification_fn",
+        "//src/proto:config_constraints_cc_proto",
+        "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
         "@confidential-federated-compute//containers/fns:fns",
         "@oak//cc/crypto:encryption_key",
         "@oak//cc/crypto:signing_key",
@@ -60,9 +64,12 @@ cc_test(
     srcs = ["ingestion_verification_fn_test.cc"],
     deps = [
         ":ingestion_verification_fn",
+        "//src/proto:config_constraints_cc_proto",
         "//src/testing:fake_context",
+        "//src/testing:matchers",
         "@abseil-cpp//absl/status:status_matchers",
         "@googletest//:gtest_main",
+        "@protobuf//:any_cc_proto",
     ],
 )
 
@@ -72,9 +79,12 @@ cc_test(
     deps = [
         ":ingestion_verification_fn",
         ":ingestion_verification_transform",
+        "//src/proto:config_constraints_cc_proto",
         "//src/testing:fake_keys",
+        "//src/testing:matchers",
         "@abseil-cpp//absl/status:status_matchers",
         "@googletest//:gtest_main",
+        "@protobuf//:any_cc_proto",
     ],
 )
 

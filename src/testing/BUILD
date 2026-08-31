@@ -38,6 +38,16 @@ cc_library(
 )
 
 cc_library(
+    name = "matchers",
+    testonly = True,
+    hdrs = ["matchers.h"],
+    deps = [
+        "@googletest//:gtest",
+        "@protobuf//:differencer",
+    ],
+)
+
+cc_library(
     name = "testable_transform",
     hdrs = ["testable_transform.h"],
     deps = [

@@ -15,8 +15,11 @@
 #ifndef SRC_CONTAINERS_INGESTION_VERIFICATION_INGESTION_VERIFICATION_FN_H_
 #define SRC_CONTAINERS_INGESTION_VERIFICATION_INGESTION_VERIFICATION_FN_H_
 
+#include <utility>
+
 #include "absl/status/status.h"
 #include "containers/fns/do_fn.h"
+#include "src/proto/config_constraints.pb.h"
 
 namespace cobalt::trusted_shuffler {
 
@@ -26,13 +29,19 @@ namespace cobalt::trusted_shuffler {
 // TODO(b/555370722): Implement ingestion verification logic.
 class IngestionVerificationFn : public confidential_federated_compute::fns::DoFn {
  public:
-  IngestionVerificationFn() = default;
+  explicit IngestionVerificationFn(TrustedShufflerConfigConstraints config_constraints)
+      : config_constraints_(std::move(config_constraints)) {}
 
   ~IngestionVerificationFn() override = default;
 
   // Processes an input KV pair. Currently a no-op that does nothing and emits
   // no outputs.
   absl::Status Do(KV input, Context& context) override;
+
+  const TrustedShufflerConfigConstraints& ConfigConstraints() const { return config_constraints_; }
+
+ private:
+  TrustedShufflerConfigConstraints config_constraints_;
 };
 
 }  // namespace cobalt::trusted_shuffler

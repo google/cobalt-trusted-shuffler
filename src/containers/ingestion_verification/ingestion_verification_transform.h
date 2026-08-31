@@ -16,24 +16,39 @@
 #define SRC_CONTAINERS_INGESTION_VERIFICATION_INGESTION_VERIFICATION_TRANSFORM_H_
 
 #include <memory>
+#include <utility>
 
 #include "absl/status/statusor.h"
 #include "cc/crypto/encryption_key.h"
 #include "cc/crypto/signing_key.h"
 #include "containers/fns/confidential_transform_server.h"
 #include "containers/fns/fn_factory.h"
+#include "google/protobuf/any.pb.h"
+#include "src/proto/config_constraints.pb.h"
 
 namespace cobalt::trusted_shuffler {
 
 // Factory for creating IngestionVerificationFn instances.
-// Currently creates an IngestionVerificationFn that does nothing.
 class IngestionVerificationFnFactory : public confidential_federated_compute::fns::FnFactory {
  public:
-  IngestionVerificationFnFactory() = default;
+  explicit IngestionVerificationFnFactory(TrustedShufflerConfigConstraints config_constraints)
+      : config_constraints_(std::move(config_constraints)) {}
 
   absl::StatusOr<std::unique_ptr<confidential_federated_compute::fns::Fn>> CreateFn()
       const override;
+
+  const TrustedShufflerConfigConstraints& ConfigConstraints() const { return config_constraints_; }
+
+ private:
+  TrustedShufflerConfigConstraints config_constraints_;
 };
+
+// Provides an IngestionVerificationFnFactory by unpacking and validating
+// config_constraints.
+absl::StatusOr<std::unique_ptr<confidential_federated_compute::fns::FnFactory>>
+ProvideIngestionVerificationFnFactory(
+    const google::protobuf::Any& configuration, const google::protobuf::Any& config_constraints,
+    const confidential_federated_compute::fns::WriteConfigurationMap& write_configuration_map);
 
 // Creates an IngestionVerificationTransform service.
 std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform>
