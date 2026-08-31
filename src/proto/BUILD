@@ -33,3 +33,13 @@ cc_proto_library(
     name = "run_context_cc_proto",
     deps = [":run_context_proto"],
 )
+
+proto_library(
+    name = "config_constraints_proto",
+    srcs = ["config_constraints.proto"],
+)
+
+cc_proto_library(
+    name = "config_constraints_cc_proto",
+    deps = [":config_constraints_proto"],
+)

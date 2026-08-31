@@ -1,0 +1,40 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package cobalt.trusted_shuffler;
+
+option java_package = "com.google.cobalt.trustedshuffler";
+option java_multiple_files = true;
+option java_outer_classname = "ConfigConstraintsProto";
+
+// Represents a single metric and its reporting threshold within a project.
+message MetricThreshold {
+  // Globally unique ID identifying the project owning the metric.
+  int32 project_id = 1;
+
+  // Per-project unique ID identifying the metric.
+  int32 metric_id = 2;
+
+  // Reporting threshold for the metric. Must be positive.
+  int32 threshold = 3;
+}
+
+// Config constraints for sted Shuffler specifying allowed metrics and
+// thresholds for a pipeline.
+message TrustedShufflerConfigConstraints {
+  // List of metric thresholds allowed to be processed by the trusted shuffler.
+  repeated MetricThreshold metric_thresholds = 1;
+}
