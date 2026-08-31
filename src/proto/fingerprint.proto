@@ -1,0 +1,54 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package cobalt.trusted_shuffler;
+
+import "src/proto/common.proto";
+
+// Represents the logical pipeline stages that generate or merge fingerprints.
+enum Stage {
+  STAGE_UNSPECIFIED = 0;
+}
+
+// Represents fingerprint metadata for a specific metric data partition.
+// The implementation of the fingerprint computation can be found in
+// //src/crypto/multiset_fingerprint.cc.
+message FingerprintEntry {
+  // Identifies the data partition by project, metric, and epoch.
+  MetricEpochKey metric_epoch_key = 1;
+
+  // The multiset fingerprint hash bytes for this partition.
+  bytes fingerprint = 4;
+
+  // Total count of non-padding messages processed for this partition.
+  int64 message_count = 5;
+}
+
+// Represents the multiset fingerprint for a single execution stage or run.
+message RunFingerprint {
+  // 32-byte cryptographic identifier for the pipeline run context.
+  bytes run_id = 1;
+
+  // Fingerprint entries for each metric epoch key in the run.
+  repeated FingerprintEntry entries = 2;
+
+  // Identifier of the logical processing stage that generated or merged this fingerprint.
+  Stage stage_id = 3;
+
+  // Indicates whether this fingerprint is a partial output from a single stage
+  // (true) or a canonical merged fingerprint across all stages (false).
+  bool is_partial = 4;
+}

@@ -36,3 +36,27 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "multiset_fingerprint",
+    srcs = ["multiset_fingerprint.cc"],
+    hdrs = ["multiset_fingerprint.h"],
+    deps = [
+        "//src/proto:common_cc_proto",
+        "//src/proto:fingerprint_cc_proto",
+        "//src/proto:run_context_cc_proto",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "multiset_fingerprint_test",
+    srcs = ["multiset_fingerprint_test.cc"],
+    deps = [
+        ":multiset_fingerprint",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@googletest//:gtest_main",
+    ],
+)

@@ -43,3 +43,24 @@ cc_proto_library(
     name = "config_constraints_cc_proto",
     deps = [":config_constraints_proto"],
 )
+
+proto_library(
+    name = "common_proto",
+    srcs = ["common.proto"],
+)
+
+cc_proto_library(
+    name = "common_cc_proto",
+    deps = [":common_proto"],
+)
+
+proto_library(
+    name = "fingerprint_proto",
+    srcs = ["fingerprint.proto"],
+    deps = [":common_proto"],
+)
+
+cc_proto_library(
+    name = "fingerprint_cc_proto",
+    deps = [":fingerprint_proto"],
+)
