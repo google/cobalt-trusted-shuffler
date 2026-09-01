@@ -30,6 +30,7 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | [`message_counter`](message_counter/) | Counts incoming messages while forwarding them. Outputs a final count summary report. | Emits messages encrypted (`OutputKey.type = MESSAGE`) and final `CountReport` unencrypted (`OutputKey.type = REPORT`). | [`src/proto/message_counter/`](../proto/message_counter/) |
 | [`releaser`](releaser/) | Unconditionally releases messages passed from upstream confidential stages. | Emits messages unencrypted via `EmitUnencrypted` at the pipeline's privacy/release boundary. | None (empty config) |
 | [`simple`](simple/) | Proof-of-concept identity transform. Buffers incoming blobs and forwards them. | Emits buffered blobs encrypted with key index 0 upon commit. | None (empty config) |
+| [`ingestion_verification`](ingestion_verification/) | Placeholder skeleton; currently does nothing. TODO(b/555370722): Implement KMS signature verification and device threshold evaluation. | Emits nothing currently. | None (accepts empty config) |
 
 ---
 
@@ -79,3 +80,19 @@ The **`simple`** container is a proof-of-concept identity transform container.
 - **Inputs**: Data payloads via `WriteRequest`.
 - **Outputs**: Emits all buffered blobs encrypted with key index 0 upon receiving a `CommitRequest`.
 - **Documentation**: See [`src/containers/simple/README.md`](simple/README.md).
+
+---
+
+## 5. `ingestion_verification`
+
+The **`ingestion_verification`** container is a planned confidential transform responsible for KMS signature verification and device threshold evaluation.
+
+> [!NOTE]
+> **This container does nothing right now.** It is currently an empty skeleton / no-op placeholder.
+> TODO(b/555370722): Implement signature verification, RunFingerprint aggregation, and device threshold evaluation.
+
+- **Purpose**: Verifies incoming ingestion reports and checks device counts against required thresholds. (Currently does nothing).
+- **Configuration**: None currently (accepts empty config).
+- **Inputs**: KV pairs processed via `Do`. (Currently discards input).
+- **Outputs**: Currently none (no-op implementation).
+- **Documentation**: See [`src/containers/ingestion_verification/README.md`](ingestion_verification/README.md).
