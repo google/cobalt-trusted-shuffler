@@ -16,14 +16,19 @@ syntax = "proto3";
 
 package cobalt.trusted_shuffler;
 
-// Represents a HyperLogLog sketch used for cardinality estimation across
-// pipeline ingestion stages.
+// Represents a HyperLogLog sketch used for approximate distinct counting.
+//
+// Reference: Flajolet et al. (2007), Heule et al. (2013).
 message HyperLogLogSketch {
-  // Precision parameter (p), defining m = 2^p registers.
+  // Precision parameter p defining m = 2^p registers.
+  // Must be in the range [4, 18]. The standard default is 14 (16,384 registers),
+  // yielding a relative standard error of approximately 1.04 / sqrt(2^p) (~0.81%).
   int32 precision = 1;
 
   // Values of the HLL registers.
-  // Note: For an HLL sketch with precision p, there are 2^p registers.
-  // TODO(b/555370722): Populate registers once the HLL algorithm is implemented.
+  // - For an empty sketch, this field MAY be omitted (empty repeated field)
+  //   on the wire, representing 2^p zero registers.
+  // - When populated, it MUST contain exactly 2^p elements.
+  // - Each register value must be in the range [0, 64 - precision + 1].
   repeated uint32 registers = 2;
 }
