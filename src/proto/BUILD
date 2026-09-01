@@ -64,3 +64,14 @@ cc_proto_library(
     name = "fingerprint_cc_proto",
     deps = [":fingerprint_proto"],
 )
+
+proto_library(
+    name = "sketch_proto",
+    srcs = ["sketch.proto"],
+)
+
+
+cc_proto_library(
+    name = "sketch_cc_proto",
+    deps = [":sketch_proto"],
+)
