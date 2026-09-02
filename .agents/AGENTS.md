@@ -169,8 +169,10 @@ Every container package must define:
   - Output stream & finalize emit formats, explicitly documenting what is encrypted vs. plaintext.
 - Update `src/containers/README.md` to reference the new container.
 
-### Step 6: Update CI & Kokoro Build Pipeline (Required)
-Failing to update Kokoro will cause builds and releases to miss the container artifact:
+### Step 6: Update CI & Kokoro Build Pipeline (Required for Production Containers)
+**IMPORTANT**: **WIP vs. Production Containers**: If you are creating a scaffolded, work-in-progress (WIP), or skeleton container (e.g. while developing stacked CLs), **DO NOT** add it to `build.sh` or Kokoro configs yet. Only wire Kokoro when the container is ready for CI builds and integration. Add `TODO(b/...)` comments following `go/todo-style` to document pending steps.
+
+When ready for production release, failing to update Kokoro will cause builds and releases to miss the container artifact:
 1. **`build.sh`**:
    Add artifact copy step:
    ```bash
@@ -209,20 +211,33 @@ Failing to update Kokoro will cause builds and releases to miss the container ar
   ```
 - **Format code**:
   Apply `.clang-format` to all modified `.h` and `.cc` files.
+- **Lockfile cleanliness**:
+  Running local Bazel tests may touch `MODULE.bazel.lock`. If no dependencies were intentionally added, run `git restore MODULE.bazel.lock` before staging or committing.
 
 ---
 
-## 5. Contribution Checklist for Agents
+## 5. C++ Architecture & Testing Standards
+
+All C++ implementations, container transforms, and tests must adhere to the conventions documented in [`.agents/rules/cpp_conventions.md`](rules/cpp_conventions.md):
+- **Lifecycle Integrity**: DoFn session configuration must be unpacked inside `InitializeReplica`; never add testing-only backdoor constructors or setters to `DoFn` classes.
+- **Explicit Arguments**: Avoid default arguments (`= std::nullopt`, default booleans) in constructors or stage APIs where values must be passed explicitly.
+- **Schema Casing**: Match Protobuf schema casing for accessor methods (`SignedRunContext()`, `ConfigConstraints()`).
+- **Declarative Test Fixtures**: Use C++20 designated initializers (`{.project_id = 1, ...}`) and clean helper structs in anonymous namespaces instead of positional magic tuples.
+
+---
+
+## 6. Contribution Checklist for Agents
 
 Before completing a task or submitting a change:
 - [ ] Aligned with user on data visibility (orchestrator plaintext vs. downstream TEE ciphertext).
 - [ ] Protos defined in `src/proto/<name>/` (or `src/proto/` for shared schemas) with `BUILD` rules.
-- [ ] `DoFn` and transform service implemented in C++20 with correct emit primitives.
+- [ ] `DoFn` and transform service implemented in C++20 following [`.agents/rules/cpp_conventions.md`](rules/cpp_conventions.md).
 - [ ] `main.cc` notifies `OrchestratorClient().NotifyAppReady()`.
 - [ ] Container bundle (`oci_runtime_bundle`) defined in `BUILD`.
 - [ ] Unit tests for `_fn` and `_transform` pass via `bazel test //...`.
 - [ ] Tests verify that confidential data is emitted via `EmitEncrypted`/`EmitReleasable` and never `EmitUnencrypted`.
+- [ ] Tests avoid backdoor constructors, using `InitializeReplica` and designated initializers.
 - [ ] Container `README.md` and `src/containers/README.md` updated.
-- [ ] `build.sh` copies artifacts to `${KOKORO_ARTIFACTS_DIR}/<name>/.`.
-- [ ] `kokoro/rbe/presubmit.cfg` and `continuous.cfg` include `fileset_artifacts`.
+- [ ] If container is production-ready, `build.sh` and Kokoro configs updated; if WIP, kept excluded from Kokoro with `TODO(b/...)` comments.
+- [ ] `git restore MODULE.bazel.lock` run if the lockfile was modified unintentionally.
 - [ ] All code formatted with `.clang-format` and license header included.
