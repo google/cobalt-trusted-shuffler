@@ -16,11 +16,14 @@
 #define SRC_CONTAINERS_RUN_CONTEXT_INITIALIZER_RUN_CONTEXT_INITIALIZER_FN_H_
 
 #include <cstddef>
+#include <optional>
 #include <string>
 
 #include "absl/status/status.h"
 #include "cc/crypto/signing_key.h"
 #include "containers/fns/do_fn.h"
+#include "google/protobuf/any.pb.h"
+#include "src/proto/run_context.pb.h"
 
 namespace cobalt::trusted_shuffler {
 
@@ -34,14 +37,17 @@ class RunContextInitializerFn
 
   ~RunContextInitializerFn() override = default;
 
-  // Validates input RunConfig, generates 32-byte run_id and 32-byte
-  // run_hash_key cryptographically securely, creates a SignedRunContext signed
-  // by signing_key_handle_, and emits it via EmitEncrypted with
-  // reencryption_key_index_.
+  absl::Status InitializeReplica(google::protobuf::Any config,
+                                 Context& context) override;
+
   absl::Status Do(KV input, Context& context) override;
+
+  absl::Status FinalizeReplica(google::protobuf::Any config,
+                               Context& context) override;
 
  private:
   oak::crypto::SigningKeyHandle* signing_key_handle_;
+  std::optional<RunConfig> run_config_;
 };
 
 }  // namespace cobalt::trusted_shuffler

@@ -23,6 +23,7 @@
 #include "cc/crypto/signing_key.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "google/protobuf/any.pb.h"
 #include "src/proto/run_context.pb.h"
 #include "src/testing/fake_context.h"
 
@@ -66,19 +67,26 @@ RunConfig CreateValidRunConfig() {
   return config;
 }
 
-TEST(RunContextInitializerFnTest, DoFailsOnInvalidInput) {
+google::protobuf::Any ToAny(const RunConfig& config) {
+  google::protobuf::Any any;
+  any.PackFrom(config);
+  return any;
+}
+
+TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnInvalidInput) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
 
-  RunContextInitializerFn::KV input;
-  input.data = "invalid_run_config_bytes";
+  google::protobuf::Any invalid_config;
+  invalid_config.set_type_url("invalid_type");
 
-  EXPECT_THAT(fn.Do(std::move(input), context),
+  EXPECT_THAT(fn.InitializeReplica(invalid_config, context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest, DoFailsOnEmptyMetricIdentifiers) {
+TEST(RunContextInitializerFnTest,
+     InitializeReplicaFailsOnEmptyMetricIdentifiers) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -86,14 +94,11 @@ TEST(RunContextInitializerFnTest, DoFailsOnEmptyMetricIdentifiers) {
   RunConfig config = CreateValidRunConfig();
   config.clear_metric_identifiers();
 
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  EXPECT_THAT(fn.Do(std::move(input), context),
+  EXPECT_THAT(fn.InitializeReplica(ToAny(config), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest, DoFailsOnZeroProjectId) {
+TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnZeroProjectId) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -101,14 +106,11 @@ TEST(RunContextInitializerFnTest, DoFailsOnZeroProjectId) {
   RunConfig config = CreateValidRunConfig();
   config.mutable_metric_identifiers(0)->set_project_id(0);
 
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  EXPECT_THAT(fn.Do(std::move(input), context),
+  EXPECT_THAT(fn.InitializeReplica(ToAny(config), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest, DoFailsOnNegativeProjectId) {
+TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeProjectId) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -116,14 +118,11 @@ TEST(RunContextInitializerFnTest, DoFailsOnNegativeProjectId) {
   RunConfig config = CreateValidRunConfig();
   config.mutable_metric_identifiers(0)->set_project_id(-1);
 
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  EXPECT_THAT(fn.Do(std::move(input), context),
+  EXPECT_THAT(fn.InitializeReplica(ToAny(config), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest, DoFailsOnZeroMetricId) {
+TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnZeroMetricId) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -132,14 +131,11 @@ TEST(RunContextInitializerFnTest, DoFailsOnZeroMetricId) {
   config.mutable_metric_identifiers(0)->set_project_id(101);
   config.mutable_metric_identifiers(0)->set_metric_id(0);
 
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  EXPECT_THAT(fn.Do(std::move(input), context),
+  EXPECT_THAT(fn.InitializeReplica(ToAny(config), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest, DoFailsOnNegativeMetricId) {
+TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeMetricId) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -148,14 +144,11 @@ TEST(RunContextInitializerFnTest, DoFailsOnNegativeMetricId) {
   config.mutable_metric_identifiers(0)->set_project_id(101);
   config.mutable_metric_identifiers(0)->set_metric_id(-1);
 
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  EXPECT_THAT(fn.Do(std::move(input), context),
+  EXPECT_THAT(fn.InitializeReplica(ToAny(config), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest, DoFailsOnInvalidEpochRange) {
+TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnInvalidEpochRange) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -164,14 +157,12 @@ TEST(RunContextInitializerFnTest, DoFailsOnInvalidEpochRange) {
   config.set_min_epoch_index(20);
   config.set_max_epoch_index(10);  // max < min
 
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  EXPECT_THAT(fn.Do(std::move(input), context),
+  EXPECT_THAT(fn.InitializeReplica(ToAny(config), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest, DoSucceedsWhenMinEqualsMaxEpochIndex) {
+TEST(RunContextInitializerFnTest,
+     InitializeReplicaSucceedsWhenMinEqualsMaxEpochIndex) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -180,13 +171,10 @@ TEST(RunContextInitializerFnTest, DoSucceedsWhenMinEqualsMaxEpochIndex) {
   config.set_min_epoch_index(10);
   config.set_max_epoch_index(10);  // max == min is valid
 
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  EXPECT_THAT(fn.Do(std::move(input), context), IsOk());
+  EXPECT_THAT(fn.InitializeReplica(ToAny(config), context), IsOk());
 }
 
-TEST(RunContextInitializerFnTest, DoFailsOnZeroTargetBatchSize) {
+TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnZeroTargetBatchSize) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -194,14 +182,12 @@ TEST(RunContextInitializerFnTest, DoFailsOnZeroTargetBatchSize) {
   RunConfig config = CreateValidRunConfig();
   config.set_target_batch_size(0);
 
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  EXPECT_THAT(fn.Do(std::move(input), context),
+  EXPECT_THAT(fn.InitializeReplica(ToAny(config), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest, DoFailsOnNegativeTargetBatchSize) {
+TEST(RunContextInitializerFnTest,
+     InitializeReplicaFailsOnNegativeTargetBatchSize) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -209,41 +195,43 @@ TEST(RunContextInitializerFnTest, DoFailsOnNegativeTargetBatchSize) {
   RunConfig config = CreateValidRunConfig();
   config.set_target_batch_size(-5);
 
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  EXPECT_THAT(fn.Do(std::move(input), context),
+  EXPECT_THAT(fn.InitializeReplica(ToAny(config), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest, DoFailsOnNullSigningKey) {
+TEST(RunContextInitializerFnTest,
+     FinalizeReplicaFailsWithoutInitializeReplica) {
+  TestSigningKey key_handle;
+  RunContextInitializerFn fn(&key_handle);
+  testing::FakeContext context;
+
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnNullSigningKey) {
   RunContextInitializerFn fn(nullptr);
   testing::FakeContext context;
 
-  RunConfig config = CreateValidRunConfig();
-
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  EXPECT_THAT(fn.Do(std::move(input), context),
+  ASSERT_THAT(fn.InitializeReplica(ToAny(CreateValidRunConfig()), context),
+              IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kInternal));
 }
 
-TEST(RunContextInitializerFnTest, DoFailsOnSigningError) {
+TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnSigningError) {
   FailingSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
 
-  RunConfig config = CreateValidRunConfig();
-
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  EXPECT_THAT(fn.Do(std::move(input), context),
+  ASSERT_THAT(fn.InitializeReplica(ToAny(CreateValidRunConfig()), context),
+              IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kInternal));
 }
 
-TEST(RunContextInitializerFnTest, DoEmitsSignedRunContextWithKeyIndex1) {
+TEST(RunContextInitializerFnTest,
+     FinalizeReplicaEmitsSignedRunContextWithKeyIndex0) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -256,10 +244,8 @@ TEST(RunContextInitializerFnTest, DoEmitsSignedRunContextWithKeyIndex1) {
   metric->set_project_id(101);
   metric->set_metric_id(202);
 
-  RunContextInitializerFn::KV input;
-  input.data = config.SerializeAsString();
-
-  ASSERT_THAT(fn.Do(std::move(input), context), IsOk());
+  ASSERT_THAT(fn.InitializeReplica(ToAny(config), context), IsOk());
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
   std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items =
       context.Encrypted();
@@ -290,19 +276,17 @@ TEST(RunContextInitializerFnTest, DoEmitsSignedRunContextWithKeyIndex1) {
 
 TEST(RunContextInitializerFnTest, GeneratesUniqueCryptoRandomKeysPerCall) {
   TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  RunContextInitializerFn fn1(&key_handle);
+  RunContextInitializerFn fn2(&key_handle);
   testing::FakeContext context1;
   testing::FakeContext context2;
 
   RunConfig config = CreateValidRunConfig();
+  ASSERT_THAT(fn1.InitializeReplica(ToAny(config), context1), IsOk());
+  ASSERT_THAT(fn2.InitializeReplica(ToAny(config), context2), IsOk());
 
-  RunContextInitializerFn::KV input1;
-  input1.data = config.SerializeAsString();
-  RunContextInitializerFn::KV input2;
-  input2.data = config.SerializeAsString();
-
-  ASSERT_THAT(fn.Do(std::move(input1), context1), IsOk());
-  ASSERT_THAT(fn.Do(std::move(input2), context2), IsOk());
+  ASSERT_THAT(fn1.FinalizeReplica(google::protobuf::Any(), context1), IsOk());
+  ASSERT_THAT(fn2.FinalizeReplica(google::protobuf::Any(), context2), IsOk());
 
   std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items1 =
       context1.Encrypted();

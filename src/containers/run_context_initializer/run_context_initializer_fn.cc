@@ -20,6 +20,7 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "google/protobuf/any.pb.h"
 #include "src/crypto/secure_random.h"
 #include "src/proto/run_context.pb.h"
 
@@ -27,10 +28,12 @@ namespace cobalt::trusted_shuffler {
 
 inline constexpr int kReencryptionKeyIndex = 0;
 
-absl::Status RunContextInitializerFn::Do(KV input, Context& context) {
+absl::Status RunContextInitializerFn::InitializeReplica(
+    google::protobuf::Any config, Context& context) {
   RunConfig run_config;
-  if (!run_config.ParseFromString(input.data)) {
-    return absl::InvalidArgumentError("Failed to parse input as RunConfig");
+  if (!config.UnpackTo(&run_config)) {
+    return absl::InvalidArgumentError(
+        "Failed to unpack configuration as RunConfig");
   }
 
   if (run_config.metric_identifiers().empty()) {
@@ -57,6 +60,21 @@ absl::Status RunContextInitializerFn::Do(KV input, Context& context) {
         "RunConfig target_batch_size must be greater than 0");
   }
 
+  run_config_ = std::move(run_config);
+  return absl::OkStatus();
+}
+
+absl::Status RunContextInitializerFn::Do(KV input, Context& context) {
+  return absl::OkStatus();
+}
+
+absl::Status RunContextInitializerFn::FinalizeReplica(
+    google::protobuf::Any config, Context& context) {
+  if (!run_config_.has_value()) {
+    return absl::FailedPreconditionError(
+        "No RunConfig was provided in InitializeReplica");
+  }
+
   if (signing_key_handle_ == nullptr) {
     return absl::InternalError("SigningKeyHandle is null");
   }
@@ -74,7 +92,7 @@ absl::Status RunContextInitializerFn::Do(KV input, Context& context) {
   RunContext run_context;
   run_context.set_run_id(*run_id);
   run_context.set_run_hash_key(*run_hash_key);
-  *run_context.mutable_run_config() = std::move(run_config);
+  *run_context.mutable_run_config() = *run_config_;
 
   std::string serialized_run_context = run_context.SerializeAsString();
 
@@ -90,7 +108,7 @@ absl::Status RunContextInitializerFn::Do(KV input, Context& context) {
 
   context.EmitEncrypted(
       kReencryptionKeyIndex,
-      KV(std::move(input.key), signed_run_context.SerializeAsString()));
+      KV(std::move(config), signed_run_context.SerializeAsString()));
 
   return absl::OkStatus();
 }
