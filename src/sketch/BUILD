@@ -22,9 +22,14 @@ cc_library(
     hdrs = ["hll_sketch.h"],
     deps = [
         "//src/proto:sketch_cc_proto",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/numeric:bits",
+        "@abseil-cpp//absl/numeric:int128",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/types:span",
+        "@boringssl//:crypto",
     ],
 )
 
@@ -36,6 +41,21 @@ cc_test(
         "//src/proto:sketch_cc_proto",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/strings:str_format",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "hll_sketch_stress_test",
+    srcs = ["hll_sketch_stress_test.cc"],
+    deps = [
+        ":hll_sketch",
+        "//src/proto:sketch_cc_proto",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/strings",
         "@googletest//:gtest_main",
     ],
 )
