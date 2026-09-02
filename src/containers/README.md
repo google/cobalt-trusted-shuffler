@@ -32,6 +32,7 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | [`releaser`](releaser/) | Unconditionally releases messages passed from upstream confidential stages. | Emits messages unencrypted via `EmitUnencrypted` at the pipeline's privacy/release boundary. | None (empty config) |
 | [`simple`](simple/) | Proof-of-concept identity transform. Buffers incoming blobs and forwards them. | Emits buffered blobs encrypted with key index 0 upon commit. | None (empty config) |
 | [`ingestion_verification`](ingestion_verification/) | Placeholder skeleton; currently does nothing. TODO(b/555370722): Implement KMS signature verification and device threshold evaluation. | Emits nothing currently. | None (accepts empty config) |
+| [`filter_and_strip_privacy_id`](filter_and_strip_privacy_id/) | Placeholder skeleton; currently does nothing. TODO(b/555372765): Implement threshold-based filtering and privacy ID stripping logic. | Emits nothing currently. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto) |
 | [`scatter_shuffle`](scatter_shuffle/) | Placeholder skeleton; currently does nothing. TODO(b/557296992): Implement scatter shuffle and group assignment logic. | Emits nothing currently. | None (accepts empty config) |
 
 ---
@@ -114,7 +115,23 @@ The **`ingestion_verification`** container is a planned confidential transform r
 
 ---
 
-## 6. `scatter_shuffle`
+## 6. `filter_and_strip_privacy_id`
+
+The **`filter_and_strip_privacy_id`** container filters partitions below reporting threshold and strips `privacy_id` identifiers from messages.
+
+> [!NOTE]
+> **This container currently serves as an empty skeleton.** It is currently a no-op placeholder.
+> TODO(b/555372765): Implement threshold-based filtering and privacy ID stripping logic.
+
+- **Purpose**: Validates run context and reporting thresholds, filters partitions that do not meet threshold requirements, and strips sensitive `privacy_id` identifiers from messages. (Currently does nothing).
+- **Configuration**: `SignedRunContext` / `RunContext` and `TrustedShufflerConfigConstraints`.
+- **Inputs**: Encrypted verification metadata from Ingestion Verification stage and encrypted message stream from Partition Grouping stage.
+- **Outputs**: Emits encrypted messages with `privacy_id` stripped out for partitions meeting threshold requirements.
+- **Documentation**: See [`src/containers/filter_and_strip_privacy_id/README.md`](filter_and_strip_privacy_id/README.md).
+
+---
+
+## 7. `scatter_shuffle`
 
 The **`scatter_shuffle`** container is responsible for Scatter Shuffle and Group Assignment in the Trusted Shuffler two-pass shuffle.
 
