@@ -80,6 +80,10 @@ if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/run_context_initializer
   cp -Rp ./bazel-bin/src/containers/run_context_initializer/* ${KOKORO_ARTIFACTS_DIR}/run_context_initializer/.
 
+  log "Copying ingestion_verification container output to kokoro artifacts dir."
+  mkdir -p ${KOKORO_ARTIFACTS_DIR}/ingestion_verification
+  cp -Rp ./bazel-bin/src/containers/ingestion_verification/* ${KOKORO_ARTIFACTS_DIR}/ingestion_verification/.
+
 
   # Kokoro tooling uses the `bazel_invocation_ids` file, but add a .txt
   # extension to it before also uploading it as an output artifact so
