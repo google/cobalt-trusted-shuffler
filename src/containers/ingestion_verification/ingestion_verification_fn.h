@@ -34,6 +34,10 @@ class IngestionVerificationFn : public confidential_federated_compute::fns::DoFn
 
   ~IngestionVerificationFn() override = default;
 
+  // Does any setup work needed for this Fn replica.
+  // Logs the project id, metric id, and threshold combinations from config constraints.
+  absl::Status InitializeReplica(google::protobuf::Any config, Context& context) override;
+
   // Processes an input KV pair. Currently a no-op that does nothing and emits
   // no outputs.
   absl::Status Do(KV input, Context& context) override;

@@ -37,6 +37,7 @@ cc_library(
     hdrs = ["ingestion_verification_fn.h"],
     deps = [
         "//src/proto:config_constraints_cc_proto",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/status",
         "@confidential-federated-compute//containers/fns:fns",
     ],

@@ -35,7 +35,7 @@ TODO(b/555370722): Implement the container transform logic.
 ## Configuration & Constraints
 
 ### Configuration Protos
-The container does not currently require custom runtime configuration parameters in `InitializeReplica`.
+The container does not currently require custom runtime configuration parameters in `InitializeReplica`. During session initialization (`InitializeReplica`), the container logs the ingested `TrustedShufflerConfigConstraints` metric threshold combinations (project ID, metric ID, threshold) in plaintext via `LOG(INFO)`.
 
 ### Configuration Constraints
 During transform initialization (`StreamInitializeTransform`), the transform ingests and validates `TrustedShufflerConfigConstraints` (defined in `src/proto/config_constraints.proto`) unpacked from `config_constraints`:

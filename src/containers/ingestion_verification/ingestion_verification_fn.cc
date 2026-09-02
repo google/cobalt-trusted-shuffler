@@ -14,9 +14,21 @@
 
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
 
+#include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "google/protobuf/any.pb.h"
 
 namespace cobalt::trusted_shuffler {
+
+absl::Status IngestionVerificationFn::InitializeReplica(google::protobuf::Any config,
+                                                        Context& context) {
+  for (const auto& metric_threshold : config_constraints_.metric_thresholds()) {
+    LOG(INFO) << "Config constraint: project_id=" << metric_threshold.project_id()
+              << ", metric_id=" << metric_threshold.metric_id()
+              << ", threshold=" << metric_threshold.threshold();
+  }
+  return absl::OkStatus();
+}
 
 absl::Status IngestionVerificationFn::Do(KV input, Context& context) {
   // Currently this container does nothing and emits no outputs.
