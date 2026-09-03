@@ -70,8 +70,23 @@ proto_library(
     srcs = ["sketch.proto"],
 )
 
-
 cc_proto_library(
     name = "sketch_cc_proto",
     deps = [":sketch_proto"],
 )
+
+proto_library(
+    name = "ingestion_proto",
+    srcs = ["ingestion.proto"],
+    deps = [
+        ":common_proto",
+        ":fingerprint_proto",
+        ":sketch_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "ingestion_cc_proto",
+    deps = [":ingestion_proto"],
+)
+

@@ -16,6 +16,9 @@ syntax = "proto3";
 
 package cobalt.trusted_shuffler;
 
+// Signals an integrity violation or validation failure detected during payload processing.
+message IntegrityFault {}
+
 // Uniquely identifies a metric data partition by project, metric, and epoch
 // index.
 message MetricEpochKey {
