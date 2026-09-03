@@ -27,6 +27,7 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | Container | Role & Purpose | Data Visibility & Emission | Protos / Config |
 | :--- | :--- | :--- | :--- |
 | [`run_context_initializer`](run_context_initializer/) | Bootstraps the pipeline execution. Validates `RunConfig`, generates cryptographically secure `run_id` and `run_hash_key`, and signs the `RunContext`. | Emits encrypted `SignedRunContext` (key index 0) for downstream TEE stages. | [`src/proto/run_context.proto`](../proto/run_context.proto) |
+| [`ingest_uploads`](ingest_uploads/) | Placeholder skeleton; currently does nothing. TODO(b/555370722): Implement ingest uploads logic. | Emits nothing currently. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`message_counter`](message_counter/) | Counts incoming messages while forwarding them. Outputs a final count summary report. | Emits messages encrypted (`OutputKey.type = MESSAGE`) and final `CountReport` unencrypted (`OutputKey.type = REPORT`). | [`src/proto/message_counter/`](../proto/message_counter/) |
 | [`releaser`](releaser/) | Unconditionally releases messages passed from upstream confidential stages. | Emits messages unencrypted via `EmitUnencrypted` at the pipeline's privacy/release boundary. | None (empty config) |
 | [`simple`](simple/) | Proof-of-concept identity transform. Buffers incoming blobs and forwards them. | Emits buffered blobs encrypted with key index 0 upon commit. | None (empty config) |
@@ -42,6 +43,19 @@ The **`run_context_initializer`** container is executed **first** in the pipelin
 - **Inputs**: Serialized `RunConfig` protocol buffer (defining `metric_identifiers`, epoch range, and target batch size) received unencrypted via `WriteRequest`.
 - **Outputs**: Emits a serialized `SignedRunContext` encrypted with the session re-encryption key. Downstream stages verify the signature against the attestation public key to ensure parameter integrity and prevent run confusion.
 - **Documentation**: See [`src/containers/run_context_initializer/README.md`](run_context_initializer/README.md).
+
+---
+
+## 2. `ingest_uploads`
+
+The **`ingest_uploads`** container is responsible for the First Ingestion Stage of device uploads in the Trusted Shuffler.
+
+> [!NOTE]
+> **This container currently serves as an empty skeleton.**
+> TODO(b/555370722): Implement message validation, multiset fingerprinting, HLL sketch aggregation, and report generation logic.
+
+- **Purpose**: First ingestion stage for device uploads (currently empty skeleton).
+- **Documentation**: See [`src/containers/ingest_uploads/README.md`](ingest_uploads/README.md).
 
 ---
 

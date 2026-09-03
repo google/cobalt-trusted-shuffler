@@ -1,0 +1,32 @@
+<!--
+ Copyright 2026 Google LLC.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
+# Ingest Uploads Container
+
+The `ingest_uploads` container is the confidential data transformation stage responsible for ingesting device uploads in the Trusted Shuffler.
+
+## Overview
+
+This container implements the `DoFn` / `FnConfidentialTransform` API for the First Ingestion Stage.
+
+It parses client device uploads (`TrustedShufflerUpload` as well as `ClientPayload` input envelopes from federated compute), validates metric identifiers and epoch bounds against a `SignedRunContext`, updates per-partition HyperLogLog (`HllSketch`) sketches and `MultisetFingerprint`, and emits encrypted `ShuffledMessage` records and `PartialIngestionReport` outputs.
+
+---
+
+## Configuration & Key Indices
+
+- **Key Index 0** (`reencryption_key 2`): Used for emitted encrypted messages.
+- **Key Index 1** (`reencryption_key 3`): Used for emitted partial ingestion reports.
