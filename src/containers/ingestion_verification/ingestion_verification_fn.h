@@ -18,19 +18,22 @@
 #include <utility>
 
 #include "absl/status/status.h"
-#include "containers/fns/do_fn.h"
+#include "google/protobuf/any.pb.h"
+#include "src/containers/base/first_record_config_do_fn.h"
 #include "src/proto/config_constraints.pb.h"
+#include "src/proto/run_context.pb.h"
 
 namespace cobalt::trusted_shuffler {
 
 // A DoFn class for ingestion verification.
 //
-// Currently this is an empty skeleton that does nothing.
-// TODO(b/555370722): Implement ingestion verification logic.
-class IngestionVerificationFn : public confidential_federated_compute::fns::DoFn {
+// Inherits Do(KV input, Context& context) from FirstRecordConfigDoFn:
+// - Record 0: Ingests SignedRunContext via OnConfig(), parses the inner
+//   RunContext proto, and logs its contents.
+// - Records 1..N: Routes client log records to OnRecord().
+class IngestionVerificationFn : public FirstRecordConfigDoFn<SignedRunContext> {
  public:
-  explicit IngestionVerificationFn(TrustedShufflerConfigConstraints config_constraints)
-      : config_constraints_(std::move(config_constraints)) {}
+  explicit IngestionVerificationFn(TrustedShufflerConfigConstraints config_constraints);
 
   ~IngestionVerificationFn() override = default;
 
@@ -38,11 +41,15 @@ class IngestionVerificationFn : public confidential_federated_compute::fns::DoFn
   // Logs the project id, metric id, and threshold combinations from config constraints.
   absl::Status InitializeReplica(google::protobuf::Any config, Context& context) override;
 
-  // Processes an input KV pair. Currently a no-op that does nothing and emits
-  // no outputs.
-  absl::Status Do(KV input, Context& context) override;
-
   const TrustedShufflerConfigConstraints& ConfigConstraints() const { return config_constraints_; }
+
+ protected:
+  // Ingests SignedRunContext on record 0, parses the inner RunContext, and prints its contents.
+  absl::Status OnConfig(const cobalt::trusted_shuffler::SignedRunContext& signed_run_context,
+                        Context& context) override;
+
+  // Ingests incoming client log records.
+  absl::Status OnRecord(KV record, Context& context) override;
 
  private:
   TrustedShufflerConfigConstraints config_constraints_;

@@ -14,9 +14,17 @@
 
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
 
+#include <cstdint>
+#include <string>
+#include <utility>
+
+#include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
+#include "absl/types/span.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "src/proto/config_constraints.pb.h"
+#include "src/proto/run_context.pb.h"
 #include "src/testing/fake_context.h"
 #include "src/testing/matchers.h"
 
@@ -24,57 +32,116 @@ namespace cobalt::trusted_shuffler {
 namespace {
 
 using ::absl_testing::IsOk;
+using ::absl_testing::StatusIs;
 using ::cobalt::trusted_shuffler::testing::EquivToProto;
 using ::cobalt::trusted_shuffler::testing::FakeContext;
-using ::fcp::confidentialcompute::CommitRequest;
-using ::fcp::confidentialcompute::ConfigureRequest;
 using ::testing::ElementsAre;
-using ::testing::IsEmpty;
+using ::testing::Eq;
 
-TEST(IngestionVerificationFnTest, ConfigureReturnsOk) {
-  FakeContext context;
-  IngestionVerificationFn fn(TrustedShufflerConfigConstraints{});
+// Helper struct for declarative test fixtures without positional tuples.
+struct MetricThresholdSpec {
+  int32_t project_id;
+  int32_t metric_id;
+  int32_t threshold;
+};
 
-  EXPECT_THAT(fn.Configure(ConfigureRequest(), context), IsOk());
+// Declarative helper requiring explicit arguments (no default parameters).
+TrustedShufflerConfigConstraints CreateConfigConstraints(
+    absl::Span<const MetricThresholdSpec> specs) {
+  TrustedShufflerConfigConstraints constraints;
+  for (const auto& spec : specs) {
+    auto* mt = constraints.add_metric_thresholds();
+    mt->set_project_id(spec.project_id);
+    mt->set_metric_id(spec.metric_id);
+    mt->set_threshold(spec.threshold);
+  }
+  return constraints;
 }
 
-TEST(IngestionVerificationFnTest, DoDoesNothing) {
-  FakeContext context;
-  IngestionVerificationFn fn(TrustedShufflerConfigConstraints{});
+SignedRunContext CreateValidSignedRunContext(int32_t project_id, int32_t metric_id,
+                                             std::string signature_value) {
+  RunContext run_context;
+  run_context.set_run_id("test_run_id_32_bytes_abcdefghij");
+  run_context.set_run_hash_key("test_hash_key_32_bytes_abcdefgh");
 
-  // The container does nothing right now and emits no outputs.
-  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(google::protobuf::Any(), "value"), context),
+  RunConfig* config = run_context.mutable_run_config();
+  config->set_min_epoch_index(10);
+  config->set_max_epoch_index(20);
+  config->set_target_batch_size(100);
+
+  RunConfig::MetricIdentifier* metric = config->add_metric_identifiers();
+  metric->set_project_id(project_id);
+  metric->set_metric_id(metric_id);
+
+  SignedRunContext signed_context;
+  signed_context.set_serialized_run_context(run_context.SerializeAsString());
+  signed_context.set_signature(std::move(signature_value));
+  return signed_context;
+}
+
+TEST(IngestionVerificationFnTest, SuccessfulConfigUnpackFollowedByDataRecords) {
+  const MetricThresholdSpec specs[] = {
+      {.project_id = 1001, .metric_id = 2, .threshold = 50},
+  };
+  auto constraints = CreateConfigConstraints(specs);
+  IngestionVerificationFn fn(constraints);
+  FakeContext context;
+
+  SignedRunContext signed_context = CreateValidSignedRunContext(1001, 2, "valid_signature_bytes");
+
+  // Record 0: Ingests configuration
+  ASSERT_THAT(fn.Do(IngestionVerificationFn::KV(signed_context.SerializeAsString()), context),
               IsOk());
 
-  EXPECT_THAT(context.Unencrypted(), IsEmpty());
-  EXPECT_THAT(context.Encrypted(), IsEmpty());
-  EXPECT_THAT(context.Releasable(), IsEmpty());
+  EXPECT_TRUE(fn.HasConfig());
+  ASSERT_TRUE(fn.Config().has_value());
+  EXPECT_THAT(fn.Config()->signature(), Eq("valid_signature_bytes"));
+
+  // Records 1..N: Ingests client data records
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV("client-record-1"), context), IsOk());
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV("client-record-2"), context), IsOk());
+}
+
+TEST(IngestionVerificationFnTest, CorruptedOrInvalidSignedRunContextPayloadReturnsError) {
+  const MetricThresholdSpec specs[] = {
+      {.project_id = 1001, .metric_id = 2, .threshold = 50},
+  };
+  auto constraints = CreateConfigConstraints(specs);
+  IngestionVerificationFn fn(constraints);
+  FakeContext context;
+
+  // Invalid proto wire data on record 0
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV("corrupted_payload_string"), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_FALSE(fn.HasConfig());
+}
+
+TEST(IngestionVerificationFnTest, CorruptedInnerRunContextReturnsError) {
+  const MetricThresholdSpec specs[] = {
+      {.project_id = 1001, .metric_id = 2, .threshold = 50},
+  };
+  auto constraints = CreateConfigConstraints(specs);
+  IngestionVerificationFn fn(constraints);
+  FakeContext context;
+
+  // Outer proto is SignedRunContext, but serialized_run_context is corrupt
+  SignedRunContext signed_context;
+  signed_context.set_serialized_run_context("\xff\xff\xff\xff");
+  signed_context.set_signature("valid_signature");
+
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(signed_context.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_FALSE(fn.HasConfig());
 }
 
 TEST(IngestionVerificationFnTest, ConfigConstraintsAccessor) {
-  TrustedShufflerConfigConstraints constraints;
-  auto* metric_threshold = constraints.add_metric_thresholds();
-  metric_threshold->set_project_id(1001);
-  metric_threshold->set_metric_id(2);
-  metric_threshold->set_threshold(100);
-
+  const MetricThresholdSpec specs[] = {
+      {.project_id = 1001, .metric_id = 2, .threshold = 100},
+  };
+  auto constraints = CreateConfigConstraints(specs);
   IngestionVerificationFn fn(constraints);
   EXPECT_THAT(fn.ConfigConstraints().metric_thresholds(),
-              ElementsAre(EquivToProto(*metric_threshold)));
-}
-
-TEST(IngestionVerificationFnTest, CommitReturnsOk) {
-  FakeContext context;
-  IngestionVerificationFn fn(TrustedShufflerConfigConstraints{});
-
-  EXPECT_THAT(fn.Commit(CommitRequest(), context), IsOk());
-}
-
-TEST(IngestionVerificationFnTest, FinalizeReplicaReturnsOk) {
-  FakeContext context;
-  IngestionVerificationFn fn(TrustedShufflerConfigConstraints{});
-
-  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+              ElementsAre(EquivToProto(constraints.metric_thresholds(0))));
 }
 
 }  // namespace

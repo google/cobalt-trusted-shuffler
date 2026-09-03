@@ -14,11 +14,19 @@
 
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
 
+#include <utility>
+
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "google/protobuf/any.pb.h"
+#include "src/proto/config_constraints.pb.h"
+#include "src/proto/run_context.pb.h"
 
 namespace cobalt::trusted_shuffler {
+
+IngestionVerificationFn::IngestionVerificationFn(
+    TrustedShufflerConfigConstraints config_constraints)
+    : config_constraints_(std::move(config_constraints)) {}
 
 absl::Status IngestionVerificationFn::InitializeReplica(google::protobuf::Any config,
                                                         Context& context) {
@@ -30,10 +38,20 @@ absl::Status IngestionVerificationFn::InitializeReplica(google::protobuf::Any co
   return absl::OkStatus();
 }
 
-absl::Status IngestionVerificationFn::Do(KV input, Context& context) {
-  // Currently this container does nothing and emits no outputs.
-  // TODO(b/555370722): Merge partial fingerprints evaluate device counts
-  // against reporting thresholds.
+absl::Status IngestionVerificationFn::OnConfig(
+    const cobalt::trusted_shuffler::SignedRunContext& signed_run_context, Context& context) {
+  RunContext run_context;
+  if (!run_context.ParseFromString(signed_run_context.serialized_run_context())) {
+    return absl::InvalidArgumentError(
+        "Failed to parse RunContext proto from serialized_run_context.");
+  }
+  LOG(INFO) << "SignedRunContext received:\n" << run_context.DebugString();
+  return absl::OkStatus();
+}
+
+absl::Status IngestionVerificationFn::OnRecord(KV record, Context& context) {
+  // Currently a no-op that does nothing and emits no outputs.
+  // TODO(b/555370722): Implement ingestion verification logic for data records.
   return absl::OkStatus();
 }
 

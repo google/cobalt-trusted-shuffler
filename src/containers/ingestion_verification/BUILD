@@ -36,10 +36,13 @@ cc_library(
     srcs = ["ingestion_verification_fn.cc"],
     hdrs = ["ingestion_verification_fn.h"],
     deps = [
+        "//src/containers/base:first_record_config_do_fn",
         "//src/proto:config_constraints_cc_proto",
+        "//src/proto:run_context_cc_proto",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/status",
         "@confidential-federated-compute//containers/fns:fns",
+        "@protobuf//:any_cc_proto",
     ],
 )
 
@@ -66,11 +69,13 @@ cc_test(
     deps = [
         ":ingestion_verification_fn",
         "//src/proto:config_constraints_cc_proto",
+        "//src/proto:run_context_cc_proto",
         "//src/testing:fake_context",
         "//src/testing:matchers",
+        "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/types:span",
         "@googletest//:gtest_main",
-        "@protobuf//:any_cc_proto",
     ],
 )
 
@@ -88,6 +93,7 @@ cc_test(
         "@protobuf//:any_cc_proto",
     ],
 )
+
 
 pkg_tar(
     name = "tar",
