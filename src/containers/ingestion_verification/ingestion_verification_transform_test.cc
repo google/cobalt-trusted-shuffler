@@ -20,12 +20,20 @@
 #include <vector>
 
 #include "absl/status/status_matchers.h"
+#include "absl/strings/str_cat.h"
+#include "absl/types/span.h"
 #include "containers/fns/confidential_transform_server.h"
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
+#include "src/proto/common.pb.h"
 #include "src/proto/config_constraints.pb.h"
+#include "src/proto/fingerprint.pb.h"
+#include "src/proto/ingestion.pb.h"
+#include "src/proto/run_context.pb.h"
+#include "src/sketch/hll_sketch.h"
+#include "src/testing/fake_context.h"
 #include "src/testing/fake_keys.h"
 #include "src/testing/matchers.h"
 
@@ -48,10 +56,10 @@ struct MetricThresholdSpec {
 };
 
 TrustedShufflerConfigConstraints CreateConfigConstraints(
-    const std::vector<MetricThresholdSpec>& specs) {
+    absl::Span<const MetricThresholdSpec> specs) {
   TrustedShufflerConfigConstraints constraints;
   for (const auto& spec : specs) {
-    auto* mt = constraints.add_metric_thresholds();
+    auto* const mt = constraints.add_metric_thresholds();
     mt->set_project_id(spec.project_id);
     mt->set_metric_id(spec.metric_id);
     mt->set_threshold(spec.threshold);
@@ -68,12 +76,12 @@ absl::StatusOr<std::unique_ptr<FnFactory>> ProvideFnFactory(
 }
 
 absl::StatusOr<std::unique_ptr<FnFactory>> ProvideFnFactory(
-    const std::vector<MetricThresholdSpec>& specs) {
+    absl::Span<const MetricThresholdSpec> specs) {
   return ProvideFnFactory(CreateConfigConstraints(specs));
 }
 
 TEST(IngestionVerificationTransformTest, CreateIngestionVerificationTransformReturnsNonNull) {
-  std::unique_ptr<FnConfidentialTransform> transform =
+  const std::unique_ptr<FnConfidentialTransform> transform =
       CreateIngestionVerificationTransform(std::make_unique<testing::FakeSigningKey>(),
                                            std::make_unique<testing::FakeEncryptionKeyHandle>());
 
@@ -81,30 +89,30 @@ TEST(IngestionVerificationTransformTest, CreateIngestionVerificationTransformRet
 }
 
 TEST(IngestionVerificationTransformTest, IngestionVerificationFnFactoryCreatesFnWithConstraints) {
-  TrustedShufflerConfigConstraints constraints =
+  const auto constraints =
       CreateConfigConstraints({{.project_id = 1001, .metric_id = 2, .threshold = 50}});
 
   IngestionVerificationFnFactory factory(constraints);
   EXPECT_THAT(factory.ConfigConstraints(), EquivToProto(constraints));
 
-  absl::StatusOr<std::unique_ptr<Fn>> fn = factory.CreateFn();
+  const auto fn = factory.CreateFn();
   ASSERT_THAT(fn, IsOk());
 
-  IngestionVerificationFn* iv_fn = dynamic_cast<IngestionVerificationFn*>(fn.value().get());
+  auto* const iv_fn = dynamic_cast<IngestionVerificationFn*>(fn.value().get());
   ASSERT_NE(iv_fn, nullptr);
   EXPECT_THAT(iv_fn->ConfigConstraints(), EquivToProto(constraints));
 }
 
 TEST(IngestionVerificationTransformTest,
      ProvideIngestionVerificationFnFactorySucceedsWithValidConstraints) {
-  TrustedShufflerConfigConstraints expected =
+  const auto expected =
       CreateConfigConstraints({{.project_id = 1, .metric_id = 10, .threshold = 50},
                                {.project_id = 1, .metric_id = 20, .threshold = 100}});
 
-  auto factory_or = ProvideFnFactory(expected);
+  const auto factory_or = ProvideFnFactory(expected);
   ASSERT_THAT(factory_or, IsOk());
   EXPECT_NE(factory_or.value(), nullptr);
-  auto* factory = dynamic_cast<IngestionVerificationFnFactory*>(factory_or->get());
+  auto* const factory = dynamic_cast<IngestionVerificationFnFactory*>(factory_or->get());
   ASSERT_NE(factory, nullptr);
   EXPECT_THAT(factory->ConfigConstraints(), EquivToProto(expected));
 }
@@ -142,18 +150,111 @@ TEST(IngestionVerificationTransformTest,
 
 TEST(IngestionVerificationTransformTest,
      ProvideIngestionVerificationFnFactoryCreatesFnWithConstraints) {
-  TrustedShufflerConfigConstraints expected =
+  const auto expected =
       CreateConfigConstraints({{.project_id = 1001, .metric_id = 1, .threshold = 100}});
 
-  auto factory_or = ProvideFnFactory(expected);
+  const auto factory_or = ProvideFnFactory(expected);
   ASSERT_THAT(factory_or, IsOk());
 
-  absl::StatusOr<std::unique_ptr<Fn>> fn = (*factory_or)->CreateFn();
+  const auto fn = (*factory_or)->CreateFn();
   ASSERT_THAT(fn, IsOk());
 
-  IngestionVerificationFn* iv_fn = dynamic_cast<IngestionVerificationFn*>(fn.value().get());
+  auto* const iv_fn = dynamic_cast<IngestionVerificationFn*>(fn.value().get());
   ASSERT_NE(iv_fn, nullptr);
   EXPECT_THAT(iv_fn->ConfigConstraints(), EquivToProto(expected));
+}
+
+TEST(IngestionVerificationTransformTest, FnFactoryCreatedFnExecutesLifecycleAndEmitsOutput) {
+  const auto factory_or = ProvideFnFactory({{.project_id = 1001, .metric_id = 2, .threshold = 10}});
+  ASSERT_THAT(factory_or, IsOk());
+
+  auto fn_or = (*factory_or)->CreateFn();
+  ASSERT_THAT(fn_or, IsOk());
+  std::unique_ptr<Fn> fn = std::move(fn_or.value());
+
+  testing::FakeContext context;
+  ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
+
+  // Record 0: SignedRunContext
+  RunContext run_context;
+  run_context.set_run_id("run-transform-test");
+  run_context.set_run_hash_key("hash-key-transform-test");
+  SignedRunContext signed_context;
+  signed_context.set_serialized_run_context(run_context.SerializeAsString());
+  signed_context.set_signature("valid-sig");
+
+  auto* const do_fn = dynamic_cast<confidential_federated_compute::fns::DoFn*>(fn.get());
+  ASSERT_NE(do_fn, nullptr);
+  ASSERT_THAT(
+      do_fn->Do(confidential_federated_compute::fns::DoFn::KV(signed_context.SerializeAsString()),
+                context),
+      IsOk());
+
+  // Record 1: PartialIngestionReport
+  PartialIngestionReport report;
+  report.mutable_partial_fingerprint()->set_run_id("run-transform-test");
+  report.mutable_partial_fingerprint()->set_stage_id(Stage::STAGE_INGESTION);
+  report.mutable_partial_fingerprint()->set_is_partial(true);
+  FingerprintEntry* const entry = report.mutable_partial_fingerprint()->add_entries();
+  entry->mutable_metric_epoch_key()->set_project_id(1001);
+  entry->mutable_metric_epoch_key()->set_metric_id(2);
+  entry->mutable_metric_epoch_key()->set_epoch_index(100);
+  entry->set_message_count(15);
+
+  MetricEpochSketch* const sketch_entry = report.add_metric_epoch_sketches();
+  sketch_entry->mutable_metric_epoch_key()->set_project_id(1001);
+  sketch_entry->mutable_metric_epoch_key()->set_metric_id(2);
+  sketch_entry->mutable_metric_epoch_key()->set_epoch_index(100);
+
+  auto hll = HllSketch::Create(14).value();
+  for (int i = 0; i < 15; ++i) {
+    hll.Insert(absl::StrCat("device_", i));
+  }
+  *sketch_entry->mutable_hyperloglog_sketch() = hll.ToProto();
+
+  ASSERT_THAT(
+      do_fn->Do(confidential_federated_compute::fns::DoFn::KV(report.SerializeAsString()), context),
+      IsOk());
+  ASSERT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context), IsOk());
+
+  ASSERT_EQ(context.Encrypted().size(), 1);
+  EXPECT_EQ(context.Encrypted()[0].first, IngestionVerificationFn::kReencryptionKeyIndex);
+
+  IngestionVerificationHeader header;
+  ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
+  EXPECT_FALSE(header.has_integrity_fault());
+  ASSERT_EQ(header.summary_report().partition_counts_size(), 1);
+
+  IngestionVerificationPayload payload;
+  ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
+  ASSERT_TRUE(payload.has_success());
+  EXPECT_EQ(payload.success().threshold_report().approved_partitions_size(), 1);
+  EXPECT_EQ(payload.success().canonical_fingerprint().entries_size(), 1);
+}
+
+TEST(IngestionVerificationTransformTest,
+     FnFactoryCreatedFnEmitsIntegrityFaultWhenNoConfigProvided) {
+  const auto factory_or = ProvideFnFactory({{.project_id = 1001, .metric_id = 2, .threshold = 10}});
+  ASSERT_THAT(factory_or, IsOk());
+
+  auto fn_or = (*factory_or)->CreateFn();
+  ASSERT_THAT(fn_or, IsOk());
+  std::unique_ptr<Fn> fn = std::move(fn_or.value());
+
+  testing::FakeContext context;
+  ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
+  ASSERT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context), IsOk());
+
+  ASSERT_EQ(context.Encrypted().size(), 1);
+  EXPECT_EQ(context.Encrypted()[0].first, IngestionVerificationFn::kReencryptionKeyIndex);
+
+  IngestionVerificationHeader header;
+  ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
+  EXPECT_TRUE(header.has_integrity_fault());
+
+  IngestionVerificationPayload payload;
+  ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
+  EXPECT_TRUE(payload.has_integrity_fault());
 }
 
 }  // namespace

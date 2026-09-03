@@ -92,6 +92,41 @@ absl::Status HllSketch::MergeFrom(const HllSketch& other) {
   return absl::OkStatus();
 }
 
+absl::Status HllSketch::MergeFrom(const HyperLogLogSketch& proto) {
+  if (proto.precision() != precision_) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Cannot merge HyperLogLogSketch proto with mismatched precision: ", proto.precision(),
+        " vs ", precision_));
+  }
+  if (proto.registers().empty()) {
+    return absl::OkStatus();
+  }
+  const size_t expected_registers = size_t{1} << precision_;
+  if (static_cast<size_t>(proto.registers_size()) != expected_registers) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Invalid HyperLogLogSketch registers count: ", proto.registers_size(),
+                     ", expected: ", expected_registers));
+  }
+  const uint32_t max_rho = static_cast<uint32_t>(64 - precision_ + 1);
+  for (size_t i = 0; i < expected_registers; ++i) {
+    const uint32_t reg_val = proto.registers(static_cast<int>(i));
+    if (reg_val > max_rho) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Register at index ", i, " has value ", reg_val, ", which exceeds maximum allowed rho ",
+          max_rho, " for precision ", precision_));
+    }
+  }
+
+  for (size_t i = 0; i < expected_registers; ++i) {
+    const uint8_t reg_val = static_cast<uint8_t>(proto.registers(static_cast<int>(i)));
+    if (reg_val > 0) {
+      registers_[i] = std::max(registers_[i], reg_val);
+      is_empty_ = false;
+    }
+  }
+  return absl::OkStatus();
+}
+
 absl::StatusOr<HllSketch> HllSketch::Merge(const HllSketch& a, const HllSketch& b) {
   HllSketch merged = a;
   auto status = merged.MergeFrom(b);
@@ -99,6 +134,55 @@ absl::StatusOr<HllSketch> HllSketch::Merge(const HllSketch& a, const HllSketch& 
     return status;
   }
   return merged;
+}
+
+absl::StatusOr<HllSketch> HllSketch::Merge(absl::Span<const HllSketch> sketches) {
+  if (sketches.empty()) {
+    return absl::InvalidArgumentError("Cannot merge empty collection of sketches.");
+  }
+  HllSketch merged = sketches[0];
+  for (size_t i = 1; i < sketches.size(); ++i) {
+    auto status = merged.MergeFrom(sketches[i]);
+    if (!status.ok()) {
+      return status;
+    }
+  }
+  return merged;
+}
+
+absl::StatusOr<HllSketch> HllSketch::Merge(absl::Span<const HyperLogLogSketch> sketches) {
+  if (sketches.empty()) {
+    return absl::InvalidArgumentError("Cannot merge empty collection of sketch protos.");
+  }
+  auto first = FromProto(sketches[0]);
+  if (!first.ok()) {
+    return first.status();
+  }
+  for (size_t i = 1; i < sketches.size(); ++i) {
+    auto status = first->MergeFrom(sketches[i]);
+    if (!status.ok()) {
+      return status;
+    }
+  }
+  return first;
+}
+
+absl::StatusOr<HllSketch> HllSketch::Merge(
+    const google::protobuf::RepeatedPtrField<HyperLogLogSketch>& sketches) {
+  if (sketches.empty()) {
+    return absl::InvalidArgumentError("Cannot merge empty collection of sketch protos.");
+  }
+  auto first = FromProto(sketches[0]);
+  if (!first.ok()) {
+    return first.status();
+  }
+  for (int i = 1; i < sketches.size(); ++i) {
+    auto status = first->MergeFrom(sketches[i]);
+    if (!status.ok()) {
+      return status;
+    }
+  }
+  return first;
 }
 
 absl::StatusOr<HllSketch> HllSketch::FromProto(const HyperLogLogSketch& proto) {

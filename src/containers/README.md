@@ -31,7 +31,7 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | [`message_counter`](message_counter/) | Counts incoming messages while forwarding them. Outputs a final count summary report. | Emits messages encrypted (`OutputKey.type = MESSAGE`) and final `CountReport` unencrypted (`OutputKey.type = REPORT`). | [`src/proto/message_counter/`](../proto/message_counter/) |
 | [`releaser`](releaser/) | Unconditionally releases messages passed from upstream confidential stages. | Emits messages unencrypted via `EmitUnencrypted` at the pipeline's privacy/release boundary. | None (empty config) |
 | [`simple`](simple/) | Proof-of-concept identity transform. Buffers incoming blobs and forwards them. | Emits buffered blobs encrypted with key index 0 upon commit. | None (empty config) |
-| [`ingestion_verification`](ingestion_verification/) | Placeholder skeleton; currently does nothing. TODO(b/555370722): Implement KMS signature verification and device threshold evaluation. | Emits nothing currently. | None (accepts empty config) |
+| [`ingestion_verification`](ingestion_verification/) | Verifies runtime configuration, merges partial multiset fingerprints and HyperLogLog cardinality sketches, and evaluates device counts against privacy thresholds. | Emits unencrypted `IngestionVerificationHeader` for the orchestrator and encrypted `IngestionVerificationPayload` (key index 0) for `FilterAndStripPrivacyId`. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto), [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`filter_and_strip_privacy_id`](filter_and_strip_privacy_id/) | Placeholder skeleton; currently does nothing. TODO(b/555372765): Implement threshold-based filtering and privacy ID stripping logic. | Emits nothing currently. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto) |
 | [`scatter_shuffle`](scatter_shuffle/) | Placeholder skeleton; currently does nothing. TODO(b/557296992): Implement scatter shuffle and group assignment logic. | Emits nothing currently. | None (accepts empty config) |
 
@@ -101,16 +101,12 @@ The **`simple`** container is a proof-of-concept identity transform container.
 
 ## 5. `ingestion_verification`
 
-The **`ingestion_verification`** container is a planned confidential transform responsible for KMS signature verification and device threshold evaluation.
+The **`ingestion_verification`** container is a confidential transform responsible for verifying runtime configuration, aggregating multiset fingerprints, merging HyperLogLog sketches, and evaluating device counts against reporting thresholds.
 
-> [!NOTE]
-> **This container does nothing right now.** It is currently an empty skeleton / no-op placeholder.
-> TODO(b/555370722): Implement signature verification, RunFingerprint aggregation, and device threshold evaluation.
-
-- **Purpose**: Verifies incoming ingestion reports and checks device counts against required thresholds. (Currently does nothing).
-- **Configuration**: None currently (accepts empty config).
-- **Inputs**: KV pairs processed via `Do`. (Currently discards input).
-- **Outputs**: Currently none (no-op implementation).
+- **Purpose**: Verifies incoming ingestion reports from `IngestUploads`, computes union device cardinality via merged HLL sketches, evaluates thresholds from `TrustedShufflerConfigConstraints`, and emits verification outputs.
+- **Configuration**: `TrustedShufflerConfigConstraints` unpacked during transform initialization; `SignedRunContext` ingested on Record 0.
+- **Inputs**: KV pairs processed via `Do` (Record 0 config, Records 1..N `PartialIngestionReport`).
+- **Outputs**: Emits unencrypted `IngestionVerificationHeader` (summary message counts or `IntegrityFault`) for the orchestrator, and encrypted `IngestionVerificationPayload` (approved partitions and canonical `RunFingerprint`, or `IntegrityFault`) under key index 0 for `FilterAndStripPrivacyId`.
 - **Documentation**: See [`src/containers/ingestion_verification/README.md`](ingestion_verification/README.md).
 
 ---
