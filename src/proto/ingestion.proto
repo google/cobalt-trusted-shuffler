@@ -55,3 +55,54 @@ message PartialIngestionReport {
   // HyperLogLog sketches tracking unique device/uploader cardinality per metric data partition.
   repeated MetricEpochSketch metric_epoch_sketches = 2;
 }
+
+// Message count associated with a specific metric data partition.
+message PartitionMessageCount {
+  // Metric data partition key identifying project, metric, and epoch index.
+  MetricEpochKey metric_epoch_key = 1;
+
+  // Number of messages received for this partition.
+  int64 message_count = 2;
+}
+
+// Summary report containing message counts for each active partition.
+message IngestSummaryReport {
+  // List of message counts for each partition.
+  repeated PartitionMessageCount partition_counts = 1;
+}
+
+// Report containing the run ID and list of approved partitions that met the
+// privacy threshold.
+message ThresholdReport {
+  // 32-byte cryptographic identifier for the pipeline run context.
+  bytes run_id = 1;
+
+  // Partitions that met or exceeded the required device count threshold.
+  repeated MetricEpochKey approved_partitions = 2;
+}
+
+// Unencrypted header emitted by the ingestion verification stage.
+message IngestionVerificationHeader {
+  oneof result {
+    IngestSummaryReport summary_report = 1;
+    IntegrityFault integrity_fault = 2;
+  }
+}
+
+// Successful result of the ingestion verification stage.
+message IngestionVerificationResult {
+  // Threshold report containing approved partitions.
+  ThresholdReport threshold_report = 1;
+
+  // Canonical merged fingerprint across all ingestion stage outputs.
+  RunFingerprint canonical_fingerprint = 2;
+}
+
+// Encrypted payload emitted by the ingestion verification stage.
+message IngestionVerificationPayload {
+  oneof result {
+    IngestionVerificationResult success = 1;
+    IntegrityFault integrity_fault = 2;
+  }
+}
+
