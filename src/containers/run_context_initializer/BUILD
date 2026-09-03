@@ -36,12 +36,13 @@ cc_library(
     srcs = ["run_context_initializer_fn.cc"],
     hdrs = ["run_context_initializer_fn.h"],
     deps = [
-        "//src/proto:run_context_cc_proto",
         "//src/crypto:secure_random",
+        "//src/proto:run_context_cc_proto",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
         "@confidential-federated-compute//containers/fns:fns",
         "@oak//cc/crypto:signing_key",
+        "@protobuf//:any_cc_proto",
     ],
 )
 
