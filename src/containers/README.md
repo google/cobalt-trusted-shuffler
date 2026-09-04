@@ -32,6 +32,7 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | [`releaser`](releaser/) | Unconditionally releases messages passed from upstream confidential stages. | Emits messages unencrypted via `EmitUnencrypted` at the pipeline's privacy/release boundary. | None (empty config) |
 | [`simple`](simple/) | Proof-of-concept identity transform. Buffers incoming blobs and forwards them. | Emits buffered blobs encrypted with key index 0 upon commit. | None (empty config) |
 | [`ingestion_verification`](ingestion_verification/) | Placeholder skeleton; currently does nothing. TODO(b/555370722): Implement KMS signature verification and device threshold evaluation. | Emits nothing currently. | None (accepts empty config) |
+| [`scatter_shuffle`](scatter_shuffle/) | Placeholder skeleton; currently does nothing. TODO(b/557296992): Implement scatter shuffle and group assignment logic. | Emits nothing currently. | None (accepts empty config) |
 
 ---
 
@@ -110,3 +111,18 @@ The **`ingestion_verification`** container is a planned confidential transform r
 - **Inputs**: KV pairs processed via `Do`. (Currently discards input).
 - **Outputs**: Currently none (no-op implementation).
 - **Documentation**: See [`src/containers/ingestion_verification/README.md`](ingestion_verification/README.md).
+
+---
+
+## 6. `scatter_shuffle`
+
+The **`scatter_shuffle`** container is responsible for Scatter Shuffle and Group Assignment in the Trusted Shuffler two-pass shuffle.
+
+**Note:** This container currently serves as an empty skeleton. It is currently a no-op placeholder.
+TODO(b/557296992): Implement message decryption, batch validation, cryptographic shuffling, group assignment, and payload re-encryption logic.
+
+- **Purpose**: Shuffles batches of messages partitioned by `MetricEpochKey`, validates batch size and invariants, assigns group IDs (`group_id = new_position % batch_num`), increments `shuffle_count` to 1, and re-encrypts payloads under key 7.
+- **Configuration**: None currently (accepts empty config).
+- **Inputs**: `actual_batch_size` messages of `EncryptedKV<MetricEpochKey, ShuffledMessage, 6>` (including dummy padding messages from the pre-padding stage).
+- **Outputs**: Emits `EncryptedKV<int32 group_id, ShuffledMessage, 7>` with unencrypted `group_id` header and payload re-encrypted under key 7.
+- **Documentation**: See [`src/containers/scatter_shuffle/README.md`](scatter_shuffle/README.md).
