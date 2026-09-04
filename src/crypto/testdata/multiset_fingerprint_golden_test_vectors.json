@@ -1,0 +1,20 @@
+{
+  "key": "golden-test-run-hash-key-32byte",
+  "sketch1_messages": [
+    "message-alpha-001",
+    "message-beta-002",
+    "message-gamma-003",
+    "message-delta-004",
+    "message-epsilon-005"
+  ],
+  "sketch2_messages": [
+    "message-zeta-006",
+    "message-eta-007",
+    "message-theta-008",
+    "message-iota-009",
+    "message-kappa-010"
+  ],
+  "expected_sketch1_digest_hex": "1f2a2546abfbc713761d40381e7baf6ad0c3ef7a810501f4ba38bf8c2fa25db4",
+  "expected_sketch2_digest_hex": "437a968e28bac594e52aaf39eabc87f20437c945961fdbc8c8157056a67f5566",
+  "expected_merged_digest_hex": "62a4bbd4d4b68ca85b47ef720938375cd4fbb8c01724ddbd824e2fe2d621b31a"
+}

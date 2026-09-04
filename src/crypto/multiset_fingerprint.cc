@@ -14,12 +14,17 @@
 
 #include "src/crypto/multiset_fingerprint.h"
 
+#include <openssl/hmac.h>
+#include <openssl/sha.h>
+
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
-#include <map>
 #include <string>
 #include <tuple>
 #include <utility>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
@@ -44,27 +49,75 @@ MetricEpochKey TupleToMetricEpochKey(const MetricEpochTuple& t) {
   return key;
 }
 
+// Computes HMAC-SHA256 over `data` using `key`. Returns a 32-byte digest.
+std::string ComputeHmacSha256(const absl::string_view key, const absl::string_view data) {
+  std::string digest(SHA256_DIGEST_LENGTH, '\0');
+  unsigned int len = 0;
+  const void* key_ptr = key.empty() ? "" : key.data();
+  const uint8_t* data_ptr = data.empty() ? reinterpret_cast<const uint8_t*>("")
+                                         : reinterpret_cast<const uint8_t*>(data.data());
+  HMAC(EVP_sha256(), key_ptr, key.size(), data_ptr, data.size(),
+       reinterpret_cast<uint8_t*>(digest.data()), &len);
+  return digest;
+}
+
+// Adds `addend` to `accumulator` modulo 2^(8*fingerprint_size) using big-endian byte order.
+void AddModulo2To256(const absl::string_view addend, std::size_t fingerprint_size,
+                     std::string& accumulator) {
+  if (addend.size() != fingerprint_size) {
+    return;
+  }
+  if (accumulator.size() != fingerprint_size) {
+    accumulator.assign(fingerprint_size, '\0');
+  }
+
+  uint8_t* acc_8 = reinterpret_cast<uint8_t*>(accumulator.data());
+  const uint8_t* add_8 = reinterpret_cast<const uint8_t*>(addend.data());
+
+  uint16_t carry = 0;
+  for (std::size_t i = fingerprint_size; i > 0; --i) {
+    carry += acc_8[i - 1] + add_8[i - 1];
+    acc_8[i - 1] = static_cast<uint8_t>(carry & 0xFF);
+    carry >>= 8;
+  }
+}
+
 }  // namespace
 
 MultisetFingerprint::MultisetFingerprint(Stage stage_id, bool is_partial,
-                                         absl::string_view run_id)
-    : stage_id_(stage_id), is_partial_(is_partial), run_id_(run_id) {}
-
-MultisetFingerprint::MultisetFingerprint(Stage stage_id, bool is_partial,
-                                         const RunContext& run_context)
-    : stage_id_(stage_id), is_partial_(is_partial), run_id_(run_context.run_id()) {}
+                                         const RunContext& run_context,
+                                         std::size_t fingerprint_size)
+    : stage_id_(stage_id),
+      is_partial_(is_partial),
+      run_id_(run_context.run_id()),
+      run_hash_key_(run_context.run_hash_key()),
+      fingerprint_size_(fingerprint_size) {}
 
 void MultisetFingerprint::AddMessage(const ShuffledMessage& message) {
   if (message.is_padding()) {
     return;
   }
-  partition_counts_[MetricEpochKeyToTuple(message.metric_epoch_key())]++;
+  const MetricEpochTuple tuple = MetricEpochKeyToTuple(message.metric_epoch_key());
+  PartitionValue& partition = partitions_[tuple];
+  partition.count++;
+
+  const std::string hmac = ComputeHmacSha256(run_hash_key_, message.customer_message());
+  absl::string_view addend = hmac;
+  if (addend.size() > fingerprint_size_) {
+    addend = addend.substr(addend.size() - fingerprint_size_);
+  }
+  AddModulo2To256(addend, fingerprint_size_, partition.fingerprint);
 }
 
 absl::Status MultisetFingerprint::Merge(const RunFingerprint& partial_fingerprint) {
   if (is_partial_) {
     return absl::FailedPreconditionError(
         "Cannot merge fingerprints into a partial fingerprint; merging is only supported for building a complete stage fingerprint.");
+  }
+  if (partial_fingerprint.run_id() != run_id_) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Cannot merge fingerprints from different run IDs, attempting to merge run ID ",
+        partial_fingerprint.run_id(), " into run ID ", run_id_));
   }
   if (partial_fingerprint.stage_id() != stage_id_) {
     return absl::InvalidArgumentError(
@@ -77,8 +130,12 @@ absl::Status MultisetFingerprint::Merge(const RunFingerprint& partial_fingerprin
   }
 
   for (const FingerprintEntry& entry : partial_fingerprint.entries()) {
-    partition_counts_[MetricEpochKeyToTuple(entry.metric_epoch_key())] +=
-        entry.message_count();
+    const MetricEpochTuple tuple = MetricEpochKeyToTuple(entry.metric_epoch_key());
+    PartitionValue& partition = partitions_[tuple];
+    partition.count += entry.message_count();
+    if (!entry.fingerprint().empty()) {
+      AddModulo2To256(entry.fingerprint(), fingerprint_size_, partition.fingerprint);
+    }
   }
 
   return absl::OkStatus();
@@ -90,12 +147,11 @@ RunFingerprint MultisetFingerprint::Build() const {
   fingerprint.set_stage_id(stage_id_);
   fingerprint.set_is_partial(is_partial_);
 
-  for (const auto& [tuple_key, count] : partition_counts_) {
+  for (const auto& [tuple_key, partition] : partitions_) {
     FingerprintEntry* entry = fingerprint.add_entries();
     *entry->mutable_metric_epoch_key() = TupleToMetricEpochKey(tuple_key);
-    entry->set_message_count(count);
-    // TODO(b/555363748): Implement actual cryptographic multiset fingerprinting algorithm (bytes
-    // are currently empty).
+    entry->set_message_count(partition.count);
+    entry->set_fingerprint(partition.fingerprint);
   }
 
   return fingerprint;
@@ -111,14 +167,29 @@ bool MultisetFingerprint::VerifyComplete(const RunFingerprint& complete_fingerpr
   if (complete_fingerprint.is_partial()) {
     return false;
   }
-
-  std::map<MetricEpochTuple, int64_t> input_counts;
-  for (const FingerprintEntry& entry : complete_fingerprint.entries()) {
-    input_counts[MetricEpochKeyToTuple(entry.metric_epoch_key())] +=
-        entry.message_count();
+  if (static_cast<std::size_t>(complete_fingerprint.entries_size()) != partitions_.size()) {
+    return false;
   }
 
-  return partition_counts_ == input_counts;
+  absl::flat_hash_set<MetricEpochTuple> seen_keys;
+  for (const FingerprintEntry& entry : complete_fingerprint.entries()) {
+    const MetricEpochTuple tuple = MetricEpochKeyToTuple(entry.metric_epoch_key());
+    if (!seen_keys.insert(tuple).second) {
+      return false;
+    }
+    const auto it = partitions_.find(tuple);
+    if (it == partitions_.end()) {
+      return false;
+    }
+    if (it->second.count != entry.message_count()) {
+      return false;
+    }
+    if (it->second.fingerprint != entry.fingerprint()) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 bool MultisetFingerprint::VerifyCompleteForMetricEpoch(
@@ -133,27 +204,41 @@ bool MultisetFingerprint::VerifyCompleteForMetricEpoch(
     return false;
   }
 
-  if (partition_counts_.size() > 1) {
+  if (partitions_.size() > 1) {
     return false;
   }
 
   const MetricEpochTuple tuple_key = MetricEpochKeyToTuple(metric_epoch_key);
-  if (partition_counts_.size() == 1 && partition_counts_.begin()->first != tuple_key) {
+  if (partitions_.size() == 1 && partitions_.begin()->first != tuple_key) {
     return false;
   }
 
-  const std::map<MetricEpochTuple, int64_t>::const_iterator it =
-      partition_counts_.find(tuple_key);
-  const int64_t expected_count = (it != partition_counts_.end()) ? it->second : 0;
+  const auto it = partitions_.find(tuple_key);
+  const int64_t expected_count = (it != partitions_.end()) ? it->second.count : 0;
+  const std::string& expected_fp =
+      (it != partitions_.end()) ? it->second.fingerprint : std::string();
 
-  int64_t actual_count = 0;
-  for (const FingerprintEntry& entry : complete_fingerprint.entries()) {
-    if (MetricEpochKeyToTuple(entry.metric_epoch_key()) == tuple_key) {
-      actual_count += entry.message_count();
-    }
+  const auto& entries = complete_fingerprint.entries();
+  const auto matching_it =
+      std::find_if(entries.begin(), entries.end(), [&](const FingerprintEntry& entry) {
+        return MetricEpochKeyToTuple(entry.metric_epoch_key()) == tuple_key;
+      });
+
+  if (matching_it == entries.end()) {
+    return expected_count == 0 && expected_fp.empty();
   }
 
-  return expected_count == actual_count;
+  // Ensure there are no duplicate entries for the partition.
+  const auto duplicate_it =
+      std::find_if(matching_it + 1, entries.end(), [&](const FingerprintEntry& entry) {
+        return MetricEpochKeyToTuple(entry.metric_epoch_key()) == tuple_key;
+      });
+  if (duplicate_it != entries.end()) {
+    return false;
+  }
+
+  return matching_it->message_count() == expected_count &&
+         matching_it->fingerprint() == expected_fp;
 }
 
 }  // namespace cobalt::trusted_shuffler

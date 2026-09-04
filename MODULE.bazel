@@ -8,6 +8,7 @@ bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "toolchains_llvm", version = "1.4.0")
 bazel_dep(name = "rules_oci", version = "2.2.6")
 bazel_dep(name = "rules_pkg", version = "1.1.0")
+bazel_dep(name = "rules_python", version = "1.6.0")
 
 cfc_deps = use_extension("@confidential-federated-compute//:extensions.bzl", "cfc_deps")
 use_repo(cfc_deps, "federated-compute", "oak")
@@ -28,6 +29,21 @@ http_archive(
     name = "sysroot",
     sha256 = "f58c289b3ccb28895ad8ca408ac366e709037088e8b5c28aca18212adc18c31e",
     url = "https://github.com/google-parfait/confidential-federated-compute/releases/download/sysroot-20250618/sysroot.tar.xz",
+)
+
+http_archive(
+    name = "pymsh",
+    build_file_content = """load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "pymsh",
+    srcs = ["pymsh.py"],
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "7bfccae7785f0344637ccf65eadbb0e4bbf844f3de1e5a2d384e6d6ff82bcf68",
+    type = "zip",
+    urls = ["https://files.pythonhosted.org/packages/4e/37/9a770747cb05b5aa4c062ce7c0069635943cd72d734b5db980253921adc6/pymsh-1.2.3-py3-none-any.whl"],
 )
 
 # Allow non-hermetic builds when building in downstream projects inheriting this module.
