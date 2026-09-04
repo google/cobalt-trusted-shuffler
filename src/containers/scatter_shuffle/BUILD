@@ -39,8 +39,20 @@ cc_library(
     srcs = ["scatter_shuffle_fn.cc"],
     hdrs = ["scatter_shuffle_fn.h"],
     deps = [
+        "//src/batching:batch_calculator",
+        "//src/containers/base:first_record_config_do_fn",
+        "//src/crypto:shuffle",
+        "//src/crypto:verify_signed_run_context",
+        "//src/proto:common_cc_proto",
+        "//src/proto:ingestion_cc_proto",
+        "//src/proto:run_context_cc_proto",
+        "//src/proto:scatter_shuffle_cc_proto",
+        "//src/util:metric_epoch_key_utils",
         "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings:string_view",
         "@confidential-federated-compute//containers/fns:fns",
+        "@protobuf//:any_cc_proto",
     ],
 )
 
@@ -50,19 +62,30 @@ cc_library(
     hdrs = ["scatter_shuffle_transform.h"],
     deps = [
         ":scatter_shuffle_fn",
+        "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
         "@confidential-federated-compute//containers/fns:fns",
+        "@oak//cc/crypto:encryption_key",
+        "@oak//cc/crypto:signing_key",
         "@protobuf//:any_cc_proto",
     ],
 )
 
 cc_test(
     name = "scatter_shuffle_fn_test",
+    size = "small",
     srcs = ["scatter_shuffle_fn_test.cc"],
     deps = [
         ":scatter_shuffle_fn",
+        "//src/proto:common_cc_proto",
+        "//src/proto:fingerprint_cc_proto",
+        "//src/proto:ingestion_cc_proto",
+        "//src/proto:run_context_cc_proto",
+        "//src/proto:scatter_shuffle_cc_proto",
         "//src/testing:fake_context",
+        "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/strings",
         "@googletest//:gtest_main",
         "@protobuf//:any_cc_proto",
     ],
@@ -70,6 +93,7 @@ cc_test(
 
 cc_test(
     name = "scatter_shuffle_transform_test",
+    size = "small",
     srcs = ["scatter_shuffle_transform_test.cc"],
     deps = [
         ":scatter_shuffle_fn",

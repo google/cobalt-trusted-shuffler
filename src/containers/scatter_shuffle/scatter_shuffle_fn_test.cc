@@ -14,27 +14,670 @@
 
 #include "src/containers/scatter_shuffle/scatter_shuffle_fn.h"
 
+#include <cstdint>
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/proto/common.pb.h"
+#include "src/proto/fingerprint.pb.h"
+#include "src/proto/ingestion.pb.h"
+#include "src/proto/run_context.pb.h"
+#include "src/proto/scatter_shuffle.pb.h"
 #include "src/testing/fake_context.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
 
 using ::absl_testing::IsOk;
+using ::absl_testing::StatusIs;
 using ::testing::IsEmpty;
+using ::testing::SizeIs;
 
-TEST(ScatterShuffleFnTest, DoDoesNothing) {
+constexpr absl::string_view kTestRunId = "test_run_id_01234567890123456789";
+constexpr int32_t kDefaultProjectId = 100;
+constexpr int32_t kDefaultMetricId = 200;
+constexpr int64_t kDefaultEpochIndex = 42;
+
+struct TestIngestionVerificationResultSpec {
+  absl::string_view run_id = kTestRunId;
+  int32_t target_batch_size = 5;
+  int64_t min_epoch_index = 0;
+  int64_t max_epoch_index = 100;
+  int64_t message_count = 11;
+  int32_t project_id = kDefaultProjectId;
+  int32_t metric_id = kDefaultMetricId;
+  int64_t epoch_index = kDefaultEpochIndex;
+};
+
+IngestionVerificationResult CreateIngestionVerificationResult(
+    const TestIngestionVerificationResultSpec& spec) {
+  IngestionVerificationResult result;
+
+  RunContext run_context;
+  run_context.set_run_id(std::string(spec.run_id));
+  run_context.set_run_hash_key("hash_key_01234567890123456789012");
+  RunConfig* const run_config = run_context.mutable_run_config();
+  run_config->set_target_batch_size(spec.target_batch_size);
+  run_config->set_min_epoch_index(spec.min_epoch_index);
+  run_config->set_max_epoch_index(spec.max_epoch_index);
+  RunConfig::MetricIdentifier* const metric_identifier = run_config->add_metric_identifiers();
+  metric_identifier->set_project_id(spec.project_id);
+  metric_identifier->set_metric_id(spec.metric_id);
+
+  SignedRunContext* const signed_run_context = result.mutable_signed_run_context();
+  signed_run_context->set_serialized_run_context(run_context.SerializeAsString());
+  signed_run_context->set_signature("fake_signature");
+
+  MetricEpochKey* const approved_partition =
+      result.mutable_threshold_report()->add_approved_partitions();
+  approved_partition->set_project_id(spec.project_id);
+  approved_partition->set_metric_id(spec.metric_id);
+  approved_partition->set_epoch_index(spec.epoch_index);
+
+  result.mutable_canonical_fingerprint()->set_stage_id(Stage::STAGE_INGESTION);
+  FingerprintEntry* const entry = result.mutable_canonical_fingerprint()->add_entries();
+  entry->mutable_metric_epoch_key()->set_project_id(spec.project_id);
+  entry->mutable_metric_epoch_key()->set_metric_id(spec.metric_id);
+  entry->mutable_metric_epoch_key()->set_epoch_index(spec.epoch_index);
+  entry->set_fingerprint("fake_digest_32_bytes_long_012345");
+  entry->set_message_count(spec.message_count);
+
+  return result;
+}
+
+ScatterShuffleFn::KV CreateConfigRecord(const IngestionVerificationResult& result) {
+  return ScatterShuffleFn::KV(google::protobuf::Any(), result.SerializeAsString());
+}
+
+struct TestMessageSpec {
+  absl::string_view payload;
+  bool is_padding = false;
+  absl::string_view run_id = kTestRunId;
+  int32_t shuffle_count = 0;
+  int32_t project_id = kDefaultProjectId;
+  int32_t metric_id = kDefaultMetricId;
+  int64_t epoch_index = kDefaultEpochIndex;
+};
+
+ShuffledMessage CreateMessage(const TestMessageSpec& spec) {
+  ShuffledMessage message;
+  message.set_run_id(std::string(spec.run_id));
+  message.set_customer_message(std::string(spec.payload));
+  message.set_is_padding(spec.is_padding);
+  message.set_shuffle_count(spec.shuffle_count);
+
+  MetricEpochKey* const metric_epoch_key = message.mutable_metric_epoch_key();
+  metric_epoch_key->set_project_id(spec.project_id);
+  metric_epoch_key->set_metric_id(spec.metric_id);
+  metric_epoch_key->set_epoch_index(spec.epoch_index);
+
+  return message;
+}
+
+ScatterShuffleFn::KV CreateMessageRecord(const ShuffledMessage& message) {
+  google::protobuf::Any key;
+  key.PackFrom(message.metric_epoch_key());
+  return ScatterShuffleFn::KV(std::move(key), message.SerializeAsString());
+}
+
+TEST(ScatterShuffleFnTest, SuccessfulScatterShuffleAndGroupAssignment) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  EXPECT_THAT(fn.Do(ScatterShuffleFn::KV(google::protobuf::Any(), "value"), context), IsOk());
+  // Ingest Record 0: IngestionVerificationResult with target_batch_size = 6, message_count = 11.
+  // Batch calculation:
+  // batch_num = ceil(11 / 6) = 2
+  // remainder_count = 11 % 6 = 5
+  // padding_count = (6 - 5) % 6 = 1 (so 11 + 1 = 12 = 2 * 6)
+  // target_batch_size = 6
+  const IngestionVerificationResult verification_result =
+      CreateIngestionVerificationResult({.target_batch_size = 6, .message_count = 11});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
 
+  // Ingest Records 1..6: 4 real messages + 2 padding messages.
+  const std::vector<std::string> real_payloads = {"msg_0", "msg_1", "msg_2", "msg_3"};
+  const std::vector<std::string> padding_payloads = {"pad_0", "pad_1"};
+
+  for (const std::string& payload : real_payloads) {
+    const ShuffledMessage message = CreateMessage({.payload = payload, .is_padding = false});
+    ASSERT_THAT(fn.Do(CreateMessageRecord(message), context), IsOk());
+  }
+  for (const std::string& payload : padding_payloads) {
+    const ShuffledMessage message = CreateMessage({.payload = payload, .is_padding = true});
+    ASSERT_THAT(fn.Do(CreateMessageRecord(message), context), IsOk());
+  }
+
+  // Finalize replica session.
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+
+  // Verify privacy boundary and emission contracts:
+  // 1. Errors: None.
+  EXPECT_THAT(context.Errors(), IsEmpty());
+  // 2. Unencrypted: Strictly EMPTY. No sensitive payloads or messages leaked in plaintext.
   EXPECT_THAT(context.Unencrypted(), IsEmpty());
-  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  // 3. Releasable: Empty.
   EXPECT_THAT(context.Releasable(), IsEmpty());
+  // 4. Encrypted: Exactly 6 messages emitted under kReencryptionKeyIndex (0).
+  const std::vector<std::pair<int, ScatterShuffleFn::KV>>& encrypted = context.Encrypted();
+  ASSERT_THAT(encrypted, SizeIs(6));
+
+  std::map<int32_t, int> group_counts;
+  std::vector<std::string> emitted_real_payloads;
+  std::vector<std::string> emitted_padding_payloads;
+
+  for (const auto& [key_idx, kv] : encrypted) {
+    EXPECT_EQ(key_idx, kReencryptionKeyIndex);
+
+    // Verify visible unencrypted header.
+    ScatterShuffleHeader header;
+    ASSERT_TRUE(kv.key.UnpackTo(&header));
+    ASSERT_EQ(header.header_type_case(), ScatterShuffleHeader::kGroupId);
+    const int32_t group_id = header.group_id();
+    EXPECT_GE(group_id, 0);
+    EXPECT_LT(group_id, 2);
+    group_counts[group_id]++;
+
+    // Verify encrypted payload content.
+    ShuffledMessage emitted_message;
+    ASSERT_TRUE(emitted_message.ParseFromString(kv.data));
+    EXPECT_EQ(emitted_message.run_id(), kTestRunId);
+    EXPECT_EQ(emitted_message.shuffle_count(), 1);
+    EXPECT_EQ(emitted_message.group_id(), group_id);
+    EXPECT_EQ(emitted_message.metric_epoch_key().project_id(), kDefaultProjectId);
+    EXPECT_EQ(emitted_message.metric_epoch_key().metric_id(), kDefaultMetricId);
+    EXPECT_EQ(emitted_message.metric_epoch_key().epoch_index(), kDefaultEpochIndex);
+
+    if (emitted_message.is_padding()) {
+      emitted_padding_payloads.push_back(emitted_message.customer_message());
+    } else {
+      emitted_real_payloads.push_back(emitted_message.customer_message());
+    }
+  }
+
+  // Multiset preservation checks.
+  EXPECT_THAT(emitted_real_payloads, ::testing::UnorderedElementsAreArray(real_payloads));
+  EXPECT_THAT(emitted_padding_payloads, ::testing::UnorderedElementsAreArray(padding_payloads));
+
+  // Balanced modulo group distribution.
+  EXPECT_EQ(group_counts[0], 3);
+  EXPECT_EQ(group_counts[1], 3);
+}
+
+TEST(ScatterShuffleFnTest, BatchParametersEstablishedOnFirstDataRecord) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  const IngestionVerificationResult verification_result =
+      CreateIngestionVerificationResult({.target_batch_size = 6, .message_count = 11});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  // Batch parameters are not established before any data records arrive.
+  EXPECT_FALSE(fn.CurrentBatchParameters().has_value());
+
+  // Record 1 arrives, establishing batch parameters for its partition.
+  const ShuffledMessage message = CreateMessage({.payload = "msg_0"});
+  ASSERT_THAT(fn.Do(CreateMessageRecord(message), context), IsOk());
+
+  ASSERT_TRUE(fn.CurrentBatchParameters().has_value());
+  EXPECT_EQ(fn.CurrentBatchParameters()->target_batch_size, 6);
+  EXPECT_EQ(fn.CurrentBatchParameters()->batch_num, 2);
+  EXPECT_EQ(fn.CurrentBatchParameters()->padding_count, 1);
+}
+
+TEST(ScatterShuffleFnTest, RejectsRecordWithUnapprovedPartition) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  // IngestionVerificationResult only approves (100, 200, 42).
+  const IngestionVerificationResult verification_result =
+      CreateIngestionVerificationResult({.project_id = 100, .metric_id = 200, .epoch_index = 42});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  // Record has unapproved partition (999, 200, 42).
+  const ShuffledMessage message = CreateMessage({
+      .payload = "m1",
+      .project_id = 999,
+      .metric_id = 200,
+      .epoch_index = 42,
+  });
+  EXPECT_THAT(fn.Do(CreateMessageRecord(message), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Failed to compute batch parameters for partition."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
+TEST(ScatterShuffleFnTest, RejectsRecordWithMissingPartitionInFingerprint) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  IngestionVerificationResult verification_result =
+      CreateIngestionVerificationResult({.project_id = 100, .metric_id = 200, .epoch_index = 42});
+  // Clear canonical_fingerprint entries so partition is approved but has no fingerprint entry.
+  verification_result.mutable_canonical_fingerprint()->clear_entries();
+
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  const ShuffledMessage message = CreateMessage({.payload = "m1"});
+  EXPECT_THAT(fn.Do(CreateMessageRecord(message), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Failed to compute batch parameters for partition."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
+TEST(ScatterShuffleFnTest, RejectsRecordWithZeroMessageCountInFingerprint) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({
+      .message_count = 0,
+      .project_id = 100,
+      .metric_id = 200,
+      .epoch_index = 42,
+  });
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  const ShuffledMessage message = CreateMessage({.payload = "m1"});
+  EXPECT_THAT(fn.Do(CreateMessageRecord(message), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Failed to compute batch parameters for partition."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
+TEST(ScatterShuffleFnTest, RejectsRecordWithNonMetricEpochKeyHeader) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  const ShuffledMessage message = CreateMessage({.payload = "m1"});
+  // Provide empty Any as key rather than MetricEpochKey.
+  ScatterShuffleFn::KV kv(google::protobuf::Any(), message.SerializeAsString());
+  EXPECT_THAT(fn.Do(std::move(kv), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Record key is not of expected type MetricEpochKey."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
+TEST(ScatterShuffleFnTest, RejectsEmptyBatchWithIntegrityFault) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  // Finalize without sending any messages.
+  EXPECT_THAT(
+      fn.FinalizeReplica(google::protobuf::Any(), context),
+      StatusIs(absl::StatusCode::kFailedPrecondition,
+               "IntegrityFault: Batch parameters were not established (no records received)."));
+
+  // Must emit unencrypted IntegrityFault header to alert the orchestrator.
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+
+  // No encrypted messages should be emitted.
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  EXPECT_THAT(context.Errors(), SizeIs(1));
+}
+
+TEST(ScatterShuffleFnTest, RejectsTooFewMessagesWithIntegrityFault) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  // target_batch_size = 5, message_count = 5 -> batch_num = 1, target_batch_size = 5.
+  const IngestionVerificationResult verification_result =
+      CreateIngestionVerificationResult({.target_batch_size = 5, .message_count = 5});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  // Send only 3 messages when 5 are expected.
+  for (int i = 0; i < 3; ++i) {
+    const ShuffledMessage message = CreateMessage({.payload = absl::StrCat("m", i)});
+    ASSERT_THAT(fn.Do(CreateMessageRecord(message), context), IsOk());
+  }
+
+  EXPECT_THAT(
+      fn.FinalizeReplica(google::protobuf::Any(), context),
+      StatusIs(absl::StatusCode::kFailedPrecondition, "IntegrityFault: Batch size mismatch."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+}
+
+TEST(ScatterShuffleFnTest, RejectsTooManyMessagesWithIntegrityFault) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  // target_batch_size = 2, message_count = 2 -> batch_num = 1, target_batch_size = 2.
+  const IngestionVerificationResult verification_result =
+      CreateIngestionVerificationResult({.target_batch_size = 2, .message_count = 2});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  ASSERT_THAT(fn.Do(CreateMessageRecord(CreateMessage({.payload = "m1"})), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateMessageRecord(CreateMessage({.payload = "m2"})), context), IsOk());
+
+  // Sending a 3rd message must fail immediately on Do().
+  EXPECT_THAT(fn.Do(CreateMessageRecord(CreateMessage({.payload = "m3"})), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Received more messages than expected batch size."));
+
+  // Verify that an unencrypted IntegrityFault was emitted.
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+
+  // FinalizeReplica must also fail and not duplicate fault emission.
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Received more messages than expected batch size."));
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+}
+
+TEST(ScatterShuffleFnTest, RejectsMessageWithMismatchedRunId) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  const IngestionVerificationResult verification_result =
+      CreateIngestionVerificationResult({.run_id = "expected_run_id_0123456789012345"});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  const ShuffledMessage message = CreateMessage(
+      {.payload = "m1", .is_padding = false, .run_id = "unexpected_run_id_01234567890123"});
+  EXPECT_THAT(
+      fn.Do(CreateMessageRecord(message), context),
+      StatusIs(absl::StatusCode::kFailedPrecondition, "IntegrityFault: Message run_id mismatch."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
+TEST(ScatterShuffleFnTest, RejectsMessageWithNonZeroShuffleCount) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  const ShuffledMessage message =
+      CreateMessage({.payload = "m1", .is_padding = false, .shuffle_count = 1});
+  EXPECT_THAT(fn.Do(CreateMessageRecord(message), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Message shuffle_count must be 0."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
+TEST(ScatterShuffleFnTest, RejectsMessageWithMismatchedMetricEpochKeyInBatch) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  // IngestionVerificationResult with multiple approved partitions.
+  IngestionVerificationResult verification_result =
+      CreateIngestionVerificationResult({.target_batch_size = 5, .message_count = 5});
+  MetricEpochKey* const approved2 =
+      verification_result.mutable_threshold_report()->add_approved_partitions();
+  approved2->set_project_id(10);
+  approved2->set_metric_id(99);
+  approved2->set_epoch_index(30);
+  FingerprintEntry* const entry2 =
+      verification_result.mutable_canonical_fingerprint()->add_entries();
+  entry2->mutable_metric_epoch_key()->set_project_id(10);
+  entry2->mutable_metric_epoch_key()->set_metric_id(99);
+  entry2->mutable_metric_epoch_key()->set_epoch_index(30);
+  entry2->set_message_count(5);
+
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  const ShuffledMessage message1 = CreateMessage({
+      .payload = "m1",
+      .project_id = kDefaultProjectId,
+      .metric_id = kDefaultMetricId,
+      .epoch_index = kDefaultEpochIndex,
+  });
+  ASSERT_THAT(fn.Do(CreateMessageRecord(message1), context), IsOk());
+
+  // Second message has different partition.
+  const ShuffledMessage message2 = CreateMessage({
+      .payload = "m2",
+      .project_id = 10,
+      .metric_id = 99,
+      .epoch_index = 30,
+  });
+  EXPECT_THAT(fn.Do(CreateMessageRecord(message2), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: MetricEpochKey mismatch in batch."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
+TEST(ScatterShuffleFnTest, RejectsHeaderKeyMismatchedFromPayloadMetricEpochKey) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  // Payload key has mismatched epoch_index (999) while header key matches the approved partition.
+  const ShuffledMessage message = CreateMessage({
+      .payload = "m1",
+      .project_id = kDefaultProjectId,
+      .metric_id = kDefaultMetricId,
+      .epoch_index = 999,
+  });
+  MetricEpochKey approved_header_key;
+  approved_header_key.set_project_id(kDefaultProjectId);
+  approved_header_key.set_metric_id(kDefaultMetricId);
+  approved_header_key.set_epoch_index(kDefaultEpochIndex);
+  google::protobuf::Any header_any;
+  header_any.PackFrom(approved_header_key);
+
+  ScatterShuffleFn::KV kv(std::move(header_any), message.SerializeAsString());
+  EXPECT_THAT(
+      fn.Do(std::move(kv), context),
+      StatusIs(absl::StatusCode::kFailedPrecondition,
+               "IntegrityFault: Header MetricEpochKey does not match payload MetricEpochKey."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
+TEST(ScatterShuffleFnTest, RejectsCorruptedShuffledMessagePayload) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  MetricEpochKey header_key;
+  header_key.set_project_id(kDefaultProjectId);
+  header_key.set_metric_id(kDefaultMetricId);
+  header_key.set_epoch_index(kDefaultEpochIndex);
+  google::protobuf::Any header_any;
+  header_any.PackFrom(header_key);
+
+  ScatterShuffleFn::KV kv(std::move(header_any), "corrupted_payload_bytes");
+  EXPECT_THAT(fn.Do(std::move(kv), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Failed to parse input data as ShuffledMessage proto."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
+TEST(ScatterShuffleFnTest, RejectsMessageMissingMetricEpochKey) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  ShuffledMessage message = CreateMessage({.payload = "m1"});
+  message.clear_metric_epoch_key();
+
+  MetricEpochKey header_key;
+  header_key.set_project_id(kDefaultProjectId);
+  header_key.set_metric_id(kDefaultMetricId);
+  header_key.set_epoch_index(kDefaultEpochIndex);
+  google::protobuf::Any header_any;
+  header_any.PackFrom(header_key);
+
+  ScatterShuffleFn::KV kv(std::move(header_any), message.SerializeAsString());
+  EXPECT_THAT(fn.Do(std::move(kv), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Message missing required MetricEpochKey."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
+TEST(ScatterShuffleFnTest, RejectsCorruptedFirstRecord) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  EXPECT_THAT(fn.Do(ScatterShuffleFn::KV(google::protobuf::Any(), "corrupted_bytes"), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+
+  // Subsequent record must be rejected with FailedPrecondition under one-shot semantics.
+  const ShuffledMessage message = CreateMessage({.payload = "m1"});
+  EXPECT_THAT(fn.Do(CreateMessageRecord(message), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(ScatterShuffleFnTest, RejectsEmptyRunIdInRunContext) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  const IngestionVerificationResult verification_result =
+      CreateIngestionVerificationResult({.run_id = ""});
+  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_result), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(ScatterShuffleFnTest, RejectsMissingSignedRunContext) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  IngestionVerificationResult verification_result;
+  verification_result.mutable_threshold_report()->set_run_id("some_run_id");
+  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_result), context),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       "IngestionVerificationResult missing required SignedRunContext."));
+}
+
+TEST(ScatterShuffleFnTest, RejectsInvalidTargetBatchSize) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  const IngestionVerificationResult verification_result =
+      CreateIngestionVerificationResult({.target_batch_size = 0});
+  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_result), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(ScatterShuffleFnTest, RejectsFinalizeWithoutConfig) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  EXPECT_THAT(
+      fn.FinalizeReplica(google::protobuf::Any(), context),
+      StatusIs(absl::StatusCode::kFailedPrecondition,
+               "IntegrityFault: Configuration was not established before FinalizeReplica."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
+TEST(ScatterShuffleFnTest, ShufflingPreservesMultisetAcrossLargeBatch) {
+  testing::FakeContext context;
+  const int32_t batch_size = 50;
+  const int32_t batch_num = 5;
+  // target_batch_size = 50, message_count = 250 -> batch_num = 5, target_batch_size = 50.
+  const IngestionVerificationResult verification_result =
+      CreateIngestionVerificationResult({.target_batch_size = 50, .message_count = 250});
+
+  ScatterShuffleFn fn;
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+
+  std::vector<std::string> input_payloads;
+  for (int i = 0; i < batch_size; ++i) {
+    const std::string payload = absl::StrCat("payload_", i);
+    input_payloads.push_back(payload);
+    const ShuffledMessage message = CreateMessage({.payload = payload});
+    ASSERT_THAT(fn.Do(CreateMessageRecord(message), context), IsOk());
+  }
+
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+
+  const std::vector<std::pair<int, ScatterShuffleFn::KV>>& encrypted = context.Encrypted();
+  ASSERT_THAT(encrypted, SizeIs(batch_size));
+
+  std::map<int32_t, int> group_counts;
+  std::vector<std::string> output_payloads;
+  for (const auto& [_, kv] : encrypted) {
+    ScatterShuffleHeader header;
+    ASSERT_TRUE(kv.key.UnpackTo(&header));
+    group_counts[header.group_id()]++;
+
+    ShuffledMessage message;
+    ASSERT_TRUE(message.ParseFromString(kv.data));
+    output_payloads.push_back(message.customer_message());
+  }
+
+  // Verify all 5 groups have exactly 10 messages.
+  for (int g = 0; g < batch_num; ++g) {
+    EXPECT_EQ(group_counts[g], 10);
+  }
+
+  // Verify all items are preserved.
+  EXPECT_THAT(output_payloads, ::testing::UnorderedElementsAreArray(input_payloads));
 }
 
 }  // namespace

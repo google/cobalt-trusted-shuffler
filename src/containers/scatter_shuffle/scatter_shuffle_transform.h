@@ -25,6 +25,8 @@ namespace cobalt::trusted_shuffler {
 
 class ScatterShuffleFnFactory : public confidential_federated_compute::fns::FnFactory {
  public:
+  ScatterShuffleFnFactory() = default;
+
   absl::StatusOr<std::unique_ptr<confidential_federated_compute::fns::Fn>> CreateFn()
       const override;
 };

@@ -15,6 +15,7 @@
 #include "src/containers/scatter_shuffle/scatter_shuffle_transform.h"
 
 #include <memory>
+#include <utility>
 
 #include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
@@ -39,13 +40,14 @@ TEST(ScatterShuffleTransformTest, CreateScatterShuffleTransformReturnsNonNull) {
 }
 
 TEST(ScatterShuffleTransformTest, ScatterShuffleFnFactoryReturnsScatterShuffleFn) {
-  ScatterShuffleFnFactory factory;
+  const ScatterShuffleFnFactory factory;
   const absl::StatusOr<std::unique_ptr<Fn>> fn = factory.CreateFn();
   ASSERT_THAT(fn, IsOk());
 
   const ScatterShuffleFn* const scatter_shuffle_fn =
       dynamic_cast<ScatterShuffleFn*>(fn.value().get());
   ASSERT_NE(scatter_shuffle_fn, nullptr);
+  EXPECT_FALSE(scatter_shuffle_fn->CurrentBatchParameters().has_value());
 }
 
 }  // namespace

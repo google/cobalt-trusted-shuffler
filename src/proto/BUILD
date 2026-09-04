@@ -104,3 +104,14 @@ cc_proto_library(
     name = "release_cc_proto",
     deps = [":release_proto"],
 )
+
+proto_library(
+    name = "scatter_shuffle_proto",
+    srcs = ["scatter_shuffle.proto"],
+    deps = [":common_proto"],
+)
+
+cc_proto_library(
+    name = "scatter_shuffle_cc_proto",
+    deps = [":scatter_shuffle_proto"],
+)

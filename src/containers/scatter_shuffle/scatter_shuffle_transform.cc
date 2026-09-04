@@ -17,6 +17,7 @@
 #include <memory>
 #include <utility>
 
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "containers/fns/confidential_transform_server.h"
 #include "containers/fns/fn.h"

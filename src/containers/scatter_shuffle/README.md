@@ -16,35 +16,56 @@
 
 # Scatter Shuffle Container
 
-The `scatter_shuffle` container is the confidential data transformation stage responsible for the Scatter Shuffle and Group Assignment phase of the Trusted Shuffler two-pass shuffle.
+The `scatter_shuffle` container is the confidential data transformation stage responsible for the scatter shuffle and group assignment phase (first pass) of the Trusted Shuffler two-pass shuffle.
 
 ## Overview
 
-This container implements the `DoFn` / `FnConfidentialTransform` API for scatter shuffle and group assignment per [b/557296992](https://b.corp.google.com/issues/557296992).
-
-In the two-pass shuffling architecture, the scatter shuffle container processes batches of messages partitioned by `MetricEpochKey`. It validates that all messages share an identical `MetricEpochKey`, `run_id`, and `shuffle_count == 0`, and confirms that the batch contains exactly `actual_batch_size` messages (including dummy padding messages from the pre-padding stage). It cryptographically shuffles the batch, assigns each message a `group_id = new_position % batch_num`, increments `shuffle_count` to 1, and re-encrypts the message payload.
-
-**Note:** This container currently serves as an empty skeleton. Its `DoFn` is a no-op placeholder that returns OK status without processing inputs.
-TODO(b/557296992): Implement message decryption, batch validation, cryptographic shuffling, group assignment, and payload re-encryption logic.
+In the two-pass shuffling architecture, the scatter shuffle container processes batches of messages partitioned by `MetricEpochKey`:
+1. **First Record Configuration**: Record 0 ingests an `IngestionVerificationResult`, establishing the execution `run_id`, run configuration (`target_batch_size`, epoch bounds), approved partitions from `ThresholdReport`, and partition message counts from `canonical_fingerprint`.
+2. **Batch Invariant Validation**: Records 1..N ingest `ShuffledMessage` records (both real encrypted customer messages and dummy padding messages). The container validates that every message shares an identical `MetricEpochKey`, matching `run_id`, and `shuffle_count == 0`. It computes batching parameters (`target_batch_size`, `batch_num`, `padding_count`) for the partition dynamically using the batch calculator library.
+3. **Batch Size Confirmation**: The container verifies that the batch contains exactly `target_batch_size` messages. If any validation check, partition approval, or batch size expectation fails, it emits an unencrypted `IntegrityFault` to alert the untrusted orchestrator and halts session processing.
+4. **Cryptographic Shuffling**: The verified batch is cryptographically shuffled using a Fisher-Yates CSPRNG algorithm (`src/crypto/shuffle.h`).
+5. **Group Assignment & Re-encryption**: Each message is assigned a group identifier `group_id = new_position % batch_num`, has its `shuffle_count` incremented from 0 to 1, is re-encrypted under the stage's re-encryption key, and is emitted with a visible unencrypted `group_id` header.
 
 ---
 
 ## Inputs & Outputs
 
 ### Inputs
-- **`SignedRunContext`**: Verified via `VerifySignedRunContext` or initialized during replica configuration.
-- **Batch Messages**: `actual_batch_size` messages of `EncryptedKV<MetricEpochKey, ShuffledMessage, 6>`:
-  - Real customer messages encrypted under decryption key 6 (`is_padding == false`).
-  - Unencrypted dummy padding messages from the pre-padding stage (`is_padding == true`).
+- **Record 0 (`IngestionVerificationResult`)**: Contains the `SignedRunContext` (with `run_id`, secret keys, and `RunConfig` containing `target_batch_size`), the `ThresholdReport` (approved partitions), and the `canonical_fingerprint` (`FingerprintEntry` message counts per partition).
+- **Records 1..N (Batch Messages)**: `target_batch_size` messages with payload `ShuffledMessage`:
+  - Real customer messages (`is_padding == false`).
+  - Dummy padding messages (`is_padding == true`).
 
 ### Outputs
-- **Streaming Output**: A stream of `EncryptedKV<int32 group_id, ShuffledMessage, 7>`:
-  - Header: Visible unencrypted `group_id` (`new_position % batch_num`) used by the orchestrator for group routing (`GroupByGroupId`).
-  - Payload: Re-encrypted `ShuffledMessage` under re-encryption key 7 with `shuffle_count = 1`.
+- **Streaming Output**: A stream of encrypted KV records (`ScatterShuffleHeader` with `group_id`, encrypted `ShuffledMessage`) emitted via `EmitEncrypted`:
+  - Note: `kReencryptionKeyIndex = 0` is the container's local output node index passed to `EmitEncrypted` for the downstream gather shuffle stage.
+  - **Header**: Visible unencrypted `ScatterShuffleHeader` with `group_id` (`new_position % batch_num`), inspected by the untrusted orchestrator to group messages for subsequent shuffle stages.
+  - **Payload**: Re-encrypted `ShuffledMessage` ciphertext with `shuffle_count = 1`.
+- **Integrity Violation Output**: Emitted via `EmitUnencrypted` only when an integrity violation occurs:
+  - **Header**: `ScatterShuffleHeader` with `IntegrityFault`.
+  - **Payload**: Serialized `IntegrityFault` proto.
 
 ---
 
-## Configuration & Key Indices
+## Data Visibility & Privacy Boundary
 
-- **Decryption Key 6**: Used to decrypt incoming real `ShuffledMessage` payloads.
-- **Re-encryption Key 7** (`dst_nodes` index 0): Used to encrypt output `ShuffledMessage` payloads forwarded to downstream group routing and merge stages.
+- **`EmitEncrypted(reencryption_key_index, kv)`**:
+  - The `reencryption_key_index` argument (`0`) is the container's local output node index for the downstream gather shuffle stage.
+  - The `group_id` header in `kv.key` is unencrypted and visible to the untrusted orchestrator for routing.
+  - The `ShuffledMessage` payload in `kv.value` is encrypted with the session's re-encryption key and is **completely opaque** to the untrusted orchestrator. Only downstream confidential TEE stages holding the corresponding key can decrypt it.
+- **`EmitUnencrypted(kv)`**:
+  - Exclusively used to emit `IntegrityFault` signals upon validation or invariant failure.
+  - **CRITICAL PRIVACY RULE**: No client records, individual identifiers, or unaggregated confidential data are ever emitted unencrypted.
+
+---
+
+## Configuration & Batch Calculation
+
+The container determines its batch parameters dynamically from the `IngestionVerificationResult` received on Record 0:
+- **`target_batch_size`**: Target batch size configured in `SignedRunContext`.
+- **`message_count`**: Total count of messages for the partition in `canonical_fingerprint`.
+- **Batch Parameters**: Computed via the batch calculator library (`src/batching/batch_calculator.h`):
+  - `batch_num = ceil(message_count / target_batch_size)`
+  - `remainder_count = message_count % target_batch_size`
+  - `padding_count = (target_batch_size - remainder_count) % target_batch_size`

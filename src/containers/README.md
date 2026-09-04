@@ -31,9 +31,15 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | [`message_counter`](message_counter/) | Counts incoming messages while forwarding them. Outputs a final count summary report. | Emits messages encrypted (`OutputKey.type = MESSAGE`) and final `CountReport` unencrypted (`OutputKey.type = REPORT`). | [`src/proto/message_counter/`](../proto/message_counter/) |
 | [`releaser`](releaser/) | Unconditionally releases messages passed from upstream confidential stages. | Emits messages unencrypted via `EmitUnencrypted` at the pipeline's privacy/release boundary. | None (empty config) |
 | [`simple`](simple/) | Proof-of-concept identity transform. Buffers incoming blobs and forwards them. | Emits buffered blobs encrypted with key index 0 upon commit. | None (empty config) |
+<<<<<<< HEAD
 | [`ingestion_verification`](ingestion_verification/) | Verifies runtime configuration, merges partial multiset fingerprints and HyperLogLog cardinality sketches, and evaluates device counts against privacy thresholds. | Emits unencrypted `IngestionVerificationHeader` for the orchestrator and encrypted `IngestionVerificationPayload` (key index 0) for `ThresholdFilter`. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto), [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`threshold_filter`](threshold_filter/) | Filters messages by approved partition thresholds from Ingestion Verification report, drops unapproved partitions, and emits encrypted message streams. | Emits messages encrypted (`EmitEncrypted`) with key index 0 and plaintext `MetricEpochKey` headers. Partitions below threshold are dropped completely. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`scatter_shuffle`](scatter_shuffle/) | Placeholder skeleton; currently does nothing. TODO(b/557296992): Implement scatter shuffle and group assignment logic. | Emits nothing currently. | None (accepts empty config) |
+=======
+| [`ingestion_verification`](ingestion_verification/) | Verifies runtime configuration, merges partial multiset fingerprints and HyperLogLog cardinality sketches, and evaluates device counts against privacy thresholds. | Emits unencrypted `IngestionVerificationHeader` for the orchestrator and encrypted `IngestionVerificationPayload` (key index 0) for `FilterAndStripPrivacyId`. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto), [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
+| [`filter_and_strip_privacy_id`](filter_and_strip_privacy_id/) | Placeholder skeleton; currently does nothing. TODO(b/555372765): Implement threshold-based filtering and privacy ID stripping logic. | Emits nothing currently. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto) |
+| [`scatter_shuffle`](scatter_shuffle/) | Cryptographically shuffles batches of messages partitioned by `MetricEpochKey`, validates batch size invariants, assigns group IDs (`group_id = new_position % batch_num`), increments `shuffle_count`, and re-encrypts payloads. | Emits encrypted KV records (`ScatterShuffleHeader` with `group_id` and encrypted `ShuffledMessage`) via `EmitEncrypted`; emits `IntegrityFault` via `EmitUnencrypted` on validation failure. | Record 0 `IngestionVerificationResult` (`src/proto/ingestion.proto`) |
+>>>>>>> cca2693 (Implement scatter shuffle and group assignment container logic.)
 | [`encrypt_output`](encrypt_output/) | Placeholder skeleton; currently does nothing. TODO(b/557302528): Implement output encryption and release fingerprinting logic. | Emits nothing currently. | None (accepts empty config) |
 
 ---
@@ -62,7 +68,7 @@ The **`ingest_uploads`** container is responsible for the First Ingestion Stage 
 
 ---
 
-## 2. `message_counter`
+## 3. `message_counter`
 
 The **`message_counter`** container counts messages during streaming execution and produces an unencrypted aggregation report upon finalization.
 
@@ -76,7 +82,7 @@ The **`message_counter`** container counts messages during streaming execution a
 
 ---
 
-## 3. `releaser`
+## 4. `releaser`
 
 The **`releaser`** container serves as the release stage for messages processed by upstream confidential stages.
 
@@ -88,7 +94,7 @@ The **`releaser`** container serves as the release stage for messages processed 
 
 ---
 
-## 4. `simple`
+## 5. `simple`
 
 The **`simple`** container is a proof-of-concept identity transform container.
 
@@ -100,7 +106,7 @@ The **`simple`** container is a proof-of-concept identity transform container.
 
 ---
 
-## 5. `ingestion_verification`
+## 6. `ingestion_verification`
 
 The **`ingestion_verification`** container is a confidential transform responsible for verifying runtime configuration, aggregating multiset fingerprints, merging HyperLogLog sketches, and evaluating device counts against reporting thresholds.
 
@@ -112,7 +118,7 @@ The **`ingestion_verification`** container is a confidential transform responsib
 
 ---
 
-## 6. `threshold_filter`
+## 7. `threshold_filter`
 
 The **`threshold_filter`** container filters incoming partitions against approved privacy thresholds from Ingestion Verification and emits encrypted message streams for two-pass shuffling.
 
@@ -124,22 +130,19 @@ The **`threshold_filter`** container filters incoming partitions against approve
 
 ---
 
-## 7. `scatter_shuffle`
+## 8. `scatter_shuffle`
 
-The **`scatter_shuffle`** container is responsible for Scatter Shuffle and Group Assignment in the Trusted Shuffler two-pass shuffle.
+The **`scatter_shuffle`** container is responsible for the scatter shuffle and group assignment phase (first pass) of the Trusted Shuffler two-pass shuffle.
 
-**Note:** This container currently serves as an empty skeleton. It is currently a no-op placeholder.
-TODO(b/557296992): Implement message decryption, batch validation, cryptographic shuffling, group assignment, and payload re-encryption logic.
-
-- **Purpose**: Shuffles batches of messages partitioned by `MetricEpochKey`, validates batch size and invariants, assigns group IDs (`group_id = new_position % batch_num`), increments `shuffle_count` to 1, and re-encrypts payloads under key 7.
-- **Configuration**: None currently (accepts empty config).
-- **Inputs**: `actual_batch_size` messages of `EncryptedKV<MetricEpochKey, ShuffledMessage, 6>` (including dummy padding messages from the pre-padding stage).
-- **Outputs**: Emits `EncryptedKV<int32 group_id, ShuffledMessage, 7>` with unencrypted `group_id` header and payload re-encrypted under key 7.
+- **Purpose**: Cryptographically shuffles batches of messages partitioned by `MetricEpochKey`, validates batch size invariants, assigns group IDs (`group_id = new_position % batch_num`), increments `shuffle_count` to 1, and re-encrypts payloads under the stage's re-encryption key.
+- **Configuration**: Dynamic configuration via `IngestionVerificationResult` on Record 0; computes batch parameters dynamically (`target_batch_size`, `batch_num`, `padding_count`) for the partition using `//src/batching:batch_calculator`.
+- **Inputs**: Record 0 is `IngestionVerificationResult`. Records 1..N are `target_batch_size` messages with payload `ShuffledMessage` (real messages and dummy padding messages).
+- **Outputs**: Emits encrypted KV records (`ScatterShuffleHeader` with `group_id` and encrypted `ShuffledMessage`) via `EmitEncrypted` with visible unencrypted `group_id` header and payload re-encrypted under the stage key. Emits `IntegrityFault` via `EmitUnencrypted` upon validation or batch size failure.
 - **Documentation**: See [`src/containers/scatter_shuffle/README.md`](scatter_shuffle/README.md).
 
 ---
 
-## 8. `encrypt_output`
+## 9. `encrypt_output`
 
 The **`encrypt_output`** container is responsible for output encryption and release fingerprinting in the Trusted Shuffler pipeline.
 
