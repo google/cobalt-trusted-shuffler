@@ -15,24 +15,63 @@
 #ifndef SRC_CONTAINERS_INGEST_UPLOADS_INGEST_UPLOADS_FN_H_
 #define SRC_CONTAINERS_INGEST_UPLOADS_INGEST_UPLOADS_FN_H_
 
+#include <cstdint>
+#include <map>
+#include <optional>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
-#include "containers/fns/do_fn.h"
+#include "google/protobuf/any.pb.h"
+#include "src/containers/base/first_record_config_do_fn.h"
+#include "src/crypto/multiset_fingerprint.h"
+#include "src/proto/run_context.pb.h"
+#include "src/sketch/hll_sketch.h"
+#include "src/util/time_utils.h"
 
 namespace cobalt::trusted_shuffler {
 
-// DoFn implementation for the Ingest Uploads Stage of the Trusted Shuffler.
+// A DoFn class for ingesting client device uploads.
 //
-// Currently this is an empty skeleton that does nothing.
-// TODO(b/555370722): Implement ingest uploads logic.
-class IngestUploadsFn : public confidential_federated_compute::fns::DoFn {
+// Inherits Do(KV input, Context& context) from FirstRecordConfigDoFn<SignedRunContext>:
+// - Record 0: Ingests SignedRunContext via OnConfig(), parses the inner RunContext,
+//   and initializes multiset fingerprinting for the run.
+// - Records 1..N: Ingests client log upload checkpoints via OnRecord(), validates metric/epoch,
+//   updates HLL sketches and multiset fingerprint, and emits encrypted ShuffledMessage records.
+class IngestUploadsFn : public FirstRecordConfigDoFn<SignedRunContext> {
  public:
-  IngestUploadsFn() = default;
+  using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
 
-  ~IngestUploadsFn() override = default;
+  explicit IngestUploadsFn(const uint32_t message_key_index, const uint32_t report_key_index)
+      : message_key_index_(message_key_index), report_key_index_(report_key_index) {}
 
-  // Processes an input KV pair. Currently a no-op that does nothing and emits
-  // no outputs.
-  absl::Status Do(KV input, Context& context) override;
+  // Finalizes this Fn replica, building and emitting the PartialIngestionReport.
+  absl::Status FinalizeReplica(google::protobuf::Any config, Context& context) override;
+
+  bool IsMetricAllowed(const int32_t project_id, const int32_t metric_id) const;
+  bool IsEpochInBounds(Epoch epoch) const;
+
+  const RunContext& GetRunContext() const { return run_context_; }
+
+ protected:
+  // Ingests SignedRunContext on record 0 and initializes session state.
+  absl::Status OnConfig(const SignedRunContext& signed_run_context, Context& context) override;
+
+  // Ingests incoming client log records on records 1..N.
+  absl::Status OnRecord(KV record, Context& context) override;
+
+ private:
+  uint32_t message_key_index_;
+  uint32_t report_key_index_;
+  RunContext run_context_;
+  absl::flat_hash_set<std::pair<int32_t, int32_t>> allowed_metric_identifiers_;
+  std::optional<MultisetFingerprint> multiset_fingerprint_;
+  std::map<MetricEpochTuple, HllSketch> sketches_;
+  uint64_t messages_received_ = 0;
+  uint64_t messages_dropped_ = 0;
 };
 
 }  // namespace cobalt::trusted_shuffler

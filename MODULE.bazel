@@ -13,6 +13,11 @@ bazel_dep(name = "rules_python", version = "1.6.0")
 cfc_deps = use_extension("@confidential-federated-compute//:extensions.bzl", "cfc_deps")
 use_repo(cfc_deps, "federated-compute", "oak")
 
+stub_tf_proto_library = use_repo_rule("@confidential-federated-compute//:stub_tf_proto_library.bzl", "stub_tf_proto_library")
+stub_tf_proto_library(
+    name = "org_tensorflow",
+)
+
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 oci.pull(
     name = "distroless_cc_debian12",
@@ -44,6 +49,15 @@ py_library(
     sha256 = "7bfccae7785f0344637ccf65eadbb0e4bbf844f3de1e5a2d384e6d6ff82bcf68",
     type = "zip",
     urls = ["https://files.pythonhosted.org/packages/4e/37/9a770747cb05b5aa4c062ce7c0069635943cd72d734b5db980253921adc6/pymsh-1.2.3-py3-none-any.whl"],
+)
+
+http_archive(
+    name = "org_tensorflow_federated",
+    integrity = "sha256-LRtgjagA16SepVffwpMCh8zfT60rzGSYRekKAGaQ2ss=",
+    patch_args = ["-p1"],
+    patches = ["//third_party/org_tensorflow_federated:tff.patch"],
+    strip_prefix = "tensorflow-federated-590104cb7c358ee5c4efa8937e0ccf93a5925265",
+    url = "https://github.com/google-parfait/tensorflow-federated/archive/590104cb7c358ee5c4efa8937e0ccf93a5925265.tar.gz",
 )
 
 # Allow non-hermetic builds when building in downstream projects inheriting this module.

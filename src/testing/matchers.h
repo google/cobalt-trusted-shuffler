@@ -15,14 +15,32 @@
 #ifndef SRC_TESTING_MATCHERS_H_
 #define SRC_TESTING_MATCHERS_H_
 
+#include <type_traits>
+
 #include "gmock/gmock.h"
 #include "google/protobuf/util/message_differencer.h"
+#include "src/containers/ingest_uploads/upload_parser.h"
+#include "src/proto/trusted_shuffler_upload.pb.h"
 
 namespace cobalt::trusted_shuffler::testing {
 
 // Defines a custom EquivToProto matcher for comparing protocol buffers for equivalence.
 MATCHER_P(EquivToProto, expected, "") {
   return google::protobuf::util::MessageDifferencer::Equivalent(expected, arg);
+}
+
+// Custom GMock matcher for ClientUpload and TrustedShufflerUpload.
+MATCHER_P(MatchesUpload, expected, "") {
+  if constexpr (std::is_same_v<std::decay_t<decltype(expected)>, TrustedShufflerUpload>) {
+    return arg.upload.project_id() == expected.project_id() &&
+           arg.upload.metric_id() == expected.metric_id() &&
+           arg.upload.serialized_payload() == expected.serialized_payload();
+  } else {
+    return arg.upload.project_id() == expected.upload.project_id() &&
+           arg.upload.metric_id() == expected.upload.metric_id() &&
+           arg.upload.serialized_payload() == expected.upload.serialized_payload() &&
+           arg.event_time == expected.event_time;
+  }
 }
 
 }  // namespace cobalt::trusted_shuffler::testing

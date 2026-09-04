@@ -1,0 +1,631 @@
+diff --git a/tensorflow_federated/cc/core/impl/aggregation/base/BUILD b/tensorflow_federated/cc/core/impl/aggregation/base/BUILD
+index 4c49f36..c4056d2 100644
+--- a/tensorflow_federated/cc/core/impl/aggregation/base/BUILD
++++ b/tensorflow_federated/cc/core/impl/aggregation/base/BUILD
+@@ -16,7 +16,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
+ load("@rules_cc//cc:cc_test.bzl", "cc_test")
+ 
+ package(
+-    default_applicable_licenses = ["//:package_license"],
+     default_visibility = ["//tensorflow_federated/cc/core/impl/aggregation:__subpackages__"],
+ )
+ 
+@@ -35,12 +34,12 @@ cc_library(
+     ],
+     visibility = ["//visibility:public"],
+     deps = [
+-        "@com_google_absl//absl/base:core_headers",
+-        "@com_google_absl//absl/log:absl_log",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:cord",
++        "@abseil-cpp//absl/base:core_headers",
++        "@abseil-cpp//absl/log:absl_log",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:cord",
+     ],
+ )
+ 
+@@ -62,7 +61,7 @@ cc_test(
+         ":base",
+         "//tensorflow_federated/cc/core/impl/aggregation/testing",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+-        "@com_google_absl//absl/strings:cord",
++        "@abseil-cpp//absl/strings:cord",
+     ],
+ )
+ 
+@@ -72,8 +71,8 @@ cc_library(
+     hdrs = ["scheduler.h"],
+     deps = [
+         ":base",
+-        "@com_google_absl//absl/base:core_headers",
+-        "@com_google_absl//absl/synchronization",
++        "@abseil-cpp//absl/base:core_headers",
++        "@abseil-cpp//absl/synchronization",
+     ],
+ )
+ 
+@@ -84,8 +83,8 @@ cc_test(
+     deps = [
+         ":scheduler",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+-        "@com_google_absl//absl/synchronization",
+-        "@com_google_absl//absl/time",
++        "@abseil-cpp//absl/synchronization",
++        "@abseil-cpp//absl/time",
+     ],
+ )
+ 
+@@ -122,9 +121,9 @@ cc_library(
+     visibility = ["//visibility:public"],
+     deps = [
+         ":base",
+-        "@com_google_absl//absl/base:core_headers",
+-        "@com_google_absl//absl/synchronization",
+-        "@com_google_absl//absl/time",
++        "@abseil-cpp//absl/base:core_headers",
++        "@abseil-cpp//absl/synchronization",
++        "@abseil-cpp//absl/time",
+     ],
+ )
+ 
+@@ -135,9 +134,9 @@ cc_library(
+     hdrs = ["simulated_clock.h"],
+     deps = [
+         ":clock",
+-        "@com_google_absl//absl/base:core_headers",
+-        "@com_google_absl//absl/synchronization",
+-        "@com_google_absl//absl/time",
++        "@abseil-cpp//absl/base:core_headers",
++        "@abseil-cpp//absl/synchronization",
++        "@abseil-cpp//absl/time",
+     ],
+ )
+ 
+@@ -148,6 +147,6 @@ cc_test(
+         ":clock",
+         ":simulated_clock",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+-        "@com_google_absl//absl/time",
++        "@abseil-cpp//absl/time",
+     ],
+ )
+diff --git a/tensorflow_federated/cc/core/impl/aggregation/core/BUILD b/tensorflow_federated/cc/core/impl/aggregation/core/BUILD
+index 6f68196..00bd869 100644
+--- a/tensorflow_federated/cc/core/impl/aggregation/core/BUILD
++++ b/tensorflow_federated/cc/core/impl/aggregation/core/BUILD
+@@ -12,14 +12,12 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+ load("@rules_cc//cc:cc_library.bzl", "cc_library")
+ load("@rules_cc//cc:cc_test.bzl", "cc_test")
+-load("@rules_cc//cc:defs.bzl", "cc_proto_library")
++load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+ 
+ package(
+-    default_applicable_licenses = ["//:package_license"],
+     default_visibility = ["//visibility:public"],
+ )
+ 
+@@ -35,17 +33,7 @@ cc_proto_library(
+     deps = [":tensor_proto"],
+ )
+ 
+-java_proto_library(
+-    name = "tensor_java_proto",
+-    visibility = ["//visibility:public"],
+-    deps = [":tensor_proto"],
+-)
+ 
+-py_proto_library(
+-    name = "tensor_py_pb2",
+-    visibility = ["//visibility:public"],
+-    deps = [":tensor_proto"],
+-)
+ 
+ proto_library(
+     name = "agg_core_proto",
+@@ -87,9 +75,9 @@ cc_library(
+     deps = [
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:string_view",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:string_view",
++        "@abseil-cpp//absl/types:span",
+     ],
+ )
+ 
+@@ -114,10 +102,10 @@ cc_library(
+         ":tensor",
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/base:core_headers",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/synchronization",
++        "@abseil-cpp//absl/base:core_headers",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/synchronization",
+     ],
+ )
+ 
+@@ -137,7 +125,7 @@ cc_library(
+     deps = [
+         ":dp_fedsql_constants",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/status:statusor",
++        "@abseil-cpp//absl/status:statusor",
+         "@com_google_cc_differential_privacy//algorithms:numerical-mechanisms",
+         "@com_google_cc_differential_privacy//algorithms:partition-selection",
+     ],
+@@ -167,8 +155,8 @@ cc_library(
+         ":tensor",
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/container:node_hash_set",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/container:node_hash_set",
+     ],
+ )
+ 
+@@ -183,11 +171,11 @@ cc_library(
+         ":tensor",
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/container:fixed_array",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/container:node_hash_set",
+-        "@com_google_absl//absl/random",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/container:fixed_array",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/container:node_hash_set",
++        "@abseil-cpp//absl/random",
++        "@abseil-cpp//absl/types:span",
+     ],
+ )
+ 
+@@ -204,7 +192,7 @@ cc_library(
+         ":partitioner",
+         ":tensor",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/status",
++        "@abseil-cpp//absl/status",
+     ],
+ )
+ 
+@@ -239,12 +227,12 @@ cc_library(
+         ":tensor",
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/algorithm:container",
+-        "@com_google_absl//absl/container:flat_hash_set",
+-        "@com_google_absl//absl/random",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/algorithm:container",
++        "@abseil-cpp//absl/container:flat_hash_set",
++        "@abseil-cpp//absl/random",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/types:span",
+     ],
+     alwayslink = 1,
+ )
+@@ -267,10 +255,10 @@ cc_library(
+         ":tensor",
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/algorithm:container",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/strings:string_view",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/algorithm:container",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/strings:string_view",
++        "@abseil-cpp//absl/types:span",
+     ],
+     alwayslink = 1,
+ )
+@@ -287,8 +275,8 @@ cc_library(
+         ":tensor",
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/log:check",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/log:check",
+     ],
+     alwayslink = 1,
+ )
+@@ -307,7 +295,7 @@ cc_library(
+         ":one_dim_grouping_aggregator",
+         ":tensor",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/status",
++        "@abseil-cpp//absl/status",
+     ],
+ )
+ 
+@@ -330,10 +318,10 @@ cc_library(
+         ":tensor",
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/container:flat_hash_set",
+-        "@com_google_absl//absl/memory",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/container:flat_hash_set",
++        "@abseil-cpp//absl/memory",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/types:span",
+         "@com_google_cc_differential_privacy//algorithms:partition-selection",
+     ],
+ )
+@@ -356,7 +344,7 @@ cc_library(
+         ":tensor",
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/container:fixed_array",
++        "@abseil-cpp//absl/container:fixed_array",
+         "@com_google_cc_differential_privacy//algorithms:numerical-mechanisms",
+     ],
+ )
+@@ -389,7 +377,7 @@ cc_library(
+         ":tensor",
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/status",
++        "@abseil-cpp//absl/status",
+     ],
+     alwayslink = 1,
+ )
+@@ -409,8 +397,8 @@ cc_library(
+         ":tensor",
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/random",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/random",
+         "@com_google_cc_differential_privacy//algorithms:numerical-mechanisms",
+     ],
+     alwayslink = 1,
+@@ -464,7 +452,7 @@ cc_test(
+         "//tensorflow_federated/cc/testing:oss_test_main",
+         "//tensorflow_federated/cc/testing:protobuf_matchers",
+         "//tensorflow_federated/cc/testing:status_matchers",
+-        "@com_google_absl//absl/strings:string_view",
++        "@abseil-cpp//absl/strings:string_view",
+     ],
+ )
+ 
+@@ -512,7 +500,7 @@ cc_library(
+     visibility = ["//visibility:public"],
+     deps = [
+         ":tensor",
+-        "@com_google_absl//absl/container:fixed_array",
++        "@abseil-cpp//absl/container:fixed_array",
+     ],
+ )
+ 
+@@ -598,7 +586,7 @@ cc_test(
+         "//tensorflow_federated/cc/core/impl/aggregation/testing:test_data",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+         "//tensorflow_federated/cc/testing:status_matchers",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/types:span",
+     ],
+ )
+ 
+@@ -611,7 +599,7 @@ cc_test(
+         "//tensorflow_federated/cc/core/impl/aggregation/testing:test_data",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+         "//tensorflow_federated/cc/testing:status_matchers",
+-        "@com_google_absl//absl/status",
++        "@abseil-cpp//absl/status",
+     ],
+ )
+ 
+@@ -633,7 +621,7 @@ cc_test(
+         ":tensor",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+         "//tensorflow_federated/cc/testing:status_matchers",
+-        "@com_google_absl//absl/strings:string_view",
++        "@abseil-cpp//absl/strings:string_view",
+     ],
+ )
+ 
+@@ -668,7 +656,7 @@ cc_test(
+         "//tensorflow_federated/cc/core/impl/aggregation/testing:test_data",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+         "//tensorflow_federated/cc/testing:status_matchers",
+-        "@com_google_absl//absl/container:flat_hash_set",
++        "@abseil-cpp//absl/container:flat_hash_set",
+     ],
+ )
+ 
+@@ -688,7 +676,7 @@ cc_test(
+         "//tensorflow_federated/cc/core/impl/aggregation/testing:test_data",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+         "//tensorflow_federated/cc/testing:status_matchers",
+-        "@com_google_absl//absl/status",
++        "@abseil-cpp//absl/status",
+     ],
+ )
+ 
+@@ -708,8 +696,8 @@ cc_library(
+         ":tensor_cc_proto",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+         "//tensorflow_federated/cc/core/impl/aggregation/testing:test_data",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/types:span",
+         "@com_google_googletest//:gtest",
+     ],
+ )
+@@ -733,7 +721,7 @@ cc_test(
+         "//tensorflow_federated/cc/core/impl/aggregation/testing:test_data",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+         "//tensorflow_federated/cc/testing:status_matchers",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/types:span",
+     ],
+ )
+ 
+@@ -777,7 +765,7 @@ cc_test(
+         "//tensorflow_federated/cc/core/impl/aggregation/testing:test_data",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+         "//tensorflow_federated/cc/testing:status_matchers",
+-        "@com_google_absl//absl/strings",
++        "@abseil-cpp//absl/strings",
+     ],
+ )
+ 
+@@ -812,7 +800,7 @@ cc_test(
+         "//tensorflow_federated/cc/core/impl/aggregation/testing:test_data",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+         "//tensorflow_federated/cc/testing:status_matchers",
+-        "@com_google_absl//absl/strings",
++        "@abseil-cpp//absl/strings",
+     ],
+ )
+ 
+@@ -876,9 +864,9 @@ cc_library(
+     srcs = ["contributors_to_groups.cc"],
+     hdrs = ["contributors_to_groups.h"],
+     deps = [
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
+     ],
+ )
+ 
+@@ -889,7 +877,7 @@ cc_test(
+         ":contributors_to_groups",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+         "//tensorflow_federated/cc/testing:status_matchers",
+-        "@com_google_absl//absl/status",
++        "@abseil-cpp//absl/status",
+     ],
+ )
+ 
+@@ -945,7 +933,7 @@ cc_library(
+     deps = [
+         ":tensor",
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+-        "@com_google_absl//absl/types:span",
++        "@abseil-cpp//absl/types:span",
+     ],
+     alwayslink = 1,
+ )
+diff --git a/tensorflow_federated/cc/core/impl/aggregation/protocol/BUILD b/tensorflow_federated/cc/core/impl/aggregation/protocol/BUILD
+index 8ba789f..b685c36 100644
+--- a/tensorflow_federated/cc/core/impl/aggregation/protocol/BUILD
++++ b/tensorflow_federated/cc/core/impl/aggregation/protocol/BUILD
+@@ -12,13 +12,11 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+ load("@rules_cc//cc:cc_library.bzl", "cc_library")
+ load("@rules_cc//cc:cc_test.bzl", "cc_test")
+-load("@rules_cc//cc:defs.bzl", "cc_proto_library")
++load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+ 
+ package(
+-    default_applicable_licenses = ["//:package_license"],
+     default_visibility = ["//visibility:public"],
+ )
+ 
+@@ -32,10 +30,6 @@ cc_proto_library(
+     deps = [":aggregation_protocol_messages_proto"],
+ )
+ 
+-py_proto_library(
+-    name = "aggregation_protocol_messages_py_pb2",
+-    deps = [":aggregation_protocol_messages_proto"],
+-)
+ 
+ proto_library(
+     name = "configuration_proto",
+@@ -59,19 +53,15 @@ cc_proto_library(
+     deps = [":configuration_proto"],
+ )
+ 
+-py_proto_library(
+-    name = "configuration_py_pb2",
+-    deps = [":configuration_proto"],
+-)
+ 
+ cc_library(
+     name = "aggregation_protocol",
+     hdrs = ["aggregation_protocol.h"],
+     deps = [
+         ":aggregation_protocol_messages_cc_proto",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings:cord",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings:cord",
+     ],
+ )
+ 
+@@ -79,8 +69,8 @@ cc_library(
+     name = "resource_resolver",
+     hdrs = ["resource_resolver.h"],
+     deps = [
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings:cord",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings:cord",
+     ],
+ )
+ 
+@@ -89,9 +79,9 @@ cc_library(
+     hdrs = ["checkpoint_builder.h"],
+     deps = [
+         "//tensorflow_federated/cc/core/impl/aggregation/core:tensor",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings:cord",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings:cord",
+     ],
+ )
+ 
+@@ -100,8 +90,8 @@ cc_library(
+     hdrs = ["checkpoint_parser.h"],
+     deps = [
+         "//tensorflow_federated/cc/core/impl/aggregation/core:tensor",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings:cord",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings:cord",
+     ],
+ )
+ 
+@@ -121,13 +111,13 @@ cc_library(
+         "//tensorflow_federated/cc/core/impl/aggregation/core:aggregator",
+         "//tensorflow_federated/cc/core/impl/aggregation/core:intrinsic",
+         "//tensorflow_federated/cc/core/impl/aggregation/core:tensor",
+-        "@com_google_absl//absl/base:core_headers",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/memory",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/synchronization",
++        "@abseil-cpp//absl/base:core_headers",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/memory",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/synchronization",
+     ],
+ )
+ 
+@@ -149,9 +139,9 @@ cc_test(
+         "//tensorflow_federated/cc/core/impl/aggregation/testing:test_data",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+         "//tensorflow_federated/cc/testing:status_matchers",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/synchronization",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/synchronization",
+     ],
+ )
+ 
+@@ -168,9 +158,9 @@ cc_library(
+         "//tensorflow_federated/cc/core/impl/aggregation/core:fedsql_constants",
+         "//tensorflow_federated/cc/core/impl/aggregation/core:intrinsic",
+         "//tensorflow_federated/cc/core/impl/aggregation/core:tensor",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:str_format",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:str_format",
+     ],
+ )
+ 
+@@ -183,10 +173,10 @@ cc_library(
+         ":checkpoint_builder",
+         ":checkpoint_header",
+         "//tensorflow_federated/cc/core/impl/aggregation/core:tensor",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:cord",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:cord",
+     ],
+ )
+ 
+@@ -202,9 +192,9 @@ cc_test(
+         "//tensorflow_federated/cc/core/impl/aggregation/testing",
+         "//tensorflow_federated/cc/core/impl/aggregation/testing:test_data",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:cord",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:cord",
+     ],
+ )
+ 
+@@ -219,12 +209,12 @@ cc_library(
+         "//tensorflow_federated/cc/core/impl/aggregation/base",
+         "//tensorflow_federated/cc/core/impl/aggregation/core:tensor",
+         "//tensorflow_federated/cc/core/impl/aggregation/core:tensor_cc_proto",
+-        "@com_google_absl//absl/container:flat_hash_map",
+-        "@com_google_absl//absl/status",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
+-        "@com_google_absl//absl/strings:cord",
+-        "@com_google_absl//absl/strings:str_format",
++        "@abseil-cpp//absl/container:flat_hash_map",
++        "@abseil-cpp//absl/status",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
++        "@abseil-cpp//absl/strings:cord",
++        "@abseil-cpp//absl/strings:str_format",
+     ],
+ )
+ 
+@@ -246,8 +236,8 @@ cc_test(
+         "//tensorflow_federated/cc/core/impl/aggregation/testing",
+         "//tensorflow_federated/cc/core/impl/aggregation/testing:test_data",
+         "//tensorflow_federated/cc/testing:oss_test_main",
+-        "@com_google_absl//absl/status:statusor",
+-        "@com_google_absl//absl/strings",
++        "@abseil-cpp//absl/status:statusor",
++        "@abseil-cpp//absl/strings",
+     ],
+ )
+ 
