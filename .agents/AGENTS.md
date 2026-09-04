@@ -71,7 +71,24 @@ Pipelines operate across a strict trust boundary between the **Untrusted Orchest
 
 ---
 
-## 2. Repository Layout
+## 2. Terminology & Naming: Avoid Spec Jargon
+
+**CRITICAL RULE**: Do **NOT** use internal specification stage numbers or terms such as "Stage 3B", "Stage 6A", "Stage 7C", etc.
+
+These labels do not mean anything in isolation to developers, reviewers, or future agents inspecting the codebase. Instead, always use descriptive, functional domain names and explanations that describe what the component actually does (e.g., `ingest_uploads`, `scatter_shuffle`, `releaser`, "upload ingestion", "shuffle grouping", "release batching").
+
+Apply this rule across all parts of your contributions:
+- **Code Comments**: Do not refer to spec stage numbers in code comments (file headers, class/function docstrings, inline comments, or TODOs). Describe the actual functional behavior or reference the relevant tracking issue / RFC title instead.
+- **Descriptions**: Do not use stage numbers in commit messages, CL descriptions, PR titles/summaries, or documentation (`README.md`, architecture guides).
+- **Names**: Never use stage numbers in names of directories, files, classes, methods, proto packages/messages/fields, or Bazel build targets (e.g., use `ingest_uploads`, not `stage_3b`).
+- **Issues & Cross-references**: When referring to work items or spec sections, refer to them by their functional title or URL/issue ID rather than bare stage numbers.
+
+> [!IMPORTANT]
+> Generic use of the word "stage" (e.g., "downstream stage", "pipeline stage") is acceptable when discussing dataflow pipelines conceptually, but specific spec labels such as "Stage 3B" must never be used.
+
+---
+
+## 3. Repository Layout
 
 ```
 trusted-shuffler/
@@ -87,7 +104,7 @@ trusted-shuffler/
 
 ---
 
-## 3. Step-by-Step Guide to Adding a New Container
+## 4. Step-by-Step Guide to Adding a New Container
 
 When creating a new container (e.g. `foo_bar`), you must complete **all** of the following steps:
 
@@ -100,7 +117,7 @@ Before writing code, clarify and align with the user on:
 ### Step 1: Define Protos (`src/proto/`)
 Define necessary schemas according to their scope:
 - **Shared / Pipeline-wide Protos** (`src/proto/`): Put messages used across multiple stages or at the top-level pipeline (e.g. `run_context.proto`, `trusted_shuffler_upload.proto`) directly under `src/proto/` and register them in `src/proto/BUILD`.
-- **Container-specific Protos** (`src/proto/foo_bar/`): Put schemas specific to this container in a dedicated subdirectory:
+- **Container-specific Protos** (`src/proto/foo_bar/`): Put schemas specific to this container in a dedicated subdirectory (using descriptive domain names, never spec stage labels like `stage3b.proto`):
   - `foo_bar_config.proto`: Configuration proto unpacked during `InitializeReplica`.
   - `output_key.proto`: Key proto describing emitted KV pairs (e.g., `MESSAGE` vs `REPORT`).
   - `BUILD`: Define `proto_library` and `cc_proto_library` rules.
@@ -163,7 +180,7 @@ Every container package must define:
 
 ### Step 5: Document the Container
 - Create `src/containers/foo_bar/README.md` documenting:
-  - Container purpose & role in pipeline.
+  - Container purpose & role in pipeline (using descriptive functional terminology, never spec stage numbers like "Stage 3B").
   - Configuration proto parameters.
   - Input stream expectations (format and schema of incoming KV pairs processed in `Do()`).
   - Output stream & finalize emit formats, explicitly documenting what is encrypted vs. plaintext.
@@ -195,7 +212,7 @@ When ready for production release, failing to update Kokoro will cause builds an
 
 ---
 
-## 4. Development & Verification Commands
+## 5. Development & Verification Commands
 
 - **Run all tests**:
   ```bash
@@ -216,7 +233,7 @@ When ready for production release, failing to update Kokoro will cause builds an
 
 ---
 
-## 5. C++ Architecture & Testing Standards
+## 6. C++ Architecture & Testing Standards
 
 All C++ implementations, container transforms, and tests must adhere to the conventions documented in [`.agents/rules/cpp_conventions.md`](rules/cpp_conventions.md):
 - **Lifecycle Integrity**: DoFn session configuration must be unpacked inside `InitializeReplica`; never add testing-only backdoor constructors or setters to `DoFn` classes.
@@ -226,9 +243,10 @@ All C++ implementations, container transforms, and tests must adhere to the conv
 
 ---
 
-## 6. Contribution Checklist for Agents
+## 7. Contribution Checklist for Agents
 
 Before completing a task or submitting a change:
+- [ ] Avoided spec jargon and stage numbers (e.g. "Stage 3B") in comments, descriptions, and names; used descriptive domain terms throughout.
 - [ ] Aligned with user on data visibility (orchestrator plaintext vs. downstream TEE ciphertext).
 - [ ] Protos defined in `src/proto/<name>/` (or `src/proto/` for shared schemas) with `BUILD` rules.
 - [ ] `DoFn` and transform service implemented in C++20 following [`.agents/rules/cpp_conventions.md`](rules/cpp_conventions.md).
