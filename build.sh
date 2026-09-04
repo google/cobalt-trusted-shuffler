@@ -92,6 +92,9 @@ if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/filter_and_strip_privacy_id
   cp -Rp ./bazel-bin/src/containers/filter_and_strip_privacy_id/* ${KOKORO_ARTIFACTS_DIR}/filter_and_strip_privacy_id/.
 
+  log "Copying scatter_shuffle container output to kokoro artifacts dir."
+  mkdir -p ${KOKORO_ARTIFACTS_DIR}/scatter_shuffle
+  cp -Rp ./bazel-bin/src/containers/scatter_shuffle/* ${KOKORO_ARTIFACTS_DIR}/scatter_shuffle/.
 
   # Kokoro tooling uses the `bazel_invocation_ids` file, but add a .txt
   # extension to it before also uploading it as an output artifact so
