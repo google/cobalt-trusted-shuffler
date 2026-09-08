@@ -60,3 +60,28 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "shuffle",
+    srcs = ["shuffle.cc"],
+    hdrs = ["shuffle.h"],
+    deps = [
+        "@abseil-cpp//absl/functional:function_ref",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@boringssl//:crypto",
+    ],
+)
+
+cc_test(
+    name = "shuffle_test",
+    srcs = ["shuffle_test.cc"],
+    deps = [
+        ":shuffle",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/strings",
+        "@googletest//:gtest_main",
+    ],
+)
