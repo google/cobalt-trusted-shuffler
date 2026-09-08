@@ -1,0 +1,81 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package cobalt.trusted_shuffler;
+
+import "src/proto/common.proto";
+import "src/proto/fingerprint.proto";
+
+option java_package = "com.google.cobalt.trustedshuffler";
+option java_multiple_files = true;
+option java_outer_classname = "ReleaseProto";
+
+// Encrypted output message emitted to the orchestrator.
+message EncryptedMessageOutput {
+  // Identifies the data partition by project, metric, and epoch.
+  MetricEpochKey metric_epoch_key = 1;
+
+  // Message payload encrypted for release using the run's release key with
+  // Tink AEAD (standard Tink wire format: 12-byte IV prepended to AES-256-GCM
+  // ciphertext with appended 16-byte authentication tag).
+  bytes encrypted_message = 2;
+}
+
+// Partial release report emitted by an encrypt_output worker to the downstream
+// key release verification stage during replica finalization.
+message PartialReleaseReport {
+  // Partial multiset release fingerprint accumulated by this worker.
+  RunFingerprint partial_fingerprint = 1;
+}
+
+// Output header identifying payload type in emitted key-value pairs.
+message ReleaseOutputHeader {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+
+    // Output payload is an EncryptedMessageOutput.
+    TYPE_MESSAGE = 1;
+
+    // Output payload is a PartialReleaseReport (for downstream key release
+    // verification) or DecryptionKeyRelease (for orchestrator key release).
+    TYPE_REPORT = 2;
+
+    // Output indicates an integrity violation; payload is an IntegrityFault.
+    TYPE_INTEGRITY_FAULT = 3;
+  }
+
+  Type type = 1;
+}
+
+// Summary report containing the verified release key released for a run.
+message ReleasedKeyReport {
+  // 32-byte cryptographic identifier for the pipeline run context.
+  bytes run_id = 1;
+
+  // Tink AES-256-GCM AEAD key for decrypting output messages.
+  bytes release_key = 2;
+}
+
+// Release stage result emitted to the orchestrator.
+message DecryptionKeyRelease {
+  oneof result {
+    // Successfully released key after fingerprint verification.
+    ReleasedKeyReport released_key_report = 1;
+
+    // Signals an integrity verification failure.
+    IntegrityFault integrity_fault = 2;
+  }
+}
