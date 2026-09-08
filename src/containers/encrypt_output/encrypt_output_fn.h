@@ -15,33 +15,78 @@
 #ifndef SRC_CONTAINERS_ENCRYPT_OUTPUT_ENCRYPT_OUTPUT_FN_H_
 #define SRC_CONTAINERS_ENCRYPT_OUTPUT_ENCRYPT_OUTPUT_FN_H_
 
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <utility>
+
+#include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "containers/fns/do_fn.h"
 #include "google/protobuf/any.pb.h"
+#include "src/containers/base/first_record_config_do_fn.h"
+#include "src/crypto/multiset_fingerprint.h"
+#include "src/crypto/release_encrypter.h"
+#include "src/proto/common.pb.h"
+#include "src/proto/fingerprint.pb.h"
+#include "src/proto/ingestion.pb.h"
+#include "src/proto/release.pb.h"
+#include "src/proto/run_context.pb.h"
+#include "src/util/metric_epoch_key_utils.h"
 
 namespace cobalt::trusted_shuffler {
 
-// DoFn implementation for the output encryption and release fingerprinting stage
-// of the Trusted Shuffler.
+// DoFn implementation for output encryption and release fingerprinting in the
+// Trusted Shuffler pipeline.
 //
-// Currently this is an empty skeleton that does nothing.
-// TODO(b/557302528): Implement output encryption and release fingerprinting logic.
-class EncryptOutputFn : public confidential_federated_compute::fns::DoFn {
+// Inherits from FirstRecordConfigDoFn<IngestionVerificationPayload>.
+// - Record 0: Ingests IngestionVerificationPayload containing
+//   IngestionVerificationResult (with SignedRunContext and ThresholdReport).
+//   Verifies SignedRunContext via VerifySignedRunContext, validates
+//   ThresholdReport run_id and approved partitions, initializes
+//   ReleaseEncrypter from RunContext.release_key, and initializes the partial
+//   release multiset fingerprint.
+// - Records 1..N: Validates two-pass shuffled messages (shuffle_count == 2,
+//   run_id match, metric_epoch_key in approved_partitions), accumulates release
+//   fingerprint, encrypts customer messages for release using ReleaseEncrypter
+//   (backed by RunContext.release_key), and emits unencrypted
+//   EncryptedMessageOutput records.
+// - Finalize: Emits PartialReleaseReport encrypted for the downstream key
+//   release verification stage.
+class EncryptOutputFn : public FirstRecordConfigDoFn<IngestionVerificationPayload> {
  public:
-  EncryptOutputFn() = default;
+  // Index of the downstream output encryption key (in Context::EmitEncrypted)
+  // used to encrypt PartialReleaseReport records for the key release
+  // verification stage.
+  static constexpr int kReencryptionKeyIndex = 0;
 
+  EncryptOutputFn() = default;
   ~EncryptOutputFn() override = default;
 
-  // Processes an input KV pair. Currently a no-op that does nothing and emits
-  // no outputs.
-  absl::Status Do(KV input, Context& context) override;
-
-  // Finalizes replica processing. Currently a no-op that does nothing and emits
-  // no outputs.
-  // TODO(b/557302528): Package accumulated release fingerprint and worker
-  // release key into WorkerKeyAndFingerprint emitted encrypted with key index
-  // 0 to the downstream key release verification stage.
+  // Finalizes the replica by emitting PartialReleaseReport encrypted for the
+  // downstream key release verification stage.
   absl::Status FinalizeReplica(google::protobuf::Any config, Context& context) override;
+
+ protected:
+  // Hook invoked for Record 0 containing IngestionVerificationPayload.
+  absl::Status OnConfig(const IngestionVerificationPayload& ingestion_verification_payload,
+                        Context& context) override;
+
+  // Hook invoked for all subsequent records (records 1..N).
+  absl::Status OnRecord(KV record, Context& context) override;
+
+ private:
+  absl::Status SignalIntegrityFault(Context& context);
+  absl::Status SignalIntegrityFault(absl::string_view reason, Context& context);
+  absl::Status EmitIntegrityFault(absl::string_view message, Context& context);
+
+  bool is_finalized_ = false;
+  std::optional<ReleaseEncrypter> release_encrypter_;
+  std::string run_id_;
+  std::optional<MultisetFingerprint> fingerprint_;
+  absl::flat_hash_set<MetricEpochKey> approved_partitions_;
+  bool has_integrity_fault_ = false;
 };
 
 }  // namespace cobalt::trusted_shuffler

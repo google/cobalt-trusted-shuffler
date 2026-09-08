@@ -68,7 +68,7 @@ cc_test(
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/strings",
         "@googletest//:gtest_main",
-        "@protobuf//:protobuf",
+        "@protobuf",
     ],
 )
 
@@ -137,6 +137,44 @@ cc_test(
         "@tink_cc//tink/aead:aead_key_templates",
         "@tink_cc//tink/config:global_registry",
         "@tink_cc//tink/util:secret_data",
+    ],
+)
+
+cc_library(
+    name = "verify_ingestion_verification_payload",
+    srcs = ["verify_ingestion_verification_payload.cc"],
+    hdrs = ["verify_ingestion_verification_payload.h"],
+    deps = [
+        ":verify_signed_run_context",
+        "//src/proto:common_cc_proto",
+        "//src/proto:fingerprint_cc_proto",
+        "//src/proto:ingestion_cc_proto",
+        "//src/proto:run_context_cc_proto",
+        "//src/util:metric_epoch_key_utils",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+    ],
+)
+
+cc_test(
+    name = "verify_ingestion_verification_payload_test",
+    srcs = ["verify_ingestion_verification_payload_test.cc"],
+    deps = [
+        ":release_encrypter",
+        ":verify_ingestion_verification_payload",
+        ":verify_signed_run_context",
+        "//src/proto:common_cc_proto",
+        "//src/proto:fingerprint_cc_proto",
+        "//src/proto:ingestion_cc_proto",
+        "//src/proto:run_context_cc_proto",
+        "//src/util:metric_epoch_key_utils",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/types:span",
+        "@googletest//:gtest_main",
     ],
 )
 
