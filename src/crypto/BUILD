@@ -45,19 +45,28 @@ cc_library(
         "//src/proto:common_cc_proto",
         "//src/proto:fingerprint_cc_proto",
         "//src/proto:run_context_cc_proto",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
+        "@boringssl//:crypto",
     ],
 )
 
 cc_test(
     name = "multiset_fingerprint_test",
     srcs = ["multiset_fingerprint_test.cc"],
+    data = [
+        "testdata/multiset_fingerprint_golden_test_vectors.json",
+    ],
     deps = [
         ":multiset_fingerprint",
+        "//src/testing:multiset_fingerprint_golden_test_vectors_cc_proto",
         "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/strings",
         "@googletest//:gtest_main",
+        "@protobuf//:protobuf",
     ],
 )
 

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -64,3 +65,25 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+py_binary(
+    name = "generate_multiset_fingerprint_golden_test_vectors",
+    srcs = ["generate_multiset_fingerprint_golden_test_vectors.py"],
+    deps = [
+        "@pymsh",
+    ],
+)
+
+proto_library(
+    name = "multiset_fingerprint_golden_test_vectors_proto",
+    testonly = True,
+    srcs = ["multiset_fingerprint_golden_test_vectors.proto"],
+)
+
+cc_proto_library(
+    name = "multiset_fingerprint_golden_test_vectors_cc_proto",
+    testonly = True,
+    deps = [":multiset_fingerprint_golden_test_vectors_proto"],
+)
+
+

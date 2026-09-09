@@ -15,11 +15,12 @@
 #ifndef SRC_CRYPTO_MULTISET_FINGERPRINT_H_
 #define SRC_CRYPTO_MULTISET_FINGERPRINT_H_
 
+#include <cstddef>
 #include <cstdint>
-#include <map>
 #include <string>
 #include <tuple>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "src/proto/common.pb.h"
@@ -28,46 +29,60 @@
 
 namespace cobalt::trusted_shuffler {
 
-// MultisetFingerprint tracks and aggregates message counts per MetricEpochKey across
-// processing pipeline stages, and validates partial and complete RunFingerprints.
-// TODO(b/555363748): Implement actual cryptographic multiset fingerprinting algorithm (bytes are currently empty).
+// MultisetFingerprint tracks and aggregates message counts and computes
+// cryptographic multiset fingerprints per MetricEpochKey across processing
+// pipeline stages using MSet-Add-Hash (HMAC-SHA256 with addition modulo 2^256),
+// and validates partial and complete RunFingerprints.
 class MultisetFingerprint {
  public:
-  MultisetFingerprint() = default;
-  MultisetFingerprint(Stage stage_id, bool is_partial, absl::string_view run_id);
-  MultisetFingerprint(Stage stage_id, bool is_partial, const RunContext& run_context);
+  static constexpr std::size_t kFingerprintSize = 32;
+
+  MultisetFingerprint(Stage stage_id, bool is_partial, const RunContext& run_context,
+                      std::size_t fingerprint_size);
+
+  // Returns the configured fingerprint size in bytes.
+  std::size_t FingerprintSize() const { return fingerprint_size_; }
 
   // Adds a message to the fingerprint. If message.is_padding == true, no-op.
   void AddMessage(const ShuffledMessage& message);
 
   // Merges another partial RunFingerprint into this complete fingerprint.
   // Returns an error if this fingerprint is partial, if partial_fingerprint is for a
-  // different stage, or if partial_fingerprint is not partial.
+  // different stage or different run ID, or if partial_fingerprint is not partial.
   absl::Status Merge(const RunFingerprint& partial_fingerprint);
 
-  // Builds and returns the current RunFingerprint with message counts.
+  // Builds and returns the current RunFingerprint with message counts and multiset fingerprints.
   RunFingerprint Build() const;
 
   // Verifies this fingerprint against a complete (non-partial) RunFingerprint.
   // Returns false if complete_fingerprint is for a different run ID, if either
-  // fingerprint is partial, or if message counts do not match.
+  // fingerprint is partial, or if message counts or multiset fingerprints do not match.
   bool VerifyComplete(const RunFingerprint& complete_fingerprint) const;
 
   // Verifies a metric epoch key fingerprint entry and its message count against a
   // complete (non-partial) RunFingerprint.
   // Returns false if complete_fingerprint is for a different run ID, if either
   // fingerprint is partial, if this MultisetFingerprint contains partitions other
-  // than metric_epoch_key, or if message count does not match.
+  // than metric_epoch_key, or if message count or multiset fingerprint does not match.
   bool VerifyCompleteForMetricEpoch(const RunFingerprint& complete_fingerprint,
-                                   const MetricEpochKey& metric_epoch_key) const;
+                                    const MetricEpochKey& metric_epoch_key) const;
 
  private:
   using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
 
+  struct PartitionValue {
+    int64_t count = 0;
+    std::string fingerprint;
+
+    bool operator==(const PartitionValue& other) const = default;
+  };
+
   Stage stage_id_ = STAGE_UNSPECIFIED;
   bool is_partial_ = false;
   std::string run_id_;
-  std::map<MetricEpochTuple, int64_t> partition_counts_;
+  std::string run_hash_key_;
+  std::size_t fingerprint_size_;
+  absl::flat_hash_map<MetricEpochTuple, PartitionValue> partitions_;
 };
 
 }  // namespace cobalt::trusted_shuffler
