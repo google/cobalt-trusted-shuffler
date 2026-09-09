@@ -23,6 +23,7 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/filter_and_strip_privacy_id/filter_and_strip_privacy_id_transform.h"
+#include "src/version/version.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -34,6 +35,7 @@ namespace cobalt::trusted_shuffler {
 namespace {
 
 void RunServer() {
+  LogContainerStartup("Filter and Strip Privacy ID");
   std::string server_address("[::]:8080");
 
   std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform> service =

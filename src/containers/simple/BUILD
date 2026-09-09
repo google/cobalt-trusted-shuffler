@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@oak//bazel:defs.bzl", "oci_runtime_bundle")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
@@ -22,6 +22,7 @@ cc_binary(
     srcs = ["main.cc"],
     deps = [
         ":simple_transform",
+        "//src/version",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
         "@oak//cc/containers/sdk:encryption_key_handle",

@@ -23,6 +23,7 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/run_context_initializer/run_context_initializer_transform.h"
+#include "src/version/version.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -34,18 +35,17 @@ using oak::containers::sdk::InstanceSigningKeyHandle;
 using oak::containers::sdk::OrchestratorClient;
 
 void RunServer() {
+  LogContainerStartup("Run Context Initializer");
   std::string server_address("[::]:8080");
 
-  std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform>
-      service = CreateRunContextInitializerTransform(
-          std::make_unique<InstanceSigningKeyHandle>(),
-          std::make_unique<InstanceEncryptionKeyHandle>());
+  std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform> service =
+      CreateRunContextInitializerTransform(std::make_unique<InstanceSigningKeyHandle>(),
+                                           std::make_unique<InstanceEncryptionKeyHandle>());
   ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(service.get());
   std::unique_ptr<Server> server = builder.BuildAndStart();
-  LOG(INFO) << "Run Context Initializer Transform Server listening on "
-            << server_address;
+  LOG(INFO) << "Run Context Initializer Transform Server listening on " << server_address;
 
   CHECK_OK(OrchestratorClient().NotifyAppReady());
   server->Wait();

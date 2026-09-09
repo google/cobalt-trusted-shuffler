@@ -23,6 +23,7 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/simple/simple_transform.h"
+#include "src/version/version.h"
 
 using ::grpc::Server;
 using ::grpc::ServerBuilder;
@@ -34,6 +35,7 @@ namespace cobalt::trusted_shuffler {
 namespace {
 
 void RunServer() {
+  LogContainerStartup("Simple");
   std::string server_address("[::]:8080");
 
   SimpleTransform service(std::make_unique<InstanceSigningKeyHandle>(),
