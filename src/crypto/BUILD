@@ -94,3 +94,37 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "verify_signed_run_context",
+    srcs = ["verify_signed_run_context.cc"],
+    hdrs = ["verify_signed_run_context.h"],
+    deps = [
+        "//src/proto:run_context_cc_proto",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+    ],
+)
+
+alias(
+    name = "run_context_verifier",
+    actual = ":verify_signed_run_context",
+)
+
+cc_test(
+    name = "verify_signed_run_context_test",
+    srcs = ["verify_signed_run_context_test.cc"],
+    deps = [
+        ":verify_signed_run_context",
+        "//src/crypto:secure_random",
+        "//src/proto:run_context_cc_proto",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@googletest//:gtest_main",
+    ],
+)
+
