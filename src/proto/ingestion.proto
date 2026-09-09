@@ -18,6 +18,7 @@ package cobalt.trusted_shuffler;
 
 import "src/proto/common.proto";
 import "src/proto/fingerprint.proto";
+import "src/proto/run_context.proto";
 import "src/proto/sketch.proto";
 
 option java_package = "com.google.cobalt.trustedshuffler";
@@ -96,6 +97,9 @@ message IngestionVerificationResult {
 
   // Canonical merged fingerprint across all ingestion stage outputs.
   RunFingerprint canonical_fingerprint = 2;
+
+  // Signed run context configuration for subsequent pipeline stages.
+  SignedRunContext signed_run_context = 3;
 }
 
 // Encrypted payload emitted by the ingestion verification stage.

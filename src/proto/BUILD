@@ -81,6 +81,7 @@ proto_library(
     deps = [
         ":common_proto",
         ":fingerprint_proto",
+        ":run_context_proto",
         ":sketch_proto",
     ],
 )
