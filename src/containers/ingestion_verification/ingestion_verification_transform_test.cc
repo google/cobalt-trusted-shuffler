@@ -27,6 +27,7 @@
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
+#include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/config_constraints.pb.h"
 #include "src/proto/fingerprint.pb.h"
@@ -176,9 +177,18 @@ TEST(IngestionVerificationTransformTest, FnFactoryCreatedFnExecutesLifecycleAndE
   ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
 
   // Record 0: SignedRunContext
+  const std::string test_run_id(kRunIdByteLength, 'a');
   RunContext run_context;
-  run_context.set_run_id("run-transform-test");
-  run_context.set_run_hash_key("hash-key-transform-test");
+  run_context.set_run_id(test_run_id);
+  run_context.set_run_hash_key(std::string(kRunHashKeyByteLength, 'b'));
+  RunConfig* const config = run_context.mutable_run_config();
+  config->set_min_epoch_index(10);
+  config->set_max_epoch_index(200);
+  config->set_target_batch_size(100);
+  RunConfig::MetricIdentifier* const metric = config->add_metric_identifiers();
+  metric->set_project_id(1001);
+  metric->set_metric_id(2);
+
   SignedRunContext signed_context;
   signed_context.set_serialized_run_context(run_context.SerializeAsString());
   signed_context.set_signature("valid-sig");
@@ -192,7 +202,7 @@ TEST(IngestionVerificationTransformTest, FnFactoryCreatedFnExecutesLifecycleAndE
 
   // Record 1: PartialIngestionReport
   PartialIngestionReport report;
-  report.mutable_partial_fingerprint()->set_run_id("run-transform-test");
+  report.mutable_partial_fingerprint()->set_run_id(test_run_id);
   report.mutable_partial_fingerprint()->set_stage_id(Stage::STAGE_INGESTION);
   report.mutable_partial_fingerprint()->set_is_partial(true);
   FingerprintEntry* const entry = report.mutable_partial_fingerprint()->add_entries();

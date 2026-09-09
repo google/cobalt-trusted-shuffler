@@ -38,6 +38,7 @@ cc_library(
     hdrs = ["run_context_initializer_fn.h"],
     deps = [
         "//src/crypto:secure_random",
+        "//src/crypto:verify_signed_run_context",
         "//src/proto:run_context_cc_proto",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
@@ -65,6 +66,7 @@ cc_test(
     srcs = ["run_context_initializer_fn_test.cc"],
     deps = [
         ":run_context_initializer_fn",
+        "//src/crypto:verify_signed_run_context",
         "//src/proto:run_context_cc_proto",
         "//src/testing:fake_context",
         "@abseil-cpp//absl/status:status",

@@ -19,6 +19,7 @@
 #include "absl/status/status_matchers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/crypto/verify_signed_run_context.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -51,8 +52,8 @@ TEST(SecureRandomTest, GenerateRunIdReturns32BytesAndIsUnique) {
 
   ASSERT_THAT(run_id1, IsOk());
   ASSERT_THAT(run_id2, IsOk());
-  EXPECT_THAT(*run_id1, SizeIs(32));
-  EXPECT_THAT(*run_id2, SizeIs(32));
+  EXPECT_THAT(*run_id1, SizeIs(kRunIdByteLength));
+  EXPECT_THAT(*run_id2, SizeIs(kRunIdByteLength));
   EXPECT_THAT(*run_id1, Ne(*run_id2));
 }
 
@@ -62,11 +63,10 @@ TEST(SecureRandomTest, GenerateRunHashKeyReturns32BytesAndIsUnique) {
 
   ASSERT_THAT(hash_key1, IsOk());
   ASSERT_THAT(hash_key2, IsOk());
-  EXPECT_THAT(*hash_key1, SizeIs(32));
-  EXPECT_THAT(*hash_key2, SizeIs(32));
+  EXPECT_THAT(*hash_key1, SizeIs(kRunHashKeyByteLength));
+  EXPECT_THAT(*hash_key2, SizeIs(kRunHashKeyByteLength));
   EXPECT_THAT(*hash_key1, Ne(*hash_key2));
 }
 
 }  // namespace
 }  // namespace cobalt::trusted_shuffler
-

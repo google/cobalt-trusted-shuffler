@@ -39,6 +39,7 @@ cc_library(
     deps = [
         "//src/containers/base:first_record_config_do_fn",
         "//src/crypto:multiset_fingerprint",
+        "//src/crypto:verify_signed_run_context",
         "//src/proto:common_cc_proto",
         "//src/proto:config_constraints_cc_proto",
         "//src/proto:fingerprint_cc_proto",
@@ -78,6 +79,7 @@ cc_test(
     deps = [
         ":ingestion_verification_fn",
         "//src/crypto:multiset_fingerprint",
+        "//src/crypto:verify_signed_run_context",
         "//src/proto:common_cc_proto",
         "//src/proto:config_constraints_cc_proto",
         "//src/proto:fingerprint_cc_proto",
@@ -103,6 +105,7 @@ cc_test(
         ":ingestion_verification_fn",
         ":ingestion_verification_transform",
         "//src/crypto:multiset_fingerprint",
+        "//src/crypto:verify_signed_run_context",
         "//src/proto:common_cc_proto",
         "//src/proto:config_constraints_cc_proto",
         "//src/proto:fingerprint_cc_proto",

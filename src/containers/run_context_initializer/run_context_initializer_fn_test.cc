@@ -22,8 +22,9 @@
 #include "absl/status/status_matchers.h"
 #include "cc/crypto/signing_key.h"
 #include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "google/protobuf/any.pb.h"
+#include "gtest/gtest.h"
+#include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/run_context.pb.h"
 #include "src/testing/fake_context.h"
 
@@ -40,8 +41,7 @@ inline constexpr int kReencryptionKeyIndex = 0;
 
 class TestSigningKey : public oak::crypto::SigningKeyHandle {
  public:
-  absl::StatusOr<oak::crypto::v1::Signature> Sign(
-      absl::string_view message) override {
+  absl::StatusOr<oak::crypto::v1::Signature> Sign(absl::string_view message) override {
     oak::crypto::v1::Signature sig;
     sig.set_signature("test_signature_bytes");
     return sig;
@@ -50,8 +50,7 @@ class TestSigningKey : public oak::crypto::SigningKeyHandle {
 
 class FailingSigningKey : public oak::crypto::SigningKeyHandle {
  public:
-  absl::StatusOr<oak::crypto::v1::Signature> Sign(
-      absl::string_view message) override {
+  absl::StatusOr<oak::crypto::v1::Signature> Sign(absl::string_view message) override {
     return absl::InternalError("Signing failed");
   }
 };
@@ -85,8 +84,7 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnInvalidInput) {
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest,
-     InitializeReplicaFailsOnEmptyMetricIdentifiers) {
+TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnEmptyMetricIdentifiers) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -148,6 +146,33 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeMetricId) {
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
+TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnDuplicateMetricIdentifiers) {
+  TestSigningKey key_handle;
+  RunContextInitializerFn fn(&key_handle);
+  testing::FakeContext context;
+
+  RunConfig config = CreateValidRunConfig();
+  RunConfig::MetricIdentifier* const duplicate = config.add_metric_identifiers();
+  duplicate->set_project_id(101);
+  duplicate->set_metric_id(202);
+
+  EXPECT_THAT(fn.InitializeReplica(ToAny(config), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeMinEpochIndex) {
+  TestSigningKey key_handle;
+  RunContextInitializerFn fn(&key_handle);
+  testing::FakeContext context;
+
+  RunConfig config = CreateValidRunConfig();
+  config.set_min_epoch_index(-1);
+  config.set_max_epoch_index(20);
+
+  EXPECT_THAT(fn.InitializeReplica(ToAny(config), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnInvalidEpochRange) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
@@ -161,8 +186,7 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnInvalidEpochRange) {
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest,
-     InitializeReplicaSucceedsWhenMinEqualsMaxEpochIndex) {
+TEST(RunContextInitializerFnTest, InitializeReplicaSucceedsWhenMinEqualsMaxEpochIndex) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -186,8 +210,7 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnZeroTargetBatchSize) {
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest,
-     InitializeReplicaFailsOnNegativeTargetBatchSize) {
+TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeTargetBatchSize) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -199,8 +222,7 @@ TEST(RunContextInitializerFnTest,
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(RunContextInitializerFnTest,
-     FinalizeReplicaFailsWithoutInitializeReplica) {
+TEST(RunContextInitializerFnTest, FinalizeReplicaFailsWithoutInitializeReplica) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -213,8 +235,7 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnNullSigningKey) {
   RunContextInitializerFn fn(nullptr);
   testing::FakeContext context;
 
-  ASSERT_THAT(fn.InitializeReplica(ToAny(CreateValidRunConfig()), context),
-              IsOk());
+  ASSERT_THAT(fn.InitializeReplica(ToAny(CreateValidRunConfig()), context), IsOk());
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kInternal));
 }
@@ -224,14 +245,12 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnSigningError) {
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
 
-  ASSERT_THAT(fn.InitializeReplica(ToAny(CreateValidRunConfig()), context),
-              IsOk());
+  ASSERT_THAT(fn.InitializeReplica(ToAny(CreateValidRunConfig()), context), IsOk());
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kInternal));
 }
 
-TEST(RunContextInitializerFnTest,
-     FinalizeReplicaEmitsSignedRunContextWithKeyIndex0) {
+TEST(RunContextInitializerFnTest, FinalizeReplicaEmitsSignedRunContextWithKeyIndex0) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
@@ -247,8 +266,7 @@ TEST(RunContextInitializerFnTest,
   ASSERT_THAT(fn.InitializeReplica(ToAny(config), context), IsOk());
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
-  std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items =
-      context.Encrypted();
+  std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items = context.Encrypted();
   ASSERT_THAT(encrypted_items, SizeIs(1));
 
   const auto& [key_index, output_kv] = encrypted_items[0];
@@ -259,19 +277,16 @@ TEST(RunContextInitializerFnTest,
   EXPECT_THAT(signed_run_context.signature(), Eq("test_signature_bytes"));
 
   RunContext run_context;
-  ASSERT_TRUE(
-      run_context.ParseFromString(signed_run_context.serialized_run_context()));
-  EXPECT_THAT(run_context.run_id(), SizeIs(32));
-  EXPECT_THAT(run_context.run_hash_key(), SizeIs(32));
+  ASSERT_TRUE(run_context.ParseFromString(signed_run_context.serialized_run_context()));
+  EXPECT_THAT(run_context.run_id(), SizeIs(kRunIdByteLength));
+  EXPECT_THAT(run_context.run_hash_key(), SizeIs(kRunHashKeyByteLength));
   EXPECT_THAT(run_context.run_id(), Ne(run_context.run_hash_key()));
   EXPECT_THAT(run_context.run_config().min_epoch_index(), Eq(10));
   EXPECT_THAT(run_context.run_config().max_epoch_index(), Eq(20));
   EXPECT_THAT(run_context.run_config().target_batch_size(), Eq(100));
   ASSERT_THAT(run_context.run_config().metric_identifiers(), SizeIs(1));
-  EXPECT_THAT(run_context.run_config().metric_identifiers(0).project_id(),
-              Eq(101));
-  EXPECT_THAT(run_context.run_config().metric_identifiers(0).metric_id(),
-              Eq(202));
+  EXPECT_THAT(run_context.run_config().metric_identifiers(0).project_id(), Eq(101));
+  EXPECT_THAT(run_context.run_config().metric_identifiers(0).metric_id(), Eq(202));
 }
 
 TEST(RunContextInitializerFnTest, GeneratesUniqueCryptoRandomKeysPerCall) {
@@ -288,10 +303,8 @@ TEST(RunContextInitializerFnTest, GeneratesUniqueCryptoRandomKeysPerCall) {
   ASSERT_THAT(fn1.FinalizeReplica(google::protobuf::Any(), context1), IsOk());
   ASSERT_THAT(fn2.FinalizeReplica(google::protobuf::Any(), context2), IsOk());
 
-  std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items1 =
-      context1.Encrypted();
-  std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items2 =
-      context2.Encrypted();
+  std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items1 = context1.Encrypted();
+  std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items2 = context2.Encrypted();
   ASSERT_THAT(encrypted_items1, SizeIs(1));
   ASSERT_THAT(encrypted_items2, SizeIs(1));
 

@@ -24,6 +24,7 @@
 
 #include "absl/log/check.h"
 #include "absl/strings/string_view.h"
+#include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/run_context.pb.h"
 #include "src/proto/trusted_shuffler_upload.pb.h"
 #include "tensorflow_federated/cc/core/impl/aggregation/core/mutable_vector_data.h"
@@ -97,15 +98,18 @@ inline SignedRunContext CreateValidSignedRunContext(const int32_t project_id,
                                                     const int64_t max_epoch_index) {
   RunContext run_context;
   run_context.set_run_id(std::string(run_id));
+  run_context.set_run_hash_key(std::string(kRunHashKeyByteLength, 'b'));
   auto* run_config = run_context.mutable_run_config();
   RunConfig::MetricIdentifier* metric = run_config->add_metric_identifiers();
   metric->set_project_id(project_id);
   metric->set_metric_id(metric_id);
   run_config->set_min_epoch_index(min_epoch_index);
   run_config->set_max_epoch_index(max_epoch_index);
+  run_config->set_target_batch_size(100);
 
   SignedRunContext signed_context;
   signed_context.set_serialized_run_context(run_context.SerializeAsString());
+  signed_context.set_signature("test_signature");
   return signed_context;
 }
 

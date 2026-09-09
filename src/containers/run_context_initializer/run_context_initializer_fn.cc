@@ -22,57 +22,35 @@
 #include "absl/status/statusor.h"
 #include "google/protobuf/any.pb.h"
 #include "src/crypto/secure_random.h"
+#include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/run_context.pb.h"
 
 namespace cobalt::trusted_shuffler {
 
 inline constexpr int kReencryptionKeyIndex = 0;
 
-absl::Status RunContextInitializerFn::InitializeReplica(
-    google::protobuf::Any config, Context& context) {
+absl::Status RunContextInitializerFn::InitializeReplica(google::protobuf::Any config,
+                                                        Context& context) {
   RunConfig run_config;
   if (!config.UnpackTo(&run_config)) {
-    return absl::InvalidArgumentError(
-        "Failed to unpack configuration as RunConfig");
+    return absl::InvalidArgumentError("Failed to unpack configuration as RunConfig");
   }
 
-  if (run_config.metric_identifiers().empty()) {
-    return absl::InvalidArgumentError(
-        "RunConfig metric_identifiers must not be empty");
-  }
-
-  for (const auto& metric_identifier : run_config.metric_identifiers()) {
-    if (metric_identifier.project_id() <= 0 ||
-        metric_identifier.metric_id() <= 0) {
-      return absl::InvalidArgumentError(
-          "MetricIdentifier project_id and metric_id must be greater than 0");
-    }
-  }
-
-  if (run_config.max_epoch_index() < run_config.min_epoch_index()) {
-    return absl::InvalidArgumentError(
-        "RunConfig max_epoch_index must be greater than or equal to "
-        "min_epoch_index");
-  }
-
-  if (run_config.target_batch_size() <= 0) {
-    return absl::InvalidArgumentError(
-        "RunConfig target_batch_size must be greater than 0");
+  const absl::Status verification_status = VerifyRunConfig(run_config);
+  if (!verification_status.ok()) {
+    return verification_status;
   }
 
   run_config_ = std::move(run_config);
   return absl::OkStatus();
 }
 
-absl::Status RunContextInitializerFn::Do(KV input, Context& context) {
-  return absl::OkStatus();
-}
+absl::Status RunContextInitializerFn::Do(KV input, Context& context) { return absl::OkStatus(); }
 
-absl::Status RunContextInitializerFn::FinalizeReplica(
-    google::protobuf::Any config, Context& context) {
+absl::Status RunContextInitializerFn::FinalizeReplica(google::protobuf::Any config,
+                                                      Context& context) {
   if (!run_config_.has_value()) {
-    return absl::FailedPreconditionError(
-        "No RunConfig was provided in InitializeReplica");
+    return absl::FailedPreconditionError("No RunConfig was provided in InitializeReplica");
   }
 
   if (signing_key_handle_ == nullptr) {
@@ -106,9 +84,8 @@ absl::Status RunContextInitializerFn::FinalizeReplica(
   signed_run_context.set_serialized_run_context(serialized_run_context);
   signed_run_context.set_signature(signature->signature());
 
-  context.EmitEncrypted(
-      kReencryptionKeyIndex,
-      KV(std::move(config), signed_run_context.SerializeAsString()));
+  context.EmitEncrypted(kReencryptionKeyIndex,
+                        KV(std::move(config), signed_run_context.SerializeAsString()));
 
   return absl::OkStatus();
 }

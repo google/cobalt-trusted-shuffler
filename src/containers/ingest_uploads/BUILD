@@ -80,6 +80,7 @@ cc_library(
         ":upload_parser",
         "//src/containers/base:first_record_config_do_fn",
         "//src/crypto:multiset_fingerprint",
+        "//src/crypto:verify_signed_run_context",
         "//src/proto:common_cc_proto",
         "//src/proto:fingerprint_cc_proto",
         "//src/proto:ingestion_cc_proto",
@@ -89,6 +90,7 @@ cc_library(
         "//src/util:time_utils",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@confidential-federated-compute//containers/fns:fns",
         "@protobuf//:any_cc_proto",
@@ -112,6 +114,7 @@ cc_test(
     srcs = ["ingest_uploads_fn_test.cc"],
     deps = [
         ":ingest_uploads_fn",
+        "//src/crypto:verify_signed_run_context",
         "//src/proto:common_cc_proto",
         "//src/proto:fingerprint_cc_proto",
         "//src/proto:ingestion_cc_proto",

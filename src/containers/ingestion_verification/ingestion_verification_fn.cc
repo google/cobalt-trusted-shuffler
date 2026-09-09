@@ -26,6 +26,7 @@
 #include "absl/status/statusor.h"
 #include "google/protobuf/any.pb.h"
 #include "src/crypto/multiset_fingerprint.h"
+#include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/config_constraints.pb.h"
 #include "src/proto/fingerprint.pb.h"
@@ -56,16 +57,13 @@ absl::Status IngestionVerificationFn::InitializeReplica(google::protobuf::Any co
 
 absl::Status IngestionVerificationFn::OnConfig(
     const cobalt::trusted_shuffler::SignedRunContext& signed_run_context, Context& context) {
-  RunContext run_context;
-  if (!run_context.ParseFromString(signed_run_context.serialized_run_context())) {
-    return absl::InvalidArgumentError(
-        "Failed to parse RunContext proto from serialized_run_context.");
+  const absl::StatusOr<RunContext> verified_run_context =
+      VerifySignedRunContext(signed_run_context);
+  if (!verified_run_context.ok()) {
+    return verified_run_context.status();
   }
-  if (run_context.run_id().empty()) {
-    return absl::InvalidArgumentError("RunContext run_id must not be empty.");
-  }
-  run_id_ = run_context.run_id();
-  multiset_fingerprint_.emplace(Stage::STAGE_INGESTION, /*is_partial=*/false, run_context,
+  run_id_ = verified_run_context->run_id();
+  multiset_fingerprint_.emplace(Stage::STAGE_INGESTION, /*is_partial=*/false, *verified_run_context,
                                 MultisetFingerprint::kFingerprintSize);
   LOG(INFO) << "SignedRunContext received for run_id: " << run_id_;
   return absl::OkStatus();

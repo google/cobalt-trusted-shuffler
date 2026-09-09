@@ -27,6 +27,7 @@
 #include "fcp/confidentialcompute/client_payload.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/fingerprint.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -51,7 +52,7 @@ using ::testing::SizeIs;
 
 constexpr uint32_t kMessageKeyIndex = 0;
 constexpr uint32_t kReportKeyIndex = 1;
-constexpr absl::string_view kTestRunId = "01234567890123456789012345678901";
+const std::string kTestRunId(kRunIdByteLength, 'a');
 constexpr absl::string_view kTestPrivacyId = "test_privacy_id";
 
 TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads) {
@@ -69,7 +70,7 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
 
   EXPECT_TRUE(fn.HasConfig());
   ASSERT_TRUE(fn.Config().has_value());
-  EXPECT_THAT(fn.GetRunContext().run_id(), Eq("01234567890123456789012345678901"));
+  EXPECT_THAT(fn.GetRunContext().run_id(), Eq(kTestRunId));
 
   // Record 1: Valid message upload checkpoint
   TrustedShufflerUpload upload;
@@ -218,56 +219,56 @@ TEST(IngestUploadsFnTest, FailsOnMissingRunConfig) {
 
   RunContext run_context;
   run_context.set_run_id(std::string(kTestRunId));
+  run_context.set_run_hash_key(std::string(kRunHashKeyByteLength, 'b'));
   // No run_config set.
   SignedRunContext signed_context;
   signed_context.set_serialized_run_context(run_context.SerializeAsString());
+  signed_context.set_signature("test_signature");
 
   EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-TEST(IngestUploadsFnTest, DropsAllMetricsWhenNoMetricConfigured) {
+TEST(IngestUploadsFnTest, FailsOnEmptyMetricIdentifiers) {
   testing::FakeContext context;
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   RunContext run_context;
   run_context.set_run_id(std::string(kTestRunId));
+  run_context.set_run_hash_key(std::string(kRunHashKeyByteLength, 'b'));
   auto* run_config = run_context.mutable_run_config();
   run_config->set_min_epoch_index(0);
   run_config->set_max_epoch_index(10);
+  run_config->set_target_batch_size(100);
   // No metric identifiers configured.
   SignedRunContext signed_context;
   signed_context.set_serialized_run_context(run_context.SerializeAsString());
+  signed_context.set_signature("test_signature");
 
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), context), IsOk());
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
 
-  TrustedShufflerUpload upload;
-  upload.set_project_id(1);
-  upload.set_metric_id(100);
-  upload.set_serialized_payload("sample_payload");
+TEST(IngestUploadsFnTest, FailsOnEmptySignature) {
+  testing::FakeContext context;
+  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
-  std::string checkpoint_data =
-      CreateTestFcCheckpoint({upload}, {"1970-01-01T00:00:00Z"}, std::string(kTestPrivacyId));
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint_data), context), IsOk());
+  SignedRunContext signed_context = CreateValidSignedRunContext(
+      /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
+      /*max_epoch_index=*/10);
+  signed_context.clear_signature();
 
-  EXPECT_THAT(context.Encrypted(), SizeIs(0));
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(IngestUploadsFnTest, AllowsOnlyEpochZeroWhenMinAndMaxEpochAreZero) {
   testing::FakeContext context;
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
-  RunContext run_context;
-  run_context.set_run_id(std::string(kTestRunId));
-  auto* run_config = run_context.mutable_run_config();
-  auto* metric = run_config->add_metric_identifiers();
-  metric->set_project_id(1);
-  metric->set_metric_id(100);
-  run_config->set_min_epoch_index(0);
-  run_config->set_max_epoch_index(0);
-
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
+  SignedRunContext signed_context = CreateValidSignedRunContext(
+      /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
+      /*max_epoch_index=*/0);
   ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), context), IsOk());
 
   TrustedShufflerUpload upload;

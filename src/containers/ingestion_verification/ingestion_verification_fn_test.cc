@@ -25,6 +25,7 @@
 #include "absl/types/span.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/config_constraints.pb.h"
 #include "src/proto/fingerprint.pb.h"
@@ -43,6 +44,9 @@ using ::cobalt::trusted_shuffler::testing::EquivToProto;
 using ::cobalt::trusted_shuffler::testing::FakeContext;
 using ::testing::ElementsAre;
 using ::testing::Eq;
+
+constexpr absl::string_view kTestRunId = "test_run_id_32_bytes_abcdefghijk";
+static_assert(kTestRunId.size() == kRunIdByteLength);
 
 // Helper struct for declarative test fixtures without positional tuples.
 struct MetricThresholdSpec {
@@ -67,8 +71,8 @@ TrustedShufflerConfigConstraints CreateConfigConstraints(
 SignedRunContext CreateValidSignedRunContext(int32_t project_id, int32_t metric_id,
                                              std::string signature_value) {
   RunContext run_context;
-  run_context.set_run_id("test_run_id_32_bytes_abcdefghij");
-  run_context.set_run_hash_key("test_hash_key_32_bytes_abcdefgh");
+  run_context.set_run_id(std::string(kTestRunId));
+  run_context.set_run_hash_key(std::string(kRunHashKeyByteLength, 'b'));
 
   RunConfig* const config = run_context.mutable_run_config();
   config->set_min_epoch_index(10);
@@ -194,6 +198,21 @@ TEST(IngestionVerificationFnTest, CorruptedInnerRunContextReturnsError) {
   EXPECT_FALSE(fn.HasConfig());
 }
 
+TEST(IngestionVerificationFnTest, InvalidRunContextInSignedRunContextReturnsError) {
+  const MetricThresholdSpec specs[] = {
+      {.project_id = 1001, .metric_id = 2, .threshold = 50},
+  };
+  auto constraints = CreateConfigConstraints(specs);
+  IngestionVerificationFn fn(constraints);
+  FakeContext context;
+
+  SignedRunContext signed_context = CreateValidSignedRunContext(1001, 2, "");
+
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(signed_context.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_FALSE(fn.HasConfig());
+}
+
 TEST(IngestionVerificationFnTest, ConfigConstraintsAccessor) {
   const MetricThresholdSpec specs[] = {
       {.project_id = 1001, .metric_id = 2, .threshold = 100},
@@ -307,7 +326,7 @@ TEST(IngestionVerificationFnTest, FinalizeReplicaWithInvalidPartialFingerprintEm
 
   // Report with invalid stage_id in partial_fingerprint
   PartialIngestionReport report;
-  report.mutable_partial_fingerprint()->set_run_id("test_run_id_32_bytes_abcdefghij");
+  report.mutable_partial_fingerprint()->set_run_id(std::string(kTestRunId));
   report.mutable_partial_fingerprint()->set_stage_id(Stage::STAGE_UNSPECIFIED);
   report.mutable_partial_fingerprint()->set_is_partial(true);
 
@@ -338,7 +357,7 @@ TEST(IngestionVerificationFnTest, FinalizeReplicaWithInvalidHllSketchEmitsIntegr
               IsOk());
 
   PartialIngestionReport report;
-  report.mutable_partial_fingerprint()->set_run_id("test_run_id_32_bytes_abcdefghij");
+  report.mutable_partial_fingerprint()->set_run_id(std::string(kTestRunId));
   report.mutable_partial_fingerprint()->set_stage_id(Stage::STAGE_INGESTION);
   report.mutable_partial_fingerprint()->set_is_partial(true);
 
@@ -381,7 +400,7 @@ TEST(IngestionVerificationFnTest, SuccessfulIngestionVerificationSinglePartition
        .sketch_precision = 14},
   };
   const PartialIngestionReport report =
-      CreatePartialIngestionReport("test_run_id_32_bytes_abcdefghij", partition_specs);
+      CreatePartialIngestionReport(std::string(kTestRunId), partition_specs);
 
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context), IsOk());
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
@@ -406,12 +425,12 @@ TEST(IngestionVerificationFnTest, SuccessfulIngestionVerificationSinglePartition
   ASSERT_TRUE(payload.has_success());
 
   const auto& success = payload.success();
-  EXPECT_EQ(success.threshold_report().run_id(), "test_run_id_32_bytes_abcdefghij");
+  EXPECT_EQ(success.threshold_report().run_id(), std::string(kTestRunId));
   ASSERT_EQ(success.threshold_report().approved_partitions_size(), 1);
   EXPECT_THAT(success.threshold_report().approved_partitions(0),
               EquivToProto(CreateMetricEpochKey(1001, 2, 50)));
 
-  EXPECT_EQ(success.canonical_fingerprint().run_id(), "test_run_id_32_bytes_abcdefghij");
+  EXPECT_EQ(success.canonical_fingerprint().run_id(), std::string(kTestRunId));
   EXPECT_EQ(success.canonical_fingerprint().stage_id(), Stage::STAGE_INGESTION);
   EXPECT_FALSE(success.canonical_fingerprint().is_partial());
   ASSERT_EQ(success.canonical_fingerprint().entries_size(), 1);
@@ -451,7 +470,7 @@ TEST(IngestionVerificationFnTest, MultipleWorkersAndPartitionsWithThresholdFilte
        .sketch_precision = 14},
   };
   const PartialIngestionReport report1 =
-      CreatePartialIngestionReport("test_run_id_32_bytes_abcdefghij", worker1_specs);
+      CreatePartialIngestionReport(std::string(kTestRunId), worker1_specs);
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report1.SerializeAsString()), context), IsOk());
 
   // Worker 2: 12 distinct devices for metric 2 (total ~24 >= 20 threshold -> APPROVED)
@@ -471,7 +490,7 @@ TEST(IngestionVerificationFnTest, MultipleWorkersAndPartitionsWithThresholdFilte
        .sketch_precision = 14},
   };
   const PartialIngestionReport report2 =
-      CreatePartialIngestionReport("test_run_id_32_bytes_abcdefghij", worker2_specs);
+      CreatePartialIngestionReport(std::string(kTestRunId), worker2_specs);
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report2.SerializeAsString()), context), IsOk());
 
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
@@ -526,7 +545,7 @@ TEST(IngestionVerificationFnTest, NoPartitionsMeetThresholdEmitsEmptySuccess) {
        .sketch_precision = 14},
   };
   const PartialIngestionReport report =
-      CreatePartialIngestionReport("test_run_id_32_bytes_abcdefghij", partition_specs);
+      CreatePartialIngestionReport(std::string(kTestRunId), partition_specs);
 
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context), IsOk());
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
@@ -578,7 +597,7 @@ TEST(IngestionVerificationFnTest, ThresholdBoundaryConditionsExactMatchAndOneBel
        .sketch_precision = 14},
   };
   const PartialIngestionReport report =
-      CreatePartialIngestionReport("test_run_id_32_bytes_abcdefghij", partition_specs);
+      CreatePartialIngestionReport(std::string(kTestRunId), partition_specs);
 
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context), IsOk());
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
@@ -639,7 +658,7 @@ TEST(IngestionVerificationFnTest, OverlappingDeviceIdsAcrossWorkersDeduplicatedB
        .sketch_precision = 14},
   };
   const PartialIngestionReport report1 =
-      CreatePartialIngestionReport("test_run_id_32_bytes_abcdefghij", worker1_specs);
+      CreatePartialIngestionReport(std::string(kTestRunId), worker1_specs);
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report1.SerializeAsString()), context), IsOk());
 
   // Worker 2: Same 10 distinct devices, message count 10
@@ -653,7 +672,7 @@ TEST(IngestionVerificationFnTest, OverlappingDeviceIdsAcrossWorkersDeduplicatedB
        .sketch_precision = 14},
   };
   const PartialIngestionReport report2 =
-      CreatePartialIngestionReport("test_run_id_32_bytes_abcdefghij", worker2_specs);
+      CreatePartialIngestionReport(std::string(kTestRunId), worker2_specs);
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report2.SerializeAsString()), context), IsOk());
 
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
@@ -711,7 +730,7 @@ TEST(IngestionVerificationFnTest, UnregisteredPartitionsNotInConfigConstraintsAr
        .sketch_precision = 14},
   };
   const PartialIngestionReport report =
-      CreatePartialIngestionReport("test_run_id_32_bytes_abcdefghij", partition_specs);
+      CreatePartialIngestionReport(std::string(kTestRunId), partition_specs);
 
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context), IsOk());
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
@@ -773,10 +792,10 @@ TEST(IngestionVerificationFnTest, ZeroDataRecordsAfterConfigurationEmitsEmptySuc
   ASSERT_TRUE(payload.has_success());
 
   const auto& success = payload.success();
-  EXPECT_EQ(success.threshold_report().run_id(), "test_run_id_32_bytes_abcdefghij");
+  EXPECT_EQ(success.threshold_report().run_id(), std::string(kTestRunId));
   EXPECT_EQ(success.threshold_report().approved_partitions_size(), 0);
 
-  EXPECT_EQ(success.canonical_fingerprint().run_id(), "test_run_id_32_bytes_abcdefghij");
+  EXPECT_EQ(success.canonical_fingerprint().run_id(), std::string(kTestRunId));
   EXPECT_EQ(success.canonical_fingerprint().stage_id(), Stage::STAGE_INGESTION);
   EXPECT_FALSE(success.canonical_fingerprint().is_partial());
   EXPECT_EQ(success.canonical_fingerprint().entries_size(), 0);
@@ -806,7 +825,7 @@ TEST(IngestionVerificationFnTest, IncompatibleHllSketchPrecisionAcrossWorkersEmi
        .sketch_precision = 14},
   };
   const PartialIngestionReport report1 =
-      CreatePartialIngestionReport("test_run_id_32_bytes_abcdefghij", worker1_specs);
+      CreatePartialIngestionReport(std::string(kTestRunId), worker1_specs);
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report1.SerializeAsString()), context), IsOk());
 
   // Worker 2 sends HllSketch for same partition with precision 12 (incompatible with precision 14)
@@ -819,7 +838,7 @@ TEST(IngestionVerificationFnTest, IncompatibleHllSketchPrecisionAcrossWorkersEmi
        .sketch_precision = 12},
   };
   const PartialIngestionReport report2 =
-      CreatePartialIngestionReport("test_run_id_32_bytes_abcdefghij", worker2_specs);
+      CreatePartialIngestionReport(std::string(kTestRunId), worker2_specs);
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report2.SerializeAsString()), context), IsOk());
 
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
@@ -862,7 +881,7 @@ TEST(IngestionVerificationFnTest, SubsequentRecordProcessingAfterFaultPreservesI
        .sketch_precision = 14},
   };
   const PartialIngestionReport valid_report =
-      CreatePartialIngestionReport("test_run_id_32_bytes_abcdefghij", partition_specs);
+      CreatePartialIngestionReport(std::string(kTestRunId), partition_specs);
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(valid_report.SerializeAsString()), context),
               IsOk());
 

@@ -49,8 +49,8 @@ RunConfig CreateValidRunConfig() {
 
 RunContext CreateValidRunContext() {
   RunContext context;
-  context.set_run_id(std::string(32, 'a'));
-  context.set_run_hash_key(std::string(32, 'b'));
+  context.set_run_id(std::string(kRunIdByteLength, 'a'));
+  context.set_run_hash_key(std::string(kRunHashKeyByteLength, 'b'));
   *context.mutable_run_config() = CreateValidRunConfig();
   return context;
 }
@@ -70,8 +70,8 @@ TEST(VerifySignedRunContextTest, ValidSignedRunContextSucceeds) {
 
   ASSERT_THAT(validated_context, IsOk());
 
-  EXPECT_THAT(validated_context->run_id(), Eq(std::string(32, 'a')));
-  EXPECT_THAT(validated_context->run_hash_key(), Eq(std::string(32, 'b')));
+  EXPECT_THAT(validated_context->run_id(), Eq(std::string(kRunIdByteLength, 'a')));
+  EXPECT_THAT(validated_context->run_hash_key(), Eq(std::string(kRunHashKeyByteLength, 'b')));
   EXPECT_THAT(validated_context->run_config().target_batch_size(), Eq(100));
   EXPECT_THAT(validated_context->run_config().metric_identifiers_size(), Eq(1));
 }
@@ -120,7 +120,7 @@ TEST(VerifySignedRunContextTest, EmptyRunIdReturnsInvalidArgument) {
 
 TEST(VerifySignedRunContextTest, ShortRunIdReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
-  run_context.set_run_id(std::string(16, 'x'));
+  run_context.set_run_id(std::string(kRunIdByteLength - 1, 'x'));
 
   SignedRunContext signed_context;
   signed_context.set_serialized_run_context(run_context.SerializeAsString());
@@ -133,7 +133,7 @@ TEST(VerifySignedRunContextTest, ShortRunIdReturnsInvalidArgument) {
 
 TEST(VerifySignedRunContextTest, LongRunIdReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
-  run_context.set_run_id(std::string(33, 'x'));
+  run_context.set_run_id(std::string(kRunIdByteLength + 1, 'x'));
 
   SignedRunContext signed_context;
   signed_context.set_serialized_run_context(run_context.SerializeAsString());
@@ -159,7 +159,7 @@ TEST(VerifySignedRunContextTest, EmptyRunHashKeyReturnsInvalidArgument) {
 
 TEST(VerifySignedRunContextTest, ShortRunHashKeyReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
-  run_context.set_run_hash_key(std::string(31, 'y'));
+  run_context.set_run_hash_key(std::string(kRunHashKeyByteLength - 1, 'y'));
 
   SignedRunContext signed_context;
   signed_context.set_serialized_run_context(run_context.SerializeAsString());
@@ -172,7 +172,7 @@ TEST(VerifySignedRunContextTest, ShortRunHashKeyReturnsInvalidArgument) {
 
 TEST(VerifySignedRunContextTest, LongRunHashKeyReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
-  run_context.set_run_hash_key(std::string(64, 'y'));
+  run_context.set_run_hash_key(std::string(kRunHashKeyByteLength + 1, 'y'));
 
   SignedRunContext signed_context;
   signed_context.set_serialized_run_context(run_context.SerializeAsString());
@@ -378,7 +378,7 @@ TEST(VerifySignedRunContextTest, StringViewOverloadSucceedsForValidInput) {
 
   ASSERT_THAT(validated_context, IsOk());
 
-  EXPECT_THAT(validated_context->run_id(), Eq(std::string(32, 'a')));
+  EXPECT_THAT(validated_context->run_id(), Eq(std::string(kRunIdByteLength, 'a')));
 }
 
 TEST(VerifySignedRunContextTest, StringViewOverloadFailsForEmptyOrCorruptString) {

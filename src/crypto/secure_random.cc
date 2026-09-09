@@ -21,6 +21,7 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "src/crypto/verify_signed_run_context.h"
 
 namespace cobalt::trusted_shuffler {
 
@@ -33,13 +34,10 @@ absl::StatusOr<std::string> GenerateCryptoRandomBytes(std::size_t num_bytes) {
   return bytes;
 }
 
-absl::StatusOr<std::string> GenerateRunId() {
-  return GenerateCryptoRandomBytes(32);
-}
+absl::StatusOr<std::string> GenerateRunId() { return GenerateCryptoRandomBytes(kRunIdByteLength); }
 
 absl::StatusOr<std::string> GenerateRunHashKey() {
-  return GenerateCryptoRandomBytes(32);
+  return GenerateCryptoRandomBytes(kRunHashKeyByteLength);
 }
 
 }  // namespace cobalt::trusted_shuffler
-

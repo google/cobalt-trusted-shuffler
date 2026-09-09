@@ -21,6 +21,7 @@ cc_library(
     srcs = ["secure_random.cc"],
     hdrs = ["secure_random.h"],
     deps = [
+        ":verify_signed_run_context",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
         "@boringssl//:crypto",
@@ -32,6 +33,7 @@ cc_test(
     srcs = ["secure_random_test.cc"],
     deps = [
         ":secure_random",
+        ":verify_signed_run_context",
         "@abseil-cpp//absl/status:status_matchers",
         "@googletest//:gtest_main",
     ],

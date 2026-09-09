@@ -22,7 +22,9 @@
 #include <vector>
 
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "src/containers/ingest_uploads/upload_parser.h"
+#include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/fingerprint.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -34,13 +36,11 @@ namespace cobalt::trusted_shuffler {
 
 absl::Status IngestUploadsFn::OnConfig(const SignedRunContext& signed_run_context,
                                        Context& context) {
-  if (!run_context_.ParseFromString(signed_run_context.serialized_run_context())) {
-    return absl::InvalidArgumentError(
-        "Failed to parse serialized RunContext from SignedRunContext in first record");
+  absl::StatusOr<RunContext> verified_run_context = VerifySignedRunContext(signed_run_context);
+  if (!verified_run_context.ok()) {
+    return verified_run_context.status();
   }
-  if (!run_context_.has_run_config()) {
-    return absl::InvalidArgumentError("RunContext must contain a RunConfig");
-  }
+  run_context_ = *std::move(verified_run_context);
   allowed_metric_identifiers_.clear();
   for (const RunConfig::MetricIdentifier& id : run_context_.run_config().metric_identifiers()) {
     allowed_metric_identifiers_.insert({id.project_id(), id.metric_id()});
