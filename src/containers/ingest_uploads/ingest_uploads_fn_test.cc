@@ -33,6 +33,7 @@
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
 #include "src/proto/trusted_shuffler_upload.pb.h"
+#include "src/sketch/hll_sketch.h"
 #include "src/testing/fake_context.h"
 #include "src/testing/test_utils.h"
 #include "tensorflow_federated/cc/core/impl/aggregation/core/mutable_vector_data.h"
@@ -300,6 +301,84 @@ TEST(IngestUploadsFnTest, FailsOnEmptyFirstRecordAndRejectsSubsequentRecords) {
   // One-shot semantics: subsequent records are rejected.
   EXPECT_THAT(fn.Do(IngestUploadsFn::KV("checkpoint_data"), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(IngestUploadsFnTest, EstimatesDeviceCardinalityUsingPrivacyId) {
+  testing::FakeContext context;
+  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+
+  const SignedRunContext signed_run_context = CreateValidSignedRunContext(
+      /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
+      /*max_epoch_index=*/10);
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), context), IsOk());
+
+  TrustedShufflerUpload upload1;
+  upload1.set_project_id(1);
+  upload1.set_metric_id(100);
+  upload1.set_serialized_payload("payload_1");
+
+  TrustedShufflerUpload upload2;
+  upload2.set_project_id(1);
+  upload2.set_metric_id(100);
+  upload2.set_serialized_payload("payload_2");
+
+  TrustedShufflerUpload upload3;
+  upload3.set_project_id(1);
+  upload3.set_metric_id(100);
+  upload3.set_serialized_payload("payload_3");
+
+  // Two checkpoints from "device_1" with different payloads and timestamps in the same epoch.
+  const std::string checkpoint1 =
+      CreateTestFcCheckpoint({upload1}, {"1970-01-01T00:00:01Z"}, std::string("device_1"));
+  const std::string checkpoint2 =
+      CreateTestFcCheckpoint({upload2}, {"1970-01-01T00:00:02Z"}, std::string("device_1"));
+  // One checkpoint from "device_2" in the same epoch.
+  const std::string checkpoint3 =
+      CreateTestFcCheckpoint({upload3}, {"1970-01-01T00:00:03Z"}, std::string("device_2"));
+
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint1), context), IsOk());
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint2), context), IsOk());
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint3), context), IsOk());
+
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+
+  const std::vector<std::pair<int, IngestUploadsFn::KV>> all_encrypted = context.Encrypted();
+  // 3 messages + 1 report
+  ASSERT_THAT(all_encrypted, SizeIs(4));
+  const std::pair<int, IngestUploadsFn::KV>& report_emitted = all_encrypted[3];
+  EXPECT_THAT(report_emitted.first, Eq(kReportKeyIndex));
+
+  PartialIngestionReport report;
+  ASSERT_TRUE(report.ParseFromString(report_emitted.second.data));
+  ASSERT_THAT(report.metric_epoch_sketches(), SizeIs(1));
+
+  const absl::StatusOr<HllSketch> sketch =
+      HllSketch::FromProto(report.metric_epoch_sketches(0).hyperloglog_sketch());
+  ASSERT_THAT(sketch, IsOk());
+  EXPECT_THAT(sketch->EstimateCardinality(), Eq(2));
+}
+
+TEST(IngestUploadsFnTest, DropsCheckpointMissingPrivacyIdAndEmitsError) {
+  testing::FakeContext context;
+  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+
+  const SignedRunContext signed_run_context = CreateValidSignedRunContext(
+      /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
+      /*max_epoch_index=*/10);
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), context), IsOk());
+
+  TrustedShufflerUpload upload;
+  upload.set_project_id(1);
+  upload.set_metric_id(100);
+  upload.set_serialized_payload("sample_payload_data");
+
+  const std::string checkpoint_data =
+      CreateTestFcCheckpoint({upload}, {"1970-01-01T00:00:00Z"}, /*privacy_id=*/std::nullopt);
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint_data), context), IsOk());
+
+  EXPECT_THAT(context.Encrypted(), SizeIs(0));
+  ASSERT_THAT(context.Errors(), SizeIs(1));
+  EXPECT_THAT(context.Errors()[0], StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(IngestUploadsFnTest, FailsOnCorruptedConfigProtoAndRejectsSubsequentRecords) {

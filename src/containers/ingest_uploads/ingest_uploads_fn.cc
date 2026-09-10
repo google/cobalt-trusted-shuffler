@@ -71,6 +71,11 @@ absl::Status IngestUploadsFn::OnRecord(KV record, Context& context) {
     messages_dropped_++;
     return absl::OkStatus();
   }
+  if (uploads->privacy_id.empty()) {
+    context.EmitError(absl::InvalidArgumentError("Checkpoint missing privacy_id"));
+    messages_dropped_++;
+    return absl::OkStatus();
+  }
 
   for (const ClientUpload& parsed_upload : uploads->uploads) {
     const TrustedShufflerUpload& upload = parsed_upload.upload;
@@ -112,7 +117,7 @@ absl::Status IngestUploadsFn::OnRecord(KV record, Context& context) {
       }
       it = sketches_.emplace(tuple_key, std::move(created_sketch.value())).first;
     }
-    it->second.Insert(record.data);
+    it->second.Insert(uploads->privacy_id);
     messages_received_++;
 
     IngestMessagesHeader header;
