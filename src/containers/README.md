@@ -34,6 +34,7 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | [`ingestion_verification`](ingestion_verification/) | Placeholder skeleton; currently does nothing. TODO(b/555370722): Implement KMS signature verification and device threshold evaluation. | Emits nothing currently. | None (accepts empty config) |
 | [`filter_and_strip_privacy_id`](filter_and_strip_privacy_id/) | Placeholder skeleton; currently does nothing. TODO(b/555372765): Implement threshold-based filtering and privacy ID stripping logic. | Emits nothing currently. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto) |
 | [`scatter_shuffle`](scatter_shuffle/) | Placeholder skeleton; currently does nothing. TODO(b/557296992): Implement scatter shuffle and group assignment logic. | Emits nothing currently. | None (accepts empty config) |
+| [`encrypt_output`](encrypt_output/) | Placeholder skeleton; currently does nothing. TODO(b/557302528): Implement output encryption and release fingerprinting logic. | Emits nothing currently. | None (accepts empty config) |
 
 ---
 
@@ -143,3 +144,18 @@ TODO(b/557296992): Implement message decryption, batch validation, cryptographic
 - **Inputs**: `actual_batch_size` messages of `EncryptedKV<MetricEpochKey, ShuffledMessage, 6>` (including dummy padding messages from the pre-padding stage).
 - **Outputs**: Emits `EncryptedKV<int32 group_id, ShuffledMessage, 7>` with unencrypted `group_id` header and payload re-encrypted under key 7.
 - **Documentation**: See [`src/containers/scatter_shuffle/README.md`](scatter_shuffle/README.md).
+
+---
+
+## 8. `encrypt_output`
+
+The **`encrypt_output`** container is responsible for output encryption and release fingerprinting in the Trusted Shuffler pipeline.
+
+**Note:** This container currently serves as an empty skeleton. It is currently a no-op placeholder.
+TODO(b/557302528): Implement output encryption, invariant validation, multiset fingerprint accumulation, and key release emission.
+
+- **Purpose**: Encrypts customer payloads under a per-worker release key (AES-256-GCM), accumulates release multiset fingerprints, and emits encrypted payloads and key release material.
+- **Configuration**: None currently (accepts empty config).
+- **Inputs**: `IngestionVerificationResult` (containing `SignedRunContext` and approved partitions) on record 0, and `ShuffledMessage` records with `shuffle_count == 2`.
+- **Outputs**: Streaming `EncryptedMessageOutput` emitted unencrypted (payloads encrypted under release key), and `WorkerKeyAndFingerprint` emitted encrypted under key index 0 to the downstream key release verification stage upon finalization.
+- **Documentation**: See [`src/containers/encrypt_output/README.md`](encrypt_output/README.md).
