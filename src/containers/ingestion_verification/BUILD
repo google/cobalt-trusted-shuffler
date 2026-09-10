@@ -22,6 +22,7 @@ cc_binary(
     srcs = ["main.cc"],
     deps = [
         ":ingestion_verification_transform",
+        "//src/version",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
         "@grpc//:grpc++",
@@ -93,7 +94,6 @@ cc_test(
         "@protobuf//:any_cc_proto",
     ],
 )
-
 
 pkg_tar(
     name = "tar",

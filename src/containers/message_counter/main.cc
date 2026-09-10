@@ -23,6 +23,7 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/message_counter/counter_transform.h"
+#include "src/version/version.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -34,12 +35,12 @@ namespace cobalt::trusted_shuffler {
 namespace {
 
 void RunServer() {
+  LogContainerStartup("Message Counter");
   std::string server_address("[::]:8080");
 
-  std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform>
-      service = CreateCounterTransform(
-          std::make_unique<InstanceSigningKeyHandle>(),
-          std::make_unique<InstanceEncryptionKeyHandle>());
+  std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform> service =
+      CreateCounterTransform(std::make_unique<InstanceSigningKeyHandle>(),
+                             std::make_unique<InstanceEncryptionKeyHandle>());
   ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(service.get());
