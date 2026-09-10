@@ -418,6 +418,7 @@ TEST(IngestionVerificationFnTest, SuccessfulIngestionVerificationSinglePartition
   EXPECT_THAT(success.canonical_fingerprint().entries(0).metric_epoch_key(),
               EquivToProto(CreateMetricEpochKey(1001, 2, 50)));
   EXPECT_EQ(success.canonical_fingerprint().entries(0).message_count(), 15);
+  EXPECT_THAT(success.signed_run_context(), EquivToProto(signed_context));
 }
 
 TEST(IngestionVerificationFnTest, MultipleWorkersAndPartitionsWithThresholdFiltering) {
@@ -500,6 +501,7 @@ TEST(IngestionVerificationFnTest, MultipleWorkersAndPartitionsWithThresholdFilte
   EXPECT_THAT(success.canonical_fingerprint().entries(0).metric_epoch_key(),
               EquivToProto(CreateMetricEpochKey(1001, 2, 100)));
   EXPECT_EQ(success.canonical_fingerprint().entries(0).message_count(), 24);
+  EXPECT_THAT(success.signed_run_context(), EquivToProto(signed_context));
 }
 
 TEST(IngestionVerificationFnTest, NoPartitionsMeetThresholdEmitsEmptySuccess) {
@@ -542,6 +544,7 @@ TEST(IngestionVerificationFnTest, NoPartitionsMeetThresholdEmitsEmptySuccess) {
   ASSERT_TRUE(payload.has_success());
   EXPECT_EQ(payload.success().threshold_report().approved_partitions_size(), 0);
   EXPECT_EQ(payload.success().canonical_fingerprint().entries_size(), 0);
+  EXPECT_THAT(payload.success().signed_run_context(), EquivToProto(signed_context));
 }
 
 TEST(IngestionVerificationFnTest, ThresholdBoundaryConditionsExactMatchAndOneBelow) {
@@ -608,6 +611,7 @@ TEST(IngestionVerificationFnTest, ThresholdBoundaryConditionsExactMatchAndOneBel
   EXPECT_THAT(success.canonical_fingerprint().entries(0).metric_epoch_key(),
               EquivToProto(CreateMetricEpochKey(1001, 2, 100)));
   EXPECT_EQ(success.canonical_fingerprint().entries(0).message_count(), 10);
+  EXPECT_THAT(success.signed_run_context(), EquivToProto(signed_context));
 }
 
 TEST(IngestionVerificationFnTest, OverlappingDeviceIdsAcrossWorkersDeduplicatedBelowThreshold) {
@@ -667,6 +671,7 @@ TEST(IngestionVerificationFnTest, OverlappingDeviceIdsAcrossWorkersDeduplicatedB
   ASSERT_TRUE(payload.has_success());
   EXPECT_EQ(payload.success().threshold_report().approved_partitions_size(), 0);
   EXPECT_EQ(payload.success().canonical_fingerprint().entries_size(), 0);
+  EXPECT_THAT(payload.success().signed_run_context(), EquivToProto(signed_context));
 }
 
 TEST(IngestionVerificationFnTest, UnregisteredPartitionsNotInConfigConstraintsAreDropped) {
@@ -734,6 +739,7 @@ TEST(IngestionVerificationFnTest, UnregisteredPartitionsNotInConfigConstraintsAr
   EXPECT_THAT(success.canonical_fingerprint().entries(0).metric_epoch_key(),
               EquivToProto(CreateMetricEpochKey(1001, 2, 100)));
   EXPECT_EQ(success.canonical_fingerprint().entries(0).message_count(), 15);
+  EXPECT_THAT(success.signed_run_context(), EquivToProto(signed_context));
 }
 
 TEST(IngestionVerificationFnTest, ZeroDataRecordsAfterConfigurationEmitsEmptySuccess) {
@@ -774,6 +780,7 @@ TEST(IngestionVerificationFnTest, ZeroDataRecordsAfterConfigurationEmitsEmptySuc
   EXPECT_EQ(success.canonical_fingerprint().stage_id(), Stage::STAGE_INGESTION);
   EXPECT_FALSE(success.canonical_fingerprint().is_partial());
   EXPECT_EQ(success.canonical_fingerprint().entries_size(), 0);
+  EXPECT_THAT(success.signed_run_context(), EquivToProto(signed_context));
 }
 
 TEST(IngestionVerificationFnTest, IncompatibleHllSketchPrecisionAcrossWorkersEmitsIntegrityFault) {

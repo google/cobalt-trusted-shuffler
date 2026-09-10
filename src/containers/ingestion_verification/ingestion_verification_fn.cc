@@ -200,6 +200,7 @@ absl::Status IngestionVerificationFn::FinalizeReplica(google::protobuf::Any conf
   IngestionVerificationResult* const result = payload.mutable_success();
   *result->mutable_threshold_report() = std::move(threshold_report);
   *result->mutable_canonical_fingerprint() = std::move(canonical_fingerprint);
+  *result->mutable_signed_run_context() = *Config();
 
   google::protobuf::Any header_any;
   header_any.PackFrom(header);

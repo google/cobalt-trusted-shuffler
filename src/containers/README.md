@@ -107,7 +107,7 @@ The **`ingestion_verification`** container is a confidential transform responsib
 - **Purpose**: Verifies incoming ingestion reports from `IngestUploads`, computes union device cardinality via merged HLL sketches, evaluates thresholds from `TrustedShufflerConfigConstraints`, and emits verification outputs.
 - **Configuration**: `TrustedShufflerConfigConstraints` unpacked during transform initialization; `SignedRunContext` ingested on Record 0.
 - **Inputs**: KV pairs processed via `Do` (Record 0 config, Records 1..N `PartialIngestionReport`).
-- **Outputs**: Emits unencrypted `IngestionVerificationHeader` (summary message counts or `IntegrityFault`) for the orchestrator, and encrypted `IngestionVerificationPayload` (approved partitions and canonical `RunFingerprint`, or `IntegrityFault`) under key index 0 for `FilterAndStripPrivacyId`.
+- **Outputs**: Emits unencrypted `IngestionVerificationHeader` (summary message counts or `IntegrityFault`) for the orchestrator, and encrypted `IngestionVerificationPayload` (approved partitions, canonical `RunFingerprint`, and `SignedRunContext`, or `IntegrityFault`) under key index 0 for `FilterAndStripPrivacyId`.
 - **Documentation**: See [`src/containers/ingestion_verification/README.md`](ingestion_verification/README.md).
 
 ---

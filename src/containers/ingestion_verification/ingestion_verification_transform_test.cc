@@ -230,6 +230,7 @@ TEST(IngestionVerificationTransformTest, FnFactoryCreatedFnExecutesLifecycleAndE
   ASSERT_TRUE(payload.has_success());
   EXPECT_EQ(payload.success().threshold_report().approved_partitions_size(), 1);
   EXPECT_EQ(payload.success().canonical_fingerprint().entries_size(), 1);
+  EXPECT_THAT(payload.success().signed_run_context(), EquivToProto(signed_context));
 }
 
 TEST(IngestionVerificationTransformTest,
