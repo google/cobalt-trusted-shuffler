@@ -62,11 +62,8 @@ message ReleaseOutputHeader {
 
 // Summary report containing the verified release key released for a run.
 message ReleasedKeyReport {
-  // 32-byte cryptographic identifier for the pipeline run context.
-  bytes run_id = 1;
-
   // Tink AES-256-GCM AEAD key for decrypting output messages.
-  bytes release_key = 2;
+  bytes release_key = 1;
 }
 
 // Release stage result emitted to the orchestrator.
