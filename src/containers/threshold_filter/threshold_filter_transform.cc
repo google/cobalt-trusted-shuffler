@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/containers/filter_and_strip_privacy_id/filter_and_strip_privacy_id_transform.h"
+#include "src/containers/threshold_filter/threshold_filter_transform.h"
 
 #include <memory>
 #include <utility>
@@ -20,8 +20,8 @@
 #include "absl/status/statusor.h"
 #include "containers/fns/confidential_transform_server.h"
 #include "containers/fns/fn_factory.h"
-#include "src/containers/filter_and_strip_privacy_id/filter_and_strip_privacy_id_fn.h"
-#include "src/proto/config_constraints.pb.h"
+#include "google/protobuf/any.pb.h"
+#include "src/containers/threshold_filter/threshold_filter_fn.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -33,11 +33,11 @@ using confidential_federated_compute::fns::WriteConfigurationMap;
 
 }  // namespace
 
-absl::StatusOr<std::unique_ptr<Fn>> FilterAndStripPrivacyIdFnFactory::CreateFn() const {
-  return std::make_unique<FilterAndStripPrivacyIdFn>(config_constraints_);
+absl::StatusOr<std::unique_ptr<Fn>> ThresholdFilterFnFactory::CreateFn() const {
+  return std::make_unique<ThresholdFilterFn>();
 }
 
-std::unique_ptr<FnConfidentialTransform> CreateFilterAndStripPrivacyIdTransform(
+std::unique_ptr<FnConfidentialTransform> CreateThresholdFilterTransform(
     std::unique_ptr<oak::crypto::SigningKeyHandle> signing_key_handle,
     std::unique_ptr<oak::crypto::EncryptionKeyHandle> encryption_key_handle) {
   return std::make_unique<FnConfidentialTransform>(
@@ -46,14 +46,7 @@ std::unique_ptr<FnConfidentialTransform> CreateFilterAndStripPrivacyIdTransform(
          const google::protobuf::Any& config_constraints,
          const WriteConfigurationMap& write_configuration_map)
           -> absl::StatusOr<std::unique_ptr<FnFactory>> {
-        TrustedShufflerConfigConstraints constraints;
-        if (config_constraints.Is<TrustedShufflerConfigConstraints>()) {
-          if (!config_constraints.UnpackTo(&constraints)) {
-            return absl::InvalidArgumentError(
-                "Failed to unpack config_constraints as TrustedShufflerConfigConstraints");
-          }
-        }
-        return std::make_unique<FilterAndStripPrivacyIdFnFactory>(std::move(constraints));
+        return std::make_unique<ThresholdFilterFnFactory>();
       },
       std::move(encryption_key_handle));
 }

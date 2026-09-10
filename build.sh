@@ -88,9 +88,9 @@ if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/ingest_uploads
   cp -Rp ./bazel-bin/src/containers/ingest_uploads/* ${KOKORO_ARTIFACTS_DIR}/ingest_uploads/.
 
-  log "Copying filter_and_strip_privacy_id container output to kokoro artifacts dir."
-  mkdir -p ${KOKORO_ARTIFACTS_DIR}/filter_and_strip_privacy_id
-  cp -Rp ./bazel-bin/src/containers/filter_and_strip_privacy_id/* ${KOKORO_ARTIFACTS_DIR}/filter_and_strip_privacy_id/.
+  log "Copying threshold_filter container output to kokoro artifacts dir."
+  mkdir -p ${KOKORO_ARTIFACTS_DIR}/threshold_filter
+  cp -Rp ./bazel-bin/src/containers/threshold_filter/* ${KOKORO_ARTIFACTS_DIR}/threshold_filter/.
 
   log "Copying scatter_shuffle container output to kokoro artifacts dir."
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/scatter_shuffle

@@ -24,7 +24,10 @@
 
 #include "absl/log/check.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "src/crypto/verify_signed_run_context.h"
+#include "src/proto/common.pb.h"
+#include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
 #include "src/proto/trusted_shuffler_upload.pb.h"
 #include "tensorflow_federated/cc/core/impl/aggregation/core/mutable_vector_data.h"
@@ -33,6 +36,88 @@
 #include "tensorflow_federated/cc/core/impl/aggregation/protocol/federated_compute_checkpoint_builder.h"
 
 namespace cobalt::trusted_shuffler::testing {
+
+inline constexpr absl::string_view kTestRunId = "0123456789abcdef0123456789abcdef";
+inline constexpr absl::string_view kTestRunHashKey = "fedcba9876543210fedcba9876543210";
+
+struct MetricEpochSpec {
+  int32_t project_id;
+  int32_t metric_id;
+  int64_t epoch_index;
+};
+
+struct MetricIdentifierSpec {
+  int32_t project_id;
+  int32_t metric_id;
+};
+
+// Builds a MetricEpochKey proto from declarative test specifications.
+inline MetricEpochKey CreateMetricEpochKey(const MetricEpochSpec& spec) {
+  MetricEpochKey key;
+  key.set_project_id(spec.project_id);
+  key.set_metric_id(spec.metric_id);
+  key.set_epoch_index(spec.epoch_index);
+  return key;
+}
+
+// Builds a valid RunContext proto with specified metric identifiers and epoch bounds.
+inline RunContext CreateValidRunContext(absl::Span<const MetricIdentifierSpec> identifiers,
+                                        int64_t min_epoch, int64_t max_epoch, int32_t batch_size) {
+  RunContext run_context;
+  run_context.set_run_id(std::string(kTestRunId));
+  run_context.set_run_hash_key(std::string(kTestRunHashKey));
+  auto* run_config = run_context.mutable_run_config();
+  for (const auto& id : identifiers) {
+    auto* metric = run_config->add_metric_identifiers();
+    metric->set_project_id(id.project_id);
+    metric->set_metric_id(id.metric_id);
+  }
+  run_config->set_min_epoch_index(min_epoch);
+  run_config->set_max_epoch_index(max_epoch);
+  run_config->set_target_batch_size(batch_size);
+  return run_context;
+}
+
+// Builds a SignedRunContext wrapping serialized RunContext with a dummy valid signature.
+inline SignedRunContext CreateValidSignedRunContext(const RunContext& run_context) {
+  SignedRunContext signed_run_context;
+  signed_run_context.set_serialized_run_context(run_context.SerializeAsString());
+  signed_run_context.set_signature("valid_dummy_signature");
+  return signed_run_context;
+}
+
+// Builds a ShuffledMessage proto with the specified customer payload.
+inline ShuffledMessage CreateShuffledMessage(absl::string_view payload) {
+  ShuffledMessage msg;
+  msg.set_customer_message(std::string(payload));
+  return msg;
+}
+
+// Builds an IngestionVerificationPayload containing a ThresholdReport with approved partitions
+// and the signed run context.
+inline IngestionVerificationPayload CreateThresholdReportPayload(
+    absl::string_view run_id, absl::Span<const MetricEpochSpec> approved_specs,
+    const SignedRunContext& signed_run_context) {
+  IngestionVerificationPayload payload;
+  auto* success = payload.mutable_success();
+  auto* report = success->mutable_threshold_report();
+  report->set_run_id(std::string(run_id));
+  for (const auto& spec : approved_specs) {
+    auto* partition = report->add_approved_partitions();
+    partition->set_project_id(spec.project_id);
+    partition->set_metric_id(spec.metric_id);
+    partition->set_epoch_index(spec.epoch_index);
+  }
+  *success->mutable_signed_run_context() = signed_run_context;
+  return payload;
+}
+
+// Builds an IngestionVerificationPayload containing an IntegrityFault.
+inline IngestionVerificationPayload CreateIntegrityFaultPayload() {
+  IngestionVerificationPayload payload;
+  payload.mutable_integrity_fault();
+  return payload;
+}
 
 // Builds an FCKP checkpoint tensor string from uploads, event times, and an optional privacy id.
 // Callers must provide all arguments explicitly without default arguments.

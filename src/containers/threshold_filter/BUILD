@@ -21,7 +21,7 @@ cc_binary(
     name = "main",
     srcs = ["main.cc"],
     deps = [
-        ":filter_and_strip_privacy_id_transform",
+        ":threshold_filter_transform",
         "//src/version",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
@@ -34,54 +34,71 @@ cc_binary(
 )
 
 cc_library(
-    name = "filter_and_strip_privacy_id_fn",
-    srcs = ["filter_and_strip_privacy_id_fn.cc"],
-    hdrs = ["filter_and_strip_privacy_id_fn.h"],
+    name = "threshold_filter_fn",
+    srcs = ["threshold_filter_fn.cc"],
+    hdrs = ["threshold_filter_fn.h"],
     deps = [
-        "//src/proto:config_constraints_cc_proto",
+        "//src/containers/base:first_record_config_do_fn",
+        "//src/crypto:verify_signed_run_context",
+        "//src/proto:common_cc_proto",
+        "//src/proto:ingestion_cc_proto",
+        "//src/proto:run_context_cc_proto",
+        "//src/util:metric_epoch_key_utils",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/status",
-        "@confidential-federated-compute//containers/fns:fns",
-    ],
-)
-
-cc_library(
-    name = "filter_and_strip_privacy_id_transform",
-    srcs = ["filter_and_strip_privacy_id_transform.cc"],
-    hdrs = ["filter_and_strip_privacy_id_transform.h"],
-    deps = [
-        ":filter_and_strip_privacy_id_fn",
-        "//src/proto:config_constraints_cc_proto",
         "@abseil-cpp//absl/status:statusor",
         "@confidential-federated-compute//containers/fns:fns",
         "@protobuf//:any_cc_proto",
     ],
 )
 
-cc_test(
-    name = "filter_and_strip_privacy_id_fn_test",
-    srcs = ["filter_and_strip_privacy_id_fn_test.cc"],
+cc_library(
+    name = "threshold_filter_transform",
+    srcs = ["threshold_filter_transform.cc"],
+    hdrs = ["threshold_filter_transform.h"],
     deps = [
-        ":filter_and_strip_privacy_id_fn",
-        "//src/proto:config_constraints_cc_proto",
-        "//src/testing:fake_context",
-        "@abseil-cpp//absl/status",
-        "@abseil-cpp//absl/status:status_matchers",
-        "@googletest//:gtest_main",
+        ":threshold_filter_fn",
+        "@abseil-cpp//absl/status:statusor",
+        "@confidential-federated-compute//containers/fns:fns",
+        "@oak//cc/crypto:encryption_key",
+        "@oak//cc/crypto:signing_key",
+        "@protobuf//:any_cc_proto",
     ],
 )
 
 cc_test(
-    name = "filter_and_strip_privacy_id_transform_test",
-    srcs = ["filter_and_strip_privacy_id_transform_test.cc"],
+    name = "threshold_filter_fn_test",
+    srcs = ["threshold_filter_fn_test.cc"],
     deps = [
-        ":filter_and_strip_privacy_id_transform",
+        ":threshold_filter_fn",
+        "//src/proto:common_cc_proto",
+        "//src/proto:ingestion_cc_proto",
+        "//src/proto:run_context_cc_proto",
         "//src/testing:fake_context",
+        "//src/testing:matchers",
+        "//src/testing:test_utils",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@googletest//:gtest_main",
+        "@protobuf//:any_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "threshold_filter_transform_test",
+    srcs = ["threshold_filter_transform_test.cc"],
+    deps = [
+        ":threshold_filter_fn",
+        ":threshold_filter_transform",
         "//src/testing:fake_keys",
-        "//src/testing:testable_transform",
+        "//src/testing:matchers",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/status:statusor",
+        "@confidential-federated-compute//containers/fns:fns",
         "@googletest//:gtest_main",
+        "@protobuf//:any_cc_proto",
     ],
 )
 

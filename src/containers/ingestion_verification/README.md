@@ -24,7 +24,7 @@ This container implements the `FnConfidentialTransform` / `DoFn` API to serve as
 
 It processes worker ingestion reports from `IngestUploads`, verifies integrity across the batch, determines which partitions met the minimum unique device privacy thresholds, and emits dual outputs for downstream consumption:
 1. An unencrypted header (`IngestionVerificationHeader`) containing `IngestSummaryReport` with partition message counts, visible to the untrusted Flume orchestrator for batch routing and padding calculations.
-2. An encrypted payload (`IngestionVerificationPayload`) encrypted under key index 0 containing `ThresholdReport` (approved partitions), the canonical `RunFingerprint`, and `SignedRunContext`, readable only by downstream confidential TEE stages (`FilterAndStripPrivacyId`).
+2. An encrypted payload (`IngestionVerificationPayload`) encrypted under key index 0 containing `ThresholdReport` (approved partitions), the canonical `RunFingerprint`, and `SignedRunContext`, readable only by downstream confidential TEE stages (`ThresholdFilter`).
 
 ---
 
@@ -66,7 +66,7 @@ Packed in `KV.key` (`google::protobuf::Any`) and visible in plaintext to the unt
 - `integrity_fault`: Emitted if configuration failed, reports could not be parsed, `run_id` mismatched, or fingerprint/sketch merging failed.
 
 #### 2. Payload (`IngestionVerificationPayload`) — Encrypted
-Serialized in `KV.data` and encrypted with re-encryption key index 0 (readable by `FilterAndStripPrivacyId`):
+Serialized in `KV.data` and encrypted with re-encryption key index 0 (readable by `ThresholdFilter`):
 - `success`:
   - `threshold_report`: Contains `run_id` and the list of `approved_partitions` that met or exceeded reporting thresholds.
   - `canonical_fingerprint`: Canonical merged `RunFingerprint` (`is_partial = false`) containing `FingerprintEntry` records for approved partitions.
