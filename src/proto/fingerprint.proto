@@ -21,10 +21,14 @@ import "src/proto/common.proto";
 // Represents the logical pipeline stages that generate or merge fingerprints.
 enum Stage {
   STAGE_UNSPECIFIED = 0;
+
   // First ingestion stage (IngestUploads / IngestionVerification).
   // IngestUploads creates partial fingerprints for each replica, which are
   // merged into a canonical complete fingerprint by IngestionVerification.
   STAGE_INGESTION = 1;
+
+  // Output encryption and release stages.
+  STAGE_RELEASE = 2;
 }
 
 // Represents fingerprint metadata for a specific metric data partition.

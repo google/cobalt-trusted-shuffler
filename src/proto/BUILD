@@ -91,3 +91,16 @@ cc_proto_library(
     deps = [":ingestion_proto"],
 )
 
+proto_library(
+    name = "release_proto",
+    srcs = ["release.proto"],
+    deps = [
+        ":common_proto",
+        ":fingerprint_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "release_cc_proto",
+    deps = [":release_proto"],
+)

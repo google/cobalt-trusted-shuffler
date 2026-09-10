@@ -51,6 +51,10 @@ message RunContext {
 
   // Configuration provided for this run.
   RunConfig run_config = 3;
+
+  // Tink AES-256-GCM AEAD key generated in a cryptographically secure manner,
+  // used to encrypt output messages for release.
+  bytes release_key = 4;
 }
 
 // Message containing a serialized `RunContext` alongside a cryptographic
