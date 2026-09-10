@@ -16,26 +16,22 @@
 
 # Ingestion Verification Container
 
-The `ingestion_verification` container is a confidential data transform planned for verifying KMS signatures, aggregating run fingerprints, and evaluating device counts against reporting thresholds.
-
-> [!NOTE]
-> **This container does nothing right now.** It is currently an empty skeleton / no-op placeholder.
->
-> <!-- TODO(b/555370722): Implement KMS signature verification, RunFingerprint aggregation, and device threshold evaluation. -->
+The `ingestion_verification` container is a confidential data transform in the Trusted Shuffler pipeline responsible for verifying runtime configuration, merging multiset fingerprints, aggregating HyperLogLog cardinality sketches across worker replicas, and evaluating unique device counts against configured reporting thresholds.
 
 ## Overview
 
-This container implements the `FnConfidentialTransform` / `DoFn` API to serve as the ingestion verification and threshold evaluation stage in a Trusted Shuffler confidential pipeline.
+This container implements the `FnConfidentialTransform` / `DoFn` API to serve as the ingestion verification stage in the Trusted Shuffler confidential pipeline.
 
-Currently, this container is a no-op placeholder that performs no transformation and emits no data.
-TODO(b/555370722): Implement the container transform logic.
+It processes worker ingestion reports from `IngestUploads`, verifies integrity across the batch, determines which partitions met the minimum unique device privacy thresholds, and emits dual outputs for downstream consumption:
+1. An unencrypted header (`IngestionVerificationHeader`) containing `IngestSummaryReport` with partition message counts, visible to the untrusted Flume orchestrator for batch routing and padding calculations.
+2. An encrypted payload (`IngestionVerificationPayload`) encrypted under key index 0 containing `ThresholdReport` (approved partitions) and the canonical `RunFingerprint`, readable only by downstream confidential TEE stages (`FilterAndStripPrivacyId`).
 
 ---
 
 ## Configuration & Constraints
 
 ### Configuration Protos
-The container does not currently require custom runtime configuration parameters in `InitializeReplica`. During session initialization (`InitializeReplica`), the container logs the ingested `TrustedShufflerConfigConstraints` metric threshold combinations (project ID, metric ID, threshold) in plaintext via `LOG(INFO)`.
+During session initialization (`InitializeReplica`), the container logs the ingested `TrustedShufflerConfigConstraints` metric threshold combinations (project ID, metric ID, threshold) in plaintext via `LOG(INFO)`.
 
 ### Configuration Constraints
 During transform initialization (`StreamInitializeTransform`), the transform ingests and validates `TrustedShufflerConfigConstraints` (defined in `src/proto/config_constraints.proto`) unpacked from `config_constraints`:
@@ -50,13 +46,28 @@ During transform initialization (`StreamInitializeTransform`), the transform ing
 
 ### Inputs
 
-#### Data Stream via `Do`
-- Incoming KV pairs from upstream stages. Currently a no-op that discards incoming inputs without processing.
-- TODO(b/555370722): Process signed run contexts, signed access policies, and partial ingestion reports.
+#### Streaming Input via `Do`
+Inherits from `FirstRecordConfigDoFn<SignedRunContext>`:
+- **Record 0 (Side-Input Configuration)**: Ingests `SignedRunContext` emitted by `run_context_initializer`. Unpacks and parses `RunContext` (validating non-empty `run_id`) and initializes a complete `MultisetFingerprint` with `stage_id = STAGE_INGESTION`.
+- **Records 1..N (Ingestion Reports)**: Ingests serialized `PartialIngestionReport` messages from `IngestUploads` workers:
+  - Validates matching `run_id`.
+  - Merges `partial_fingerprint` into the cumulative multiset fingerprint.
+  - Merges partial `hyperloglog_sketch` instances per `MetricEpochKey` partition.
 
 ---
 
 ### Outputs
 
-Currently, no outputs are emitted.
-- TODO(b/555370722): Emit unencrypted summary header and encrypted verification payload containing approved partitions and canonical fingerprint.
+Emitted exactly once during `FinalizeReplica` as `EncryptedKV<IngestionVerificationHeader, IngestionVerificationPayload, 0>`:
+
+#### 1. Header (`IngestionVerificationHeader`) — Unencrypted
+Packed in `KV.key` (`google::protobuf::Any`) and visible in plaintext to the untrusted Flume orchestrator:
+- `summary_report`: Contains `PartitionMessageCount` for each approved partition that met or exceeded reporting thresholds.
+- `integrity_fault`: Emitted if configuration failed, reports could not be parsed, `run_id` mismatched, or fingerprint/sketch merging failed.
+
+#### 2. Payload (`IngestionVerificationPayload`) — Encrypted
+Serialized in `KV.data` and encrypted with re-encryption key index 0 (readable by `FilterAndStripPrivacyId`):
+- `success`:
+  - `threshold_report`: Contains `run_id` and the list of `approved_partitions` that met or exceeded reporting thresholds.
+  - `canonical_fingerprint`: Canonical merged `RunFingerprint` (`is_partial = false`) containing `FingerprintEntry` records for approved partitions.
+- `integrity_fault`: Emitted if any validation or merging failure occurred.

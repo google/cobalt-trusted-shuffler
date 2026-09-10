@@ -25,7 +25,9 @@
 #include "absl/status/status_matchers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/types/span.h"
 #include "gmock/gmock.h"
+#include "google/protobuf/repeated_ptr_field.h"
 #include "gtest/gtest.h"
 #include "src/proto/sketch.pb.h"
 
@@ -443,6 +445,156 @@ TEST(HllSketchTest, MergeFromMismatchedPrecisionsFails) {
       s1->MergeFrom(*s2),
       StatusIs(absl::StatusCode::kInvalidArgument,
                HasSubstr("Cannot merge HllSketch instances with mismatched precisions: 10 vs 12")));
+}
+
+TEST(HllSketchTest, MergeFromProtoAccumulates) {
+  auto sketch = HllSketch::Create(14);
+  ASSERT_THAT(sketch, IsOk());
+  auto other_sketch = HllSketch::Create(14);
+  ASSERT_THAT(other_sketch, IsOk());
+
+  constexpr int kCount = 1000;
+  for (int i = 0; i < kCount; ++i) {
+    sketch->Insert(absl::StrCat("dev_a_", i));
+    other_sketch->Insert(absl::StrCat("dev_b_", i));
+  }
+
+  const HyperLogLogSketch other_proto = other_sketch->ToProto();
+  ASSERT_THAT(sketch->MergeFrom(other_proto), IsOk());
+  EXPECT_THAT(sketch->EstimateCardinality(), IsWithinRelativeError(kCount * 2, 0.03));
+}
+
+TEST(HllSketchTest, MergeFromEmptyProtoNoOp) {
+  auto sketch = HllSketch::Create(14);
+  ASSERT_THAT(sketch, IsOk());
+  sketch->Insert("device_1");
+
+  HyperLogLogSketch empty_proto;
+  empty_proto.set_precision(14);
+  ASSERT_THAT(sketch->MergeFrom(empty_proto), IsOk());
+  EXPECT_EQ(sketch->EstimateCardinality(), 1);
+}
+
+TEST(HllSketchTest, MergeFromProtoMismatchedPrecisionFails) {
+  auto sketch = HllSketch::Create(14);
+  ASSERT_THAT(sketch, IsOk());
+
+  HyperLogLogSketch mismatched_proto;
+  mismatched_proto.set_precision(12);
+  EXPECT_THAT(
+      sketch->MergeFrom(mismatched_proto),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr("Cannot merge HyperLogLogSketch proto with mismatched precision: 12 vs 14")));
+}
+
+TEST(HllSketchTest, MergeFromProtoInvalidRegistersCountFails) {
+  auto sketch = HllSketch::Create(10);
+  ASSERT_THAT(sketch, IsOk());
+
+  HyperLogLogSketch bad_proto;
+  bad_proto.set_precision(10);
+  bad_proto.add_registers(1);
+  EXPECT_THAT(sketch->MergeFrom(bad_proto),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Invalid HyperLogLogSketch registers count: 1, expected: 1024")));
+}
+
+TEST(HllSketchTest, MergeFromProtoRegisterValueExceedsMaxRhoFails) {
+  auto sketch = HllSketch::Create(10);
+  ASSERT_THAT(sketch, IsOk());
+
+  HyperLogLogSketch bad_proto;
+  bad_proto.set_precision(10);
+  const size_t expected_registers = 1ULL << 10;
+  for (size_t i = 0; i < expected_registers; ++i) {
+    bad_proto.add_registers(0);
+  }
+  bad_proto.set_registers(5, 56);  // Max rho for p=10 is 64 - 10 + 1 = 55
+  EXPECT_THAT(
+      sketch->MergeFrom(bad_proto),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr("Register at index 5 has value 56, which exceeds maximum allowed rho 55")));
+}
+
+TEST(HllSketchTest, MergeSpanOfSketchesAccumulates) {
+  auto s1 = HllSketch::Create(14);
+  auto s2 = HllSketch::Create(14);
+  auto s3 = HllSketch::Create(14);
+  ASSERT_THAT(s1, IsOk());
+  ASSERT_THAT(s2, IsOk());
+  ASSERT_THAT(s3, IsOk());
+
+  for (int i = 0; i < 500; ++i) {
+    s1->Insert(absl::StrCat("s1_", i));
+    s2->Insert(absl::StrCat("s2_", i));
+    s3->Insert(absl::StrCat("s3_", i));
+  }
+
+  const HllSketch sketches[] = {*s1, *s2, *s3};
+  auto merged = HllSketch::Merge(absl::MakeConstSpan(sketches));
+  ASSERT_THAT(merged, IsOk());
+  EXPECT_THAT(merged->EstimateCardinality(), IsWithinRelativeError(1500, 0.03));
+}
+
+TEST(HllSketchTest, MergeEmptySpanOfSketchesFails) {
+  EXPECT_THAT(HllSketch::Merge(absl::Span<const HllSketch>()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Cannot merge empty collection of sketches.")));
+}
+
+TEST(HllSketchTest, MergeSpanOfProtosAccumulates) {
+  auto s1 = HllSketch::Create(14);
+  auto s2 = HllSketch::Create(14);
+  auto s3 = HllSketch::Create(14);
+  ASSERT_THAT(s1, IsOk());
+  ASSERT_THAT(s2, IsOk());
+  ASSERT_THAT(s3, IsOk());
+
+  for (int i = 0; i < 500; ++i) {
+    s1->Insert(absl::StrCat("proto1_", i));
+    s2->Insert(absl::StrCat("proto2_", i));
+    s3->Insert(absl::StrCat("proto3_", i));
+  }
+
+  const HyperLogLogSketch protos[] = {s1->ToProto(), s2->ToProto(), s3->ToProto()};
+  auto merged = HllSketch::Merge(absl::MakeConstSpan(protos));
+  ASSERT_THAT(merged, IsOk());
+  EXPECT_THAT(merged->EstimateCardinality(), IsWithinRelativeError(1500, 0.03));
+}
+
+TEST(HllSketchTest, MergeEmptySpanOfProtosFails) {
+  EXPECT_THAT(HllSketch::Merge(absl::Span<const HyperLogLogSketch>()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Cannot merge empty collection of sketch protos.")));
+}
+
+TEST(HllSketchTest, MergeRepeatedPtrFieldOfProtosAccumulates) {
+  auto s1 = HllSketch::Create(14);
+  auto s2 = HllSketch::Create(14);
+  ASSERT_THAT(s1, IsOk());
+  ASSERT_THAT(s2, IsOk());
+
+  for (int i = 0; i < 500; ++i) {
+    s1->Insert(absl::StrCat("rep1_", i));
+    s2->Insert(absl::StrCat("rep2_", i));
+  }
+
+  google::protobuf::RepeatedPtrField<HyperLogLogSketch> repeated_protos;
+  *repeated_protos.Add() = s1->ToProto();
+  *repeated_protos.Add() = s2->ToProto();
+
+  auto merged = HllSketch::Merge(repeated_protos);
+  ASSERT_THAT(merged, IsOk());
+  EXPECT_THAT(merged->EstimateCardinality(), IsWithinRelativeError(1000, 0.03));
+}
+
+TEST(HllSketchTest, MergeEmptyRepeatedPtrFieldOfProtosFails) {
+  google::protobuf::RepeatedPtrField<HyperLogLogSketch> empty_protos;
+  EXPECT_THAT(HllSketch::Merge(empty_protos),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Cannot merge empty collection of sketch protos.")));
 }
 
 TEST(HllSketchTest, ProtoRoundtripPreservesStateAndEstimate) {

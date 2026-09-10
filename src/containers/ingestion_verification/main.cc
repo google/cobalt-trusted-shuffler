@@ -37,10 +37,11 @@ using oak::containers::sdk::OrchestratorClient;
 
 void RunServer() {
   LogContainerStartup("Ingestion Verification");
-  std::string server_address("[::]:8080");
+  const std::string server_address("[::]:8080");
 
-  // Currently runs the ingestion verification transform server, whose DoFn
-  // is a no-op placeholder that does nothing.
+  // Runs the ingestion verification transform server, which validates
+  // runtime configuration, aggregates multiset fingerprints, merges HyperLogLog
+  // sketches, and evaluates device counts against configured thresholds.
   std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform> service =
       CreateIngestionVerificationTransform(std::make_unique<InstanceSigningKeyHandle>(),
                                            std::make_unique<InstanceEncryptionKeyHandle>());

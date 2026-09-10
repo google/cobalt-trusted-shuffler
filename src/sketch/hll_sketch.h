@@ -45,9 +45,29 @@ class HllSketch {
   // Returns an error if the two sketches have mismatched precisions.
   [[nodiscard]] static absl::StatusOr<HllSketch> Merge(const HllSketch& a, const HllSketch& b);
 
+  // Merges a collection of HllSketch instances into a new sketch.
+  // Returns an error if the collection is empty or if any sketch has mismatched precision.
+  [[nodiscard]] static absl::StatusOr<HllSketch> Merge(absl::Span<const HllSketch> sketches);
+
+  // Merges a collection of HyperLogLogSketch protobuf messages into a new sketch.
+  // Returns an error if the collection is empty or if any sketch is invalid or has mismatched
+  // precision.
+  [[nodiscard]] static absl::StatusOr<HllSketch> Merge(
+      absl::Span<const HyperLogLogSketch> sketches);
+
+  // Merges a collection of HyperLogLogSketch protobuf messages from a RepeatedPtrField.
+  // Returns an error if the collection is empty or if any sketch is invalid or has mismatched
+  // precision.
+  [[nodiscard]] static absl::StatusOr<HllSketch> Merge(
+      const google::protobuf::RepeatedPtrField<HyperLogLogSketch>& sketches);
+
   // Merges another HllSketch into this sketch in place.
   // Returns an error if precision does not match.
   [[nodiscard]] absl::Status MergeFrom(const HllSketch& other);
+
+  // Merges a HyperLogLogSketch protobuf message into this sketch in place.
+  // Returns an error if precision does not match or if registers are malformed.
+  [[nodiscard]] absl::Status MergeFrom(const HyperLogLogSketch& proto);
 
   // Deserializes an HllSketch from a HyperLogLogSketch protobuf message.
   // Returns an error if the protobuf precision is invalid or if registers

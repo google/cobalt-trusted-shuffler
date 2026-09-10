@@ -15,24 +15,45 @@
 #ifndef SRC_CONTAINERS_INGESTION_VERIFICATION_INGESTION_VERIFICATION_FN_H_
 #define SRC_CONTAINERS_INGESTION_VERIFICATION_INGESTION_VERIFICATION_FN_H_
 
+#include <cstdint>
+#include <map>
+#include <optional>
+#include <string>
+#include <tuple>
 #include <utility>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/crypto/multiset_fingerprint.h"
+#include "src/proto/common.pb.h"
 #include "src/proto/config_constraints.pb.h"
+#include "src/proto/fingerprint.pb.h"
+#include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
+#include "src/sketch/hll_sketch.h"
 
 namespace cobalt::trusted_shuffler {
 
-// A DoFn class for ingestion verification.
+// A DoFn class for ingestion verification in Trusted Shuffler.
 //
 // Inherits Do(KV input, Context& context) from FirstRecordConfigDoFn:
 // - Record 0: Ingests SignedRunContext via OnConfig(), parses the inner
-//   RunContext proto, and logs its contents.
-// - Records 1..N: Routes client log records to OnRecord().
+//   RunContext proto, extracts run_id, and initializes MultisetFingerprint.
+// - Records 1..N: Ingests PartialIngestionReport protos from IngestUploads workers via
+//   OnRecord(), merging partial multiset fingerprints and HyperLogLog sketches
+//   per MetricEpochKey partition.
+// - FinalizeReplica: Evaluates unique device cardinality estimates against
+//   TrustedShufflerConfigConstraints thresholds. Emits unencrypted
+//   IngestionVerificationHeader (with IngestSummaryReport or IntegrityFault)
+//   for the orchestrator, and encrypted IngestionVerificationPayload (with
+//   ThresholdReport and canonical RunFingerprint, or IntegrityFault) for
+//   FilterAndStripPrivacyId.
 class IngestionVerificationFn : public FirstRecordConfigDoFn<SignedRunContext> {
  public:
+  inline static constexpr int kReencryptionKeyIndex = 0;
+
   explicit IngestionVerificationFn(TrustedShufflerConfigConstraints config_constraints);
 
   ~IngestionVerificationFn() override = default;
@@ -41,18 +62,35 @@ class IngestionVerificationFn : public FirstRecordConfigDoFn<SignedRunContext> {
   // Logs the project id, metric id, and threshold combinations from config constraints.
   absl::Status InitializeReplica(google::protobuf::Any config, Context& context) override;
 
+  // Evaluates unique device counts against reporting thresholds, constructs
+  // canonical fingerprint and threshold report, and emits dual verification output.
+  absl::Status FinalizeReplica(google::protobuf::Any config, Context& context) override;
+
   const TrustedShufflerConfigConstraints& ConfigConstraints() const { return config_constraints_; }
 
  protected:
-  // Ingests SignedRunContext on record 0, parses the inner RunContext, and prints its contents.
+  // Ingests SignedRunContext on record 0, parses the inner RunContext, and initializes
+  // fingerprinting.
   absl::Status OnConfig(const cobalt::trusted_shuffler::SignedRunContext& signed_run_context,
                         Context& context) override;
 
-  // Ingests incoming client log records.
+  // Ingests incoming PartialIngestionReport records from IngestUploads workers.
   absl::Status OnRecord(KV record, Context& context) override;
 
  private:
+  using MetricKey = std::pair<int32_t, int32_t>;
+  using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
+
+  void EmitIntegrityFault(Context& context);
+
   TrustedShufflerConfigConstraints config_constraints_;
+  absl::flat_hash_map<MetricKey, int32_t> threshold_map_;
+
+  std::string run_id_;
+  std::optional<MultisetFingerprint> multiset_fingerprint_;
+  std::map<MetricEpochTuple, HllSketch> partition_sketches_;
+  std::map<MetricEpochTuple, MetricEpochKey> partition_keys_;
+  bool has_integrity_fault_ = false;
 };
 
 }  // namespace cobalt::trusted_shuffler
