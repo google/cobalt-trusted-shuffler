@@ -24,7 +24,7 @@ This container implements the `FnConfidentialTransform` / `DoFn` API to serve as
 
 It processes worker ingestion reports from `IngestUploads`, verifies integrity across the batch, determines which partitions met the minimum unique device privacy thresholds, and emits dual outputs for downstream consumption:
 1. An unencrypted header (`IngestionVerificationHeader`) containing `IngestSummaryReport` with partition message counts, visible to the untrusted Flume orchestrator for batch routing and padding calculations.
-2. An encrypted payload (`IngestionVerificationPayload`) encrypted under key index 0 containing `ThresholdReport` (approved partitions) and the canonical `RunFingerprint`, readable only by downstream confidential TEE stages (`FilterAndStripPrivacyId`).
+2. An encrypted payload (`IngestionVerificationPayload`) encrypted under key index 0 containing `ThresholdReport` (approved partitions), the canonical `RunFingerprint`, and `SignedRunContext`, readable only by downstream confidential TEE stages (`FilterAndStripPrivacyId`).
 
 ---
 
@@ -70,4 +70,5 @@ Serialized in `KV.data` and encrypted with re-encryption key index 0 (readable b
 - `success`:
   - `threshold_report`: Contains `run_id` and the list of `approved_partitions` that met or exceeded reporting thresholds.
   - `canonical_fingerprint`: Canonical merged `RunFingerprint` (`is_partial = false`) containing `FingerprintEntry` records for approved partitions.
+  - `signed_run_context`: The `SignedRunContext` received on record 0, passed through for downstream pipeline stages.
 - `integrity_fault`: Emitted if any validation or merging failure occurred.
