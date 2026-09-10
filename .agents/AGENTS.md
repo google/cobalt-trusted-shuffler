@@ -69,6 +69,18 @@ Pipelines operate across a strict trust boundary between the **Untrusted Orchest
    - **When to Use**: Final aggregated summary reports (e.g. `CountReport`) or non-sensitive execution metrics.
    - **CRITICAL PRIVACY RULE**: Never emit raw client records, individual identifiers, or unaggregated confidential data with `EmitUnencrypted`.
 
+#### Prescriptive Rules for Secret & Identifier Protection:
+
+- **`run_id` and `fingerprint_key` (`run_hash_key`)**:
+  - Must **NEVER** be given to the untrusted orchestrator in **any** form:
+    - Never in an unencrypted emitted message (`EmitUnencrypted` payload or `EmitEncrypted`/`EmitReleasable` plaintext key/header).
+    - Never in an error message (`absl::Status` error messages returned from `DoFn` methods or emitted via `context.EmitError`).
+    - Never in container logs (`LOG(...)` sent to stdout/stderr).
+    - Never print or log `DebugString()` or `ShortDebugString()` of any protobuf message that contains `run_id` or `fingerprint_key` (`run_hash_key`) (e.g., `RunContext`, `SignedRunContext`, `ShuffledMessage`, `RunFingerprint`, or `ThresholdReport`).
+- **`release_key`**:
+  - Must **only ever** be given to the untrusted orchestrator by the **final release stage** (`DecryptionKeyRelease` / `ReleasedKeyReport`).
+  - Upstream stages must never emit, return in errors, or log `release_key` (or `DebugString()` / `ShortDebugString()` of protos containing it) to the orchestrator.
+
 ---
 
 ## 2. Terminology & Naming: Avoid Spec Jargon
@@ -286,7 +298,7 @@ When ready for production release, failing to update Kokoro will cause builds an
 Before completing a task or submitting a change:
 - [ ] Avoided spec jargon and stage numbers (e.g. "Stage 3B") in comments, descriptions, and names; used descriptive domain terms throughout.
 - [ ] Team awareness satisfied: Alex Pankhurst (`pankhurst@google.com`), Steve Fung (`stevefung@google.com`), Anivia Li (`aniviali@google.com`), and Alex Zani (`azani@google.com`) are each included as either a reviewer or a CC on the CL.
-- [ ] Aligned with user on data visibility (orchestrator plaintext vs. downstream TEE ciphertext).
+- [ ] Verified that `run_id` and `fingerprint_key` (`run_hash_key`) are never given to the orchestrator in emitted messages, error messages (`absl::Status` / `EmitError`), or logs (`LOG`), and that `release_key` is only ever emitted to the orchestrator by the final release stage.
 - [ ] Protos defined in `src/proto/<name>/` (or `src/proto/` for shared schemas) with `BUILD` rules.
 - [ ] `DoFn` and transform service implemented in C++20 following [`.agents/rules/cpp_conventions.md`](rules/cpp_conventions.md).
 - [ ] `main.cc` notifies `OrchestratorClient().NotifyAppReady()`.

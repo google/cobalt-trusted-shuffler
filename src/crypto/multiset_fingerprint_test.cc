@@ -187,10 +187,10 @@ TEST(MultisetFingerprintTest, MergeFailsWhenRunIdMismatch) {
   const absl::Status status = fp.Merge(partial_fp);
   EXPECT_FALSE(status.ok());
   EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(
-      status.message(),
-      ::testing::HasSubstr(
-          "Cannot merge fingerprints from different run IDs, attempting to merge run ID different-run-id into run ID run-abc"));
+  EXPECT_THAT(status.message(),
+              ::testing::HasSubstr("Cannot merge fingerprints from different run IDs."));
+  EXPECT_THAT(status.message(), ::testing::Not(::testing::HasSubstr("different-run-id")));
+  EXPECT_THAT(status.message(), ::testing::Not(::testing::HasSubstr("run-abc")));
 }
 
 TEST(MultisetFingerprintTest, MergeFailsWhenStageIdMismatch) {

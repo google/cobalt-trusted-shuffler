@@ -115,9 +115,7 @@ absl::Status MultisetFingerprint::Merge(const RunFingerprint& partial_fingerprin
         "Cannot merge fingerprints into a partial fingerprint; merging is only supported for building a complete stage fingerprint.");
   }
   if (partial_fingerprint.run_id() != run_id_) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "Cannot merge fingerprints from different run IDs, attempting to merge run ID ",
-        partial_fingerprint.run_id(), " into run ID ", run_id_));
+    return absl::InvalidArgumentError("Cannot merge fingerprints from different run IDs.");
   }
   if (partial_fingerprint.stage_id() != stage_id_) {
     return absl::InvalidArgumentError(

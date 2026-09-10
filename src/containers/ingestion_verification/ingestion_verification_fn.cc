@@ -65,7 +65,7 @@ absl::Status IngestionVerificationFn::OnConfig(
   run_id_ = verified_run_context->run_id();
   multiset_fingerprint_.emplace(Stage::STAGE_INGESTION, /*is_partial=*/false, *verified_run_context,
                                 MultisetFingerprint::kFingerprintSize);
-  LOG(INFO) << "SignedRunContext received for run_id: " << run_id_;
+  LOG(INFO) << "SignedRunContext received.";
   return absl::OkStatus();
 }
 
