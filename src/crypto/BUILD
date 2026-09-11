@@ -130,3 +130,52 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "release_encrypter",
+    srcs = ["release_encrypter.cc"],
+    hdrs = ["release_encrypter.h"],
+    deps = [
+        "//src/proto:run_context_cc_proto",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@tink_cc//tink:aead",
+        "@tink_cc//tink:insecure_secret_key_access",
+        "@tink_cc//tink:keyset_handle",
+        "@tink_cc//tink:proto_keyset_format",
+        "@tink_cc//tink:proto_parameters_format",
+        "@tink_cc//tink:secret_data",
+        "@tink_cc//tink/aead:aead_config",
+        "@tink_cc//tink/aead:aead_key_templates",
+        "@tink_cc//tink/config:global_registry",
+        "@tink_cc//tink/util:secret_data",
+    ],
+)
+
+cc_test(
+    name = "release_encrypter_test",
+    srcs = ["release_encrypter_test.cc"],
+    deps = [
+        ":release_encrypter",
+        "//src/proto:run_context_cc_proto",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@googletest//:gtest_main",
+        "@tink_cc//tink:insecure_secret_key_access",
+        "@tink_cc//tink:key_status",
+        "@tink_cc//tink:keyset_handle",
+        "@tink_cc//tink:partial_key_access",
+        "@tink_cc//tink:proto_keyset_format",
+        "@tink_cc//tink:proto_parameters_format",
+        "@tink_cc//tink:secret_data",
+        "@tink_cc//tink/aead:aead_config",
+        "@tink_cc//tink/aead:aead_key_templates",
+        "@tink_cc//tink/aead:aes_gcm_key",
+        "@tink_cc//tink/aead:aes_gcm_parameters",
+        "@tink_cc//tink/config:global_registry",
+        "@tink_cc//tink/util:secret_data",
+    ],
+)

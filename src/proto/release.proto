@@ -62,7 +62,8 @@ message ReleaseOutputHeader {
 
 // Summary report containing the verified release key released for a run.
 message ReleasedKeyReport {
-  // Tink AES-256-GCM AEAD key for decrypting output messages.
+  // Serialized Tink AES-256-GCM AEAD keyset (ProtoKeysetFormat) for decrypting
+  // output messages.
   bytes release_key = 1;
 }
 

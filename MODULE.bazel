@@ -14,6 +14,12 @@ bazel_dep(name = "toolchains_llvm", version = "1.4.0")
 bazel_dep(name = "rules_oci", version = "2.2.6")
 bazel_dep(name = "rules_pkg", version = "1.1.0")
 bazel_dep(name = "rules_python", version = "1.6.0")
+bazel_dep(name = "tink_cc", version = "2.7.0")
+
+single_version_override(
+    module_name = "abseil-cpp",
+    version = "20250814.1",
+)
 
 cfc_deps = use_extension("@confidential-federated-compute//:extensions.bzl", "cfc_deps")
 use_repo(cfc_deps, "federated-compute", "oak")
