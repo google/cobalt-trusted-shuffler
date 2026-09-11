@@ -38,3 +38,23 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "metric_epoch_key_utils",
+    hdrs = ["metric_epoch_key_utils.h"],
+    deps = [
+        "//src/proto:common_cc_proto",
+    ],
+)
+
+cc_test(
+    name = "metric_epoch_key_utils_test",
+    srcs = ["metric_epoch_key_utils_test.cc"],
+    deps = [
+        ":metric_epoch_key_utils",
+        "//src/proto:common_cc_proto",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@googletest//:gtest_main",
+    ],
+)

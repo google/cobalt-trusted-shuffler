@@ -56,10 +56,13 @@ cc_library(
     hdrs = ["test_utils.h"],
     deps = [
         "//src/crypto:verify_signed_run_context",
+        "//src/proto:common_cc_proto",
+        "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",
         "//src/proto:trusted_shuffler_upload_cc_proto",
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/types:span",
         "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/core:tensor",
         "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/protocol:federated_compute_checkpoint_builder",
     ],

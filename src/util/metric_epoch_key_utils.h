@@ -12,12 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/containers/filter_and_strip_privacy_id/filter_and_strip_privacy_id_fn.h"
+#ifndef SRC_UTIL_METRIC_EPOCH_KEY_UTILS_H_
+#define SRC_UTIL_METRIC_EPOCH_KEY_UTILS_H_
 
-#include "absl/status/status.h"
+#include <utility>
+
+#include "src/proto/common.pb.h"
 
 namespace cobalt::trusted_shuffler {
 
-absl::Status FilterAndStripPrivacyIdFn::Do(KV input, Context& context) { return absl::OkStatus(); }
+// Hash and equality support for MetricEpochKey in Abseil flat_hash containers.
+template <typename H>
+H AbslHashValue(H h, const MetricEpochKey& key) {
+  return H::combine(std::move(h), key.project_id(), key.metric_id(), key.epoch_index());
+}
+
+inline bool operator==(const MetricEpochKey& a, const MetricEpochKey& b) {
+  return a.project_id() == b.project_id() && a.metric_id() == b.metric_id() &&
+         a.epoch_index() == b.epoch_index();
+}
 
 }  // namespace cobalt::trusted_shuffler
+
+#endif  // SRC_UTIL_METRIC_EPOCH_KEY_UTILS_H_

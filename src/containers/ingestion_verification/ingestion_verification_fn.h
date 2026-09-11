@@ -49,7 +49,7 @@ namespace cobalt::trusted_shuffler {
 //   IngestionVerificationHeader (with IngestSummaryReport or IntegrityFault)
 //   for the orchestrator, and encrypted IngestionVerificationPayload (with
 //   ThresholdReport, canonical RunFingerprint, and SignedRunContext, or
-//   IntegrityFault) for FilterAndStripPrivacyId.
+//   IntegrityFault) for ThresholdFilter.
 class IngestionVerificationFn : public FirstRecordConfigDoFn<SignedRunContext> {
  public:
   inline static constexpr int kReencryptionKeyIndex = 0;

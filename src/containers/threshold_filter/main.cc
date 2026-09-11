@@ -14,6 +14,7 @@
 
 #include <cstdlib>
 #include <memory>
+#include <string>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
@@ -22,7 +23,7 @@
 #include "cc/containers/sdk/signing_key_handle.h"
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
-#include "src/containers/filter_and_strip_privacy_id/filter_and_strip_privacy_id_transform.h"
+#include "src/containers/threshold_filter/threshold_filter_transform.h"
 #include "src/version/version.h"
 
 using grpc::Server;
@@ -35,17 +36,17 @@ namespace cobalt::trusted_shuffler {
 namespace {
 
 void RunServer() {
-  LogContainerStartup("Filter and Strip Privacy ID");
+  LogContainerStartup("Threshold Filter");
   std::string server_address("[::]:8080");
 
   std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform> service =
-      CreateFilterAndStripPrivacyIdTransform(std::make_unique<InstanceSigningKeyHandle>(),
-                                             std::make_unique<InstanceEncryptionKeyHandle>());
+      CreateThresholdFilterTransform(std::make_unique<InstanceSigningKeyHandle>(),
+                                     std::make_unique<InstanceEncryptionKeyHandle>());
   ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(service.get());
   std::unique_ptr<Server> server = builder.BuildAndStart();
-  LOG(INFO) << "Filter and Strip Privacy ID Transform Server listening on " << server_address;
+  LOG(INFO) << "Threshold Filter Transform Server listening on " << server_address;
 
   CHECK_OK(OrchestratorClient().NotifyAppReady());
   server->Wait();

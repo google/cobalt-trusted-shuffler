@@ -31,8 +31,8 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | [`message_counter`](message_counter/) | Counts incoming messages while forwarding them. Outputs a final count summary report. | Emits messages encrypted (`OutputKey.type = MESSAGE`) and final `CountReport` unencrypted (`OutputKey.type = REPORT`). | [`src/proto/message_counter/`](../proto/message_counter/) |
 | [`releaser`](releaser/) | Unconditionally releases messages passed from upstream confidential stages. | Emits messages unencrypted via `EmitUnencrypted` at the pipeline's privacy/release boundary. | None (empty config) |
 | [`simple`](simple/) | Proof-of-concept identity transform. Buffers incoming blobs and forwards them. | Emits buffered blobs encrypted with key index 0 upon commit. | None (empty config) |
-| [`ingestion_verification`](ingestion_verification/) | Verifies runtime configuration, merges partial multiset fingerprints and HyperLogLog cardinality sketches, and evaluates device counts against privacy thresholds. | Emits unencrypted `IngestionVerificationHeader` for the orchestrator and encrypted `IngestionVerificationPayload` (key index 0) for `FilterAndStripPrivacyId`. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto), [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
-| [`filter_and_strip_privacy_id`](filter_and_strip_privacy_id/) | Placeholder skeleton; currently does nothing. TODO(b/555372765): Implement threshold-based filtering and privacy ID stripping logic. | Emits nothing currently. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto) |
+| [`ingestion_verification`](ingestion_verification/) | Verifies runtime configuration, merges partial multiset fingerprints and HyperLogLog cardinality sketches, and evaluates device counts against privacy thresholds. | Emits unencrypted `IngestionVerificationHeader` for the orchestrator and encrypted `IngestionVerificationPayload` (key index 0) for `ThresholdFilter`. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto), [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
+| [`threshold_filter`](threshold_filter/) | Filters messages by approved partition thresholds from Ingestion Verification report, drops unapproved partitions, and emits encrypted message streams. | Emits messages encrypted (`EmitEncrypted`) with key index 0 and plaintext `MetricEpochKey` headers. Partitions below threshold are dropped completely. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`scatter_shuffle`](scatter_shuffle/) | Placeholder skeleton; currently does nothing. TODO(b/557296992): Implement scatter shuffle and group assignment logic. | Emits nothing currently. | None (accepts empty config) |
 | [`encrypt_output`](encrypt_output/) | Placeholder skeleton; currently does nothing. TODO(b/557302528): Implement output encryption and release fingerprinting logic. | Emits nothing currently. | None (accepts empty config) |
 
@@ -107,24 +107,20 @@ The **`ingestion_verification`** container is a confidential transform responsib
 - **Purpose**: Verifies incoming ingestion reports from `IngestUploads`, computes union device cardinality via merged HLL sketches, evaluates thresholds from `TrustedShufflerConfigConstraints`, and emits verification outputs.
 - **Configuration**: `TrustedShufflerConfigConstraints` unpacked during transform initialization; `SignedRunContext` ingested on Record 0.
 - **Inputs**: KV pairs processed via `Do` (Record 0 config, Records 1..N `PartialIngestionReport`).
-- **Outputs**: Emits unencrypted `IngestionVerificationHeader` (summary message counts or `IntegrityFault`) for the orchestrator, and encrypted `IngestionVerificationPayload` (approved partitions, canonical `RunFingerprint`, and `SignedRunContext`, or `IntegrityFault`) under key index 0 for `FilterAndStripPrivacyId`.
+- **Outputs**: Emits unencrypted `IngestionVerificationHeader` (summary message counts or `IntegrityFault`) for the orchestrator, and encrypted `IngestionVerificationPayload` (approved partitions, canonical `RunFingerprint`, and `SignedRunContext`, or `IntegrityFault`) under key index 0 for `ThresholdFilter`.
 - **Documentation**: See [`src/containers/ingestion_verification/README.md`](ingestion_verification/README.md).
 
 ---
 
-## 6. `filter_and_strip_privacy_id`
+## 6. `threshold_filter`
 
-The **`filter_and_strip_privacy_id`** container filters partitions below reporting threshold and strips `privacy_id` identifiers from messages.
+The **`threshold_filter`** container filters incoming partitions against approved privacy thresholds from Ingestion Verification and emits encrypted message streams for two-pass shuffling.
 
-> [!NOTE]
-> **This container currently serves as an empty skeleton.** It is currently a no-op placeholder.
-> TODO(b/555372765): Implement threshold-based filtering and privacy ID stripping logic.
-
-- **Purpose**: Validates run context and reporting thresholds, filters partitions that do not meet threshold requirements, and strips sensitive `privacy_id` identifiers from messages. (Currently does nothing).
-- **Configuration**: `SignedRunContext` / `RunContext` and `TrustedShufflerConfigConstraints`.
-- **Inputs**: Encrypted verification metadata from Ingestion Verification stage and encrypted message stream from Partition Grouping stage.
-- **Outputs**: Emits encrypted messages with `privacy_id` stripped out for partitions meeting threshold requirements.
-- **Documentation**: See [`src/containers/filter_and_strip_privacy_id/README.md`](filter_and_strip_privacy_id/README.md).
+- **Purpose**: Drops unapproved partitions failing privacy thresholds, strips sensitive privacy IDs, and forwards encrypted customer messages to Scatter Shuffle.
+- **Configuration**: `IngestionVerificationPayload` (record 0) containing `IngestionVerificationResult` (with `SignedRunContext`, `ThresholdReport`, and `RunFingerprint`).
+- **Inputs**: `IngestionVerificationPayload` (record 0) and `EncryptedKV<MetricEpochKey, ShuffledMessage, 2>` from Partition Grouping (records 1..N).
+- **Outputs**: Emits `EncryptedKV<MetricEpochKey, ShuffledMessage, 0>` with `MetricEpochKey` in plaintext for routing and message payload encrypted under key 0 via `EmitEncrypted`.
+- **Documentation**: See [`src/containers/threshold_filter/README.md`](threshold_filter/README.md).
 
 ---
 
