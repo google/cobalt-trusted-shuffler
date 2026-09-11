@@ -1,2 +1,2 @@
-## WORKSPACE
-workspace(name = "com_google_cobalt_trusted_shuffler")
+# This file marks the root of the Bazel workspace.
+# See MODULE.bazel for external dependencies setup.

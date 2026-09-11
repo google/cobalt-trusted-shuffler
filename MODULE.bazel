@@ -1,3 +1,8 @@
+module(
+    name = "trusted-shuffler",
+    repo_name = "com_google_cobalt_trusted_shuffler",
+)
+
 bazel_dep(name = "abseil-cpp", version = "20250814.1")
 bazel_dep(name = "confidential-federated-compute", version = "0.0.12")
 bazel_dep(name = "googletest", version = "1.17.0")
