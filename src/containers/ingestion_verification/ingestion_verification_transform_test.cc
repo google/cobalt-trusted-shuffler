@@ -19,14 +19,19 @@
 #include <utility>
 #include <vector>
 
+#include "absl/log/absl_check.h"
+#include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "containers/fns/confidential_transform_server.h"
+#include "fcp/protos/confidentialcompute/confidential_transform.pb.h"
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
+#include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/config_constraints.pb.h"
@@ -177,10 +182,14 @@ TEST(IngestionVerificationTransformTest, FnFactoryCreatedFnExecutesLifecycleAndE
   ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
 
   // Record 0: SignedRunContext
+  const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
+  ABSL_CHECK_OK(release_key.status());
+
   const std::string test_run_id(kRunIdByteLength, 'a');
   RunContext run_context;
   run_context.set_run_id(test_run_id);
   run_context.set_run_hash_key(std::string(kRunHashKeyByteLength, 'b'));
+  run_context.set_release_key(*release_key);
   RunConfig* const config = run_context.mutable_run_config();
   config->set_min_epoch_index(10);
   config->set_max_epoch_index(200);

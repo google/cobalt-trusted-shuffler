@@ -102,6 +102,7 @@ cc_library(
     srcs = ["verify_signed_run_context.cc"],
     hdrs = ["verify_signed_run_context.h"],
     deps = [
+        ":release_encrypter",
         "//src/proto:run_context_cc_proto",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@abseil-cpp//absl/status",
@@ -119,14 +120,23 @@ cc_test(
     name = "verify_signed_run_context_test",
     srcs = ["verify_signed_run_context_test.cc"],
     deps = [
+        ":release_encrypter",
         ":verify_signed_run_context",
         "//src/crypto:secure_random",
         "//src/proto:run_context_cc_proto",
+        "@abseil-cpp//absl/log:absl_check",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@googletest//:gtest_main",
+        "@tink_cc//tink:insecure_secret_key_access",
+        "@tink_cc//tink:keyset_handle",
+        "@tink_cc//tink:proto_keyset_format",
+        "@tink_cc//tink:secret_data",
+        "@tink_cc//tink/aead:aead_key_templates",
+        "@tink_cc//tink/config:global_registry",
+        "@tink_cc//tink/util:secret_data",
     ],
 )
 

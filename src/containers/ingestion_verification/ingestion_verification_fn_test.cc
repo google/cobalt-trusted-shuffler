@@ -18,19 +18,24 @@
 #include <string>
 #include <utility>
 
+#include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "gmock/gmock.h"
+#include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/crypto/multiset_fingerprint.h"
+#include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/config_constraints.pb.h"
 #include "src/proto/fingerprint.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
+#include "src/proto/sketch.pb.h"
 #include "src/sketch/hll_sketch.h"
 #include "src/testing/fake_context.h"
 #include "src/testing/matchers.h"
@@ -44,6 +49,8 @@ using ::cobalt::trusted_shuffler::testing::EquivToProto;
 using ::cobalt::trusted_shuffler::testing::FakeContext;
 using ::testing::ElementsAre;
 using ::testing::Eq;
+using ::testing::IsEmpty;
+using ::testing::SizeIs;
 
 constexpr absl::string_view kTestRunId = "test_run_id_32_bytes_abcdefghijk";
 static_assert(kTestRunId.size() == kRunIdByteLength);
@@ -70,9 +77,13 @@ TrustedShufflerConfigConstraints CreateConfigConstraints(
 
 SignedRunContext CreateValidSignedRunContext(int32_t project_id, int32_t metric_id,
                                              std::string signature_value) {
+  const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
+  ABSL_CHECK_OK(release_key.status());
+
   RunContext run_context;
   run_context.set_run_id(std::string(kTestRunId));
   run_context.set_run_hash_key(std::string(kRunHashKeyByteLength, 'b'));
+  run_context.set_release_key(*release_key);
 
   RunConfig* const config = run_context.mutable_run_config();
   config->set_min_epoch_index(10);

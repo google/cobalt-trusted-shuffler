@@ -21,6 +21,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "google/protobuf/any.pb.h"
+#include "src/crypto/release_encrypter.h"
 #include "src/crypto/secure_random.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/run_context.pb.h"
@@ -67,9 +68,15 @@ absl::Status RunContextInitializerFn::FinalizeReplica(google::protobuf::Any conf
     return run_hash_key.status();
   }
 
+  absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
+  if (!release_key.ok()) {
+    return release_key.status();
+  }
+
   RunContext run_context;
   run_context.set_run_id(*run_id);
   run_context.set_run_hash_key(*run_hash_key);
+  run_context.set_release_key(*release_key);
   *run_context.mutable_run_config() = *run_config_;
 
   std::string serialized_run_context = run_context.SerializeAsString();

@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "absl/strings/str_cat.h"
@@ -27,6 +28,7 @@
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/crypto/release_encrypter.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/fingerprint.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -39,6 +41,7 @@ namespace {
 
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
+using ::testing::Eq;
 using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
@@ -60,11 +63,15 @@ struct TestIngestionVerificationResultSpec {
 
 IngestionVerificationResult CreateIngestionVerificationResult(
     const TestIngestionVerificationResultSpec& spec) {
+  const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
+  ABSL_CHECK_OK(release_key.status());
+
   IngestionVerificationResult result;
 
   RunContext run_context;
   run_context.set_run_id(std::string(spec.run_id));
   run_context.set_run_hash_key("hash_key_01234567890123456789012");
+  run_context.set_release_key(*release_key);
   RunConfig* const run_config = run_context.mutable_run_config();
   run_config->set_target_batch_size(spec.target_batch_size);
   run_config->set_min_epoch_index(spec.min_epoch_index);

@@ -41,6 +41,11 @@ absl::Status VerifyRunConfig(const RunConfig& run_config);
 // - `run_hash_key` must not be empty and must be exactly 32 bytes.
 // - `run_config` must be set, and its fields are verified recursively via
 //   VerifyRunConfig.
+// - `release_key` must not be empty and must be a valid serialized Tink
+//   AES-256-GCM AEAD release keyset.
+//
+// Requires Tink AEAD primitives to be registered via
+// `crypto::tink::AeadConfig::Register()` prior to calling this function.
 absl::Status VerifyRunContext(const RunContext& run_context);
 
 // Verifies a SignedRunContext:

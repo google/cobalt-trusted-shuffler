@@ -17,10 +17,12 @@
 #include <cstdint>
 #include <string>
 
+#include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/crypto/release_encrypter.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/fingerprint.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -42,6 +44,9 @@ MetricEpochKey CreateTestPartitionKey(int32_t project_id, int32_t metric_id, int
 }
 
 SignedRunContext CreateTestSignedRunContext(int32_t target_batch_size) {
+  const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
+  ABSL_CHECK_OK(release_key.status());
+
   RunConfig run_config;
   run_config.set_target_batch_size(target_batch_size);
   RunConfig::MetricIdentifier* const metric_identifier = run_config.add_metric_identifiers();
@@ -51,6 +56,7 @@ SignedRunContext CreateTestSignedRunContext(int32_t target_batch_size) {
   RunContext run_context;
   run_context.set_run_id(std::string(32, 'r'));
   run_context.set_run_hash_key(std::string(32, 'k'));
+  run_context.set_release_key(*release_key);
   *run_context.mutable_run_config() = run_config;
 
   SignedRunContext signed_run_context;

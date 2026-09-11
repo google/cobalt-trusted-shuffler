@@ -24,9 +24,9 @@ bootstrap a secure pipeline execution.
 
 This container implements the `FnConfidentialTransform` / `DoFn` API to process an
 incoming `RunConfig`. It validates the configuration parameters, generates
-cryptographically secure identifiers (`run_id` and `run_hash_key`), packages
-them into a `RunContext`, and signs the context using an attestation-bound
-signing key.
+cryptographically secure keys and identifiers (`run_id`, `run_hash_key`, and
+`release_key`), packages them into a `RunContext`, and signs the context using
+an attestation-bound signing key.
 
 ## Integration in Trusted Shuffler Workflow
 
@@ -46,7 +46,8 @@ The orchestrator integrates this stage into its overall workflow as follows:
 
 3.  **Security Context Generation**: The container validates the `RunConfig`,
     generates 32-byte cryptographically secure random values for `run_id` and
-    `run_hash_key`, constructs the `RunContext`, and signs
+    `run_hash_key`, generates a serialized Tink AES-256-GCM AEAD keyset for
+    `release_key`, constructs the `RunContext`, and signs
     `serialized_run_context` using its attestation-bound
     `InstanceSigningKeyHandle`. It emits the resulting `SignedRunContext`
     encrypted such that it can be read by further steps in the pipeline.
@@ -60,8 +61,9 @@ The orchestrator integrates this stage into its overall workflow as follows:
     containers verify the signature of `SignedRunContext` against the
     initialization stage's attestation public key. This guarantees that all
     downstream stages operate within the same cryptographic boundary, share
-    identical run identifiers (`run_id`, `run_hash_key`), and adhere to the
-    validated `RunConfig` without risk of parameter tampering or run confusion.
+    identical run identifiers (`run_id`, `run_hash_key`, `release_key`), and
+    adhere to the validated `RunConfig` without risk of parameter tampering or
+    run confusion.
 
 ## Inputs & Outputs
 
@@ -84,6 +86,7 @@ The orchestrator integrates this stage into its overall workflow as follows:
     -   `serialized_run_context`: A serialized `RunContext` message containing:
     -   `run_id`: A 32-byte cryptographically secure random run ID.
     -   `run_hash_key`: A 32-byte cryptographically secure random hashing key.
+    -   `release_key`: A serialized Tink AES-256-GCM AEAD keyset (ProtoKeysetFormat).
     -   `run_config`: The validated input `RunConfig`.
     -   `signature`: The cryptographic signature of `serialized_run_context`
         generated using the container's attestation signing key.

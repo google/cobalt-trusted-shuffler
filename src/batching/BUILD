@@ -39,10 +39,12 @@ cc_test(
     srcs = ["batch_calculator_test.cc"],
     deps = [
         ":batch_calculator",
+        "//src/crypto:release_encrypter",
         "//src/proto:common_cc_proto",
         "//src/proto:fingerprint_cc_proto",
         "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",
+        "@abseil-cpp//absl/log:absl_check",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
         "@googletest//:gtest_main",

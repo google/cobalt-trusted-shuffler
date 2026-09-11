@@ -25,6 +25,7 @@
 #include "absl/log/check.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -63,9 +64,13 @@ inline MetricEpochKey CreateMetricEpochKey(const MetricEpochSpec& spec) {
 // Builds a valid RunContext proto with specified metric identifiers and epoch bounds.
 inline RunContext CreateValidRunContext(absl::Span<const MetricIdentifierSpec> identifiers,
                                         int64_t min_epoch, int64_t max_epoch, int32_t batch_size) {
+  absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
+  CHECK_OK(release_key.status());
+
   RunContext run_context;
   run_context.set_run_id(std::string(kTestRunId));
   run_context.set_run_hash_key(std::string(kTestRunHashKey));
+  run_context.set_release_key(*release_key);
   auto* run_config = run_context.mutable_run_config();
   for (const auto& id : identifiers) {
     auto* metric = run_config->add_metric_identifiers();
@@ -181,9 +186,13 @@ inline SignedRunContext CreateValidSignedRunContext(const int32_t project_id,
                                                     const absl::string_view run_id,
                                                     const int64_t min_epoch_index,
                                                     const int64_t max_epoch_index) {
+  absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
+  CHECK_OK(release_key.status());
+
   RunContext run_context;
   run_context.set_run_id(std::string(run_id));
   run_context.set_run_hash_key(std::string(kRunHashKeyByteLength, 'b'));
+  run_context.set_release_key(*release_key);
   auto* run_config = run_context.mutable_run_config();
   RunConfig::MetricIdentifier* metric = run_config->add_metric_identifiers();
   metric->set_project_id(project_id);

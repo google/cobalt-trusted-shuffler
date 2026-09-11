@@ -24,6 +24,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "src/crypto/release_encrypter.h"
 #include "src/proto/run_context.pb.h"
 
 namespace cobalt::trusted_shuffler {
@@ -94,7 +95,15 @@ absl::Status VerifyRunContext(const RunContext& run_context) {
     return absl::InvalidArgumentError("RunContext run_config must be set.");
   }
 
-  return VerifyRunConfig(run_context.run_config());
+  if (absl::Status status = VerifyRunConfig(run_context.run_config()); !status.ok()) {
+    return status;
+  }
+
+  if (run_context.release_key().empty()) {
+    return absl::InvalidArgumentError("RunContext release_key must not be empty.");
+  }
+
+  return ReleaseEncrypter::Create(run_context).status();
 }
 
 absl::StatusOr<RunContext> VerifySignedRunContext(const SignedRunContext& signed_run_context) {

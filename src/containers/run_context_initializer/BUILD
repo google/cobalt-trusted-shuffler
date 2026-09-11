@@ -37,13 +37,16 @@ cc_library(
     srcs = ["run_context_initializer_fn.cc"],
     hdrs = ["run_context_initializer_fn.h"],
     deps = [
+        "//src/crypto:release_encrypter",
         "//src/crypto:secure_random",
         "//src/crypto:verify_signed_run_context",
         "//src/proto:run_context_cc_proto",
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
-        "@confidential-federated-compute//containers/fns:fns",
+        "@confidential-federated-compute//containers/fns",
         "@oak//cc/crypto:signing_key",
+        "@oak//proto/crypto:crypto_cc_proto",
         "@protobuf//:any_cc_proto",
     ],
 )
@@ -55,9 +58,9 @@ cc_library(
     deps = [
         ":run_context_initializer_fn",
         "@abseil-cpp//absl/status:statusor",
-        "@confidential-federated-compute//containers/fns:fns",
+        "@confidential-federated-compute//containers/fns",
+        "@oak//cc/crypto:encryption_key",
         "@oak//cc/crypto:signing_key",
-        "@protobuf//:any_cc_proto",
     ],
 )
 
@@ -66,10 +69,11 @@ cc_test(
     srcs = ["run_context_initializer_fn_test.cc"],
     deps = [
         ":run_context_initializer_fn",
+        "//src/crypto:release_encrypter",
         "//src/crypto:verify_signed_run_context",
         "//src/proto:run_context_cc_proto",
         "//src/testing:fake_context",
-        "@abseil-cpp//absl/status:status",
+        "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
         "@googletest//:gtest_main",
         "@oak//cc/crypto:signing_key",
@@ -80,6 +84,7 @@ cc_test(
     name = "run_context_initializer_transform_test",
     srcs = ["run_context_initializer_transform_test.cc"],
     deps = [
+        ":run_context_initializer_fn",
         ":run_context_initializer_transform",
         "//src/testing:fake_keys",
         "@abseil-cpp//absl/status:status_matchers",

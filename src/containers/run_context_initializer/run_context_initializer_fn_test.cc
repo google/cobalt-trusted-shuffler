@@ -24,6 +24,7 @@
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/run_context.pb.h"
 #include "src/testing/fake_context.h"
@@ -31,10 +32,12 @@
 namespace cobalt::trusted_shuffler {
 namespace {
 
-using absl_testing::IsOk;
-using absl_testing::StatusIs;
+using ::absl_testing::IsOk;
+using ::absl_testing::StatusIs;
 using ::testing::Eq;
+using ::testing::IsEmpty;
 using ::testing::Ne;
+using ::testing::Not;
 using ::testing::SizeIs;
 
 inline constexpr int kReencryptionKeyIndex = 0;
@@ -276,11 +279,21 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaEmitsSignedRunContextWithKeyInd
   ASSERT_TRUE(signed_run_context.ParseFromString(output_kv.data));
   EXPECT_THAT(signed_run_context.signature(), Eq("test_signature_bytes"));
 
-  RunContext run_context;
-  ASSERT_TRUE(run_context.ParseFromString(signed_run_context.serialized_run_context()));
+  absl::StatusOr<RunContext> verified_run_context = VerifySignedRunContext(signed_run_context);
+  ASSERT_THAT(verified_run_context, IsOk());
+
+  const RunContext& run_context = *verified_run_context;
   EXPECT_THAT(run_context.run_id(), SizeIs(kRunIdByteLength));
   EXPECT_THAT(run_context.run_hash_key(), SizeIs(kRunHashKeyByteLength));
+  EXPECT_THAT(run_context.release_key(), Not(IsEmpty()));
   EXPECT_THAT(run_context.run_id(), Ne(run_context.run_hash_key()));
+  EXPECT_THAT(run_context.run_id(), Ne(run_context.release_key()));
+  EXPECT_THAT(run_context.run_hash_key(), Ne(run_context.release_key()));
+
+  const absl::StatusOr<ReleaseEncrypter> encrypter = ReleaseEncrypter::Create(run_context);
+  ASSERT_THAT(encrypter, IsOk());
+  EXPECT_THAT(encrypter->ReleaseKey(), Eq(run_context.release_key()));
+
   EXPECT_THAT(run_context.run_config().min_epoch_index(), Eq(10));
   EXPECT_THAT(run_context.run_config().max_epoch_index(), Eq(20));
   EXPECT_THAT(run_context.run_config().target_batch_size(), Eq(100));
@@ -318,6 +331,7 @@ TEST(RunContextInitializerFnTest, GeneratesUniqueCryptoRandomKeysPerCall) {
 
   EXPECT_THAT(rc1.run_id(), Ne(rc2.run_id()));
   EXPECT_THAT(rc1.run_hash_key(), Ne(rc2.run_hash_key()));
+  EXPECT_THAT(rc1.release_key(), Ne(rc2.release_key()));
 }
 
 }  // namespace

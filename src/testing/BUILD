@@ -55,6 +55,7 @@ cc_library(
     testonly = True,
     hdrs = ["test_utils.h"],
     deps = [
+        "//src/crypto:release_encrypter",
         "//src/crypto:verify_signed_run_context",
         "//src/proto:common_cc_proto",
         "//src/proto:ingestion_cc_proto",
