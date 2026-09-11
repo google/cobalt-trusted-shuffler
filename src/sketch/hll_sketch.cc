@@ -303,7 +303,7 @@ int64_t HllSketch::EstimateCardinality() const {
     }
   } else {
     // Large range correction for 64-bit hashes:
-    // As established by Flajolet et al. (2007, Section 4.2) and Heule et al. (2013, Section 3),
+    // As established by Flajolet et al. (2007, Section 4.2) and Heule et al. (2013, Section 4),
     // when cardinality approaches hash capacity 2^64, hash collisions begin to saturate
     // registers. When raw estimate E > (2^64 / 30.0), collision probability produces a
     // systematic undercount exceeding the sketch's standard error (1.04 / sqrt(m)).
