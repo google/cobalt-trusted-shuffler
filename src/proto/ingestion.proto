@@ -76,7 +76,7 @@ message IngestSummaryReport {
 // privacy threshold.
 message ThresholdReport {
   // 32-byte cryptographic identifier for the pipeline run context.
-  bytes run_id = 1;
+  bytes run_id = 1 [debug_redact = true];
 
   // Partitions that met or exceeded the required device count threshold.
   repeated MetricEpochKey approved_partitions = 2;

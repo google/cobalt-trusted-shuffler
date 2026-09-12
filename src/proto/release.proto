@@ -64,7 +64,7 @@ message ReleaseOutputHeader {
 message ReleasedKeyReport {
   // Serialized Tink AES-256-GCM AEAD keyset (ProtoKeysetFormat) for decrypting
   // output messages.
-  bytes release_key = 1;
+  bytes release_key = 1 [debug_redact = true];
 }
 
 // Release stage result emitted to the orchestrator.
