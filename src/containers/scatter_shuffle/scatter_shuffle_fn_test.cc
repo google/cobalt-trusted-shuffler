@@ -44,6 +44,7 @@ using ::absl_testing::StatusIs;
 using ::testing::Eq;
 using ::testing::IsEmpty;
 using ::testing::SizeIs;
+using FakeContext = ::cobalt::trusted_shuffler::testing::FakeCombinedContext;
 
 constexpr absl::string_view kTestRunId = "test_run_id_01234567890123456789";
 constexpr int32_t kDefaultProjectId = 100;
@@ -147,7 +148,7 @@ ScatterShuffleFn::KV CreateMessageRecord(const ShuffledMessage& message) {
 }
 
 TEST(ScatterShuffleFnTest, SuccessfulScatterShuffleAndGroupAssignment) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   // Ingest Record 0: IngestionVerificationPayload with target_batch_size = 6, message_count = 11.
@@ -230,7 +231,7 @@ TEST(ScatterShuffleFnTest, SuccessfulScatterShuffleAndGroupAssignment) {
 }
 
 TEST(ScatterShuffleFnTest, BatchParametersEstablishedOnFirstDataRecord) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   const IngestionVerificationPayload verification_payload =
@@ -251,7 +252,7 @@ TEST(ScatterShuffleFnTest, BatchParametersEstablishedOnFirstDataRecord) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsRecordWithUnapprovedPartition) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   // IngestionVerificationPayload only approves (100, 200, 42).
@@ -277,7 +278,7 @@ TEST(ScatterShuffleFnTest, RejectsRecordWithUnapprovedPartition) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsRecordWithMissingPartitionInFingerprint) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   IngestionVerificationPayload verification_payload =
@@ -299,7 +300,7 @@ TEST(ScatterShuffleFnTest, RejectsRecordWithMissingPartitionInFingerprint) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsRecordWithZeroMessageCountInFingerprint) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({
@@ -321,9 +322,8 @@ TEST(ScatterShuffleFnTest, RejectsRecordWithZeroMessageCountInFingerprint) {
   EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
 }
 
-
 TEST(ScatterShuffleFnTest, RejectsEmptyBatchWithIntegrityFault) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
@@ -343,11 +343,10 @@ TEST(ScatterShuffleFnTest, RejectsEmptyBatchWithIntegrityFault) {
 
   // No encrypted messages should be emitted.
   EXPECT_THAT(context.Encrypted(), IsEmpty());
-  EXPECT_THAT(context.Errors(), SizeIs(1));
 }
 
 TEST(ScatterShuffleFnTest, RejectsTooFewMessagesWithIntegrityFault) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   // target_batch_size = 5, message_count = 5 -> batch_num = 1, target_batch_size = 5.
@@ -373,7 +372,7 @@ TEST(ScatterShuffleFnTest, RejectsTooFewMessagesWithIntegrityFault) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsTooManyMessagesWithIntegrityFault) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   // target_batch_size = 2, message_count = 2 -> batch_num = 1, target_batch_size = 2.
@@ -404,7 +403,7 @@ TEST(ScatterShuffleFnTest, RejectsTooManyMessagesWithIntegrityFault) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsMessageWithMismatchedRunId) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   const IngestionVerificationPayload verification_payload =
@@ -424,7 +423,7 @@ TEST(ScatterShuffleFnTest, RejectsMessageWithMismatchedRunId) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsMessageWithNonZeroShuffleCount) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
@@ -443,7 +442,7 @@ TEST(ScatterShuffleFnTest, RejectsMessageWithNonZeroShuffleCount) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsMessageWithMismatchedMetricEpochKeyInBatch) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   // IngestionVerificationPayload with multiple approved partitions.
@@ -488,9 +487,8 @@ TEST(ScatterShuffleFnTest, RejectsMessageWithMismatchedMetricEpochKeyInBatch) {
   EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
 }
 
-
 TEST(ScatterShuffleFnTest, RejectsCorruptedShuffledMessagePayload) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
@@ -508,7 +506,7 @@ TEST(ScatterShuffleFnTest, RejectsCorruptedShuffledMessagePayload) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsMessageMissingMetricEpochKey) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
@@ -536,7 +534,7 @@ TEST(ScatterShuffleFnTest, RejectsMessageMissingMetricEpochKey) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsCorruptedFirstRecord) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   EXPECT_THAT(fn.Do(ScatterShuffleFn::KV(google::protobuf::Any(), "corrupted_bytes"), context),
@@ -549,7 +547,7 @@ TEST(ScatterShuffleFnTest, RejectsCorruptedFirstRecord) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsIntegrityFaultInPayload) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   IngestionVerificationPayload payload;
@@ -566,7 +564,7 @@ TEST(ScatterShuffleFnTest, RejectsIntegrityFaultInPayload) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsEmptyRunIdInRunContext) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   const IngestionVerificationPayload verification_payload =
@@ -577,7 +575,7 @@ TEST(ScatterShuffleFnTest, RejectsEmptyRunIdInRunContext) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsMissingSignedRunContext) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   IngestionVerificationPayload verification_payload;
@@ -588,7 +586,7 @@ TEST(ScatterShuffleFnTest, RejectsMissingSignedRunContext) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsMissingThresholdReport) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
@@ -599,7 +597,7 @@ TEST(ScatterShuffleFnTest, RejectsMissingThresholdReport) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsMismatchedThresholdReportRunId) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
@@ -610,7 +608,7 @@ TEST(ScatterShuffleFnTest, RejectsMismatchedThresholdReportRunId) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsInvalidApprovedPartitionBounds) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
@@ -624,7 +622,7 @@ TEST(ScatterShuffleFnTest, RejectsInvalidApprovedPartitionBounds) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsInvalidTargetBatchSize) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   const IngestionVerificationPayload verification_payload =
@@ -635,7 +633,7 @@ TEST(ScatterShuffleFnTest, RejectsInvalidTargetBatchSize) {
 }
 
 TEST(ScatterShuffleFnTest, RejectsFinalizeWithoutConfig) {
-  testing::FakeContext context;
+  FakeContext context;
   ScatterShuffleFn fn;
 
   EXPECT_THAT(
@@ -650,7 +648,7 @@ TEST(ScatterShuffleFnTest, RejectsFinalizeWithoutConfig) {
 }
 
 TEST(ScatterShuffleFnTest, ShufflingPreservesMultisetAcrossLargeBatch) {
-  testing::FakeContext context;
+  FakeContext context;
   const int32_t batch_size = 50;
   const int32_t batch_num = 5;
   // target_batch_size = 50, message_count = 250 -> batch_num = 5, target_batch_size = 50.

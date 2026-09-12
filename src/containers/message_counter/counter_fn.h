@@ -32,17 +32,18 @@ class CounterFn : public confidential_federated_compute::fns::DoFn {
   ~CounterFn() override = default;
 
   // Configures the Fn with the counter_name.
-  absl::Status InitializeReplica(google::protobuf::Any config,
-                                 Context& context) override;
+  absl::Status InitializeReplica(google::protobuf::Any config, Context& context) override;
 
   // Counts the message and forwards it encrypted as a `MESSAGE` output.
-  absl::Status Do(KV input, Context& context) override;
+  absl::Status Do(KV input, DoContext& context) override;
 
   // Emits the final count report as a `REPORT` output.
-  absl::Status FinalizeReplica(google::protobuf::Any config,
-                               Context& context) override;
+  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
 
  private:
+  using FnContext = confidential_federated_compute::fns::Fn::FnContext;
+  using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
+
   std::string counter_name_;
   int key_index_;
   int64_t count_;

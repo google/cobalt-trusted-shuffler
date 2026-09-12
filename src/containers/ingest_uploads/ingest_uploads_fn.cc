@@ -35,7 +35,7 @@
 namespace cobalt::trusted_shuffler {
 
 absl::Status IngestUploadsFn::OnConfig(const SignedRunContext& signed_run_context,
-                                       Context& context) {
+                                       DoContext& context) {
   absl::StatusOr<RunContext> verified_run_context = VerifySignedRunContext(signed_run_context);
   if (!verified_run_context.ok()) {
     return verified_run_context.status();
@@ -64,16 +64,15 @@ bool IngestUploadsFn::IsEpochInBounds(const Epoch epoch) const {
 }
 
 absl::Status IngestUploadsFn::OnRecord(const fcp::confidentialcompute::BlobData& blob_data,
-                                       Context& context) {
-  absl::StatusOr<ClientUploads> uploads = ParseUploads(blob_data.data());
-  // If the checkpoint is invalid or empty, drop it and record an error on the context.
+                                       DoContext& context) {
+  const std::string payload(blob_data.data());
+  absl::StatusOr<ClientUploads> uploads = ParseUploads(payload);
+  // If the checkpoint is invalid or empty, drop it.
   if (!uploads.ok()) {
-    context.EmitError(uploads.status());
     messages_dropped_++;
     return absl::OkStatus();
   }
   if (uploads->privacy_id.empty()) {
-    context.EmitError(absl::InvalidArgumentError("Checkpoint missing privacy_id"));
     messages_dropped_++;
     return absl::OkStatus();
   }
@@ -135,7 +134,7 @@ absl::Status IngestUploadsFn::OnRecord(const fcp::confidentialcompute::BlobData&
   return absl::OkStatus();
 }
 
-absl::Status IngestUploadsFn::FinalizeReplica(google::protobuf::Any config, Context& context) {
+absl::Status IngestUploadsFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
   if (!multiset_fingerprint_.has_value()) {
     return absl::FailedPreconditionError(
         "RunContext configuration was not received before FinalizeReplica");

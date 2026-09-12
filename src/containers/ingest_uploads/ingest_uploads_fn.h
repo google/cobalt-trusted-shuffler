@@ -45,13 +45,11 @@ namespace cobalt::trusted_shuffler {
 class IngestUploadsFn
     : public FirstRecordConfigDoFn<SignedRunContext, fcp::confidentialcompute::BlobData> {
  public:
-  using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
-
   explicit IngestUploadsFn(const uint32_t message_key_index, const uint32_t report_key_index)
       : message_key_index_(message_key_index), report_key_index_(report_key_index) {}
 
   // Finalizes this Fn replica, building and emitting the PartialIngestionReport.
-  absl::Status FinalizeReplica(google::protobuf::Any config, Context& context) override;
+  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
 
   bool IsMetricAllowed(const int32_t project_id, const int32_t metric_id) const;
   bool IsEpochInBounds(Epoch epoch) const;
@@ -60,13 +58,17 @@ class IngestUploadsFn
 
  protected:
   // Ingests SignedRunContext on record 0 and initializes session state.
-  absl::Status OnConfig(const SignedRunContext& signed_run_context, Context& context) override;
+  absl::Status OnConfig(const SignedRunContext& signed_run_context, DoContext& context) override;
 
   // Ingests incoming client log records on records 1..N.
   absl::Status OnRecord(const fcp::confidentialcompute::BlobData& blob_data,
-                        Context& context) override;
+                        DoContext& context) override;
 
  private:
+  using FnContext = confidential_federated_compute::fns::Fn::FnContext;
+  using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
+  using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
+
   uint32_t message_key_index_;
   uint32_t report_key_index_;
   RunContext run_context_;

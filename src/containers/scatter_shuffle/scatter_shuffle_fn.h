@@ -62,7 +62,7 @@ class ScatterShuffleFn
 
   // Finalizes the replica session: validates batch size, cryptographically shuffles,
   // assigns group IDs, increments shuffle_count, and emits re-encrypted records.
-  absl::Status FinalizeReplica(google::protobuf::Any config, Context& context) override;
+  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
 
   // Accessor for testing and inspection.
   const std::optional<BatchParameters>& CurrentBatchParameters() const { return batch_parameters_; }
@@ -70,16 +70,19 @@ class ScatterShuffleFn
  protected:
   // Ingests IngestionVerificationPayload on record 0 and validates configuration.
   absl::Status OnConfig(const IngestionVerificationPayload& ingestion_verification_payload,
-                        Context& context) override;
+                        DoContext& context) override;
 
   // Ingests incoming batch messages (records 1..N), validating invariants and establishing batch
   // parameters.
-  absl::Status OnRecord(const ShuffledMessage& message, Context& context) override;
+  absl::Status OnRecord(const ShuffledMessage& message, DoContext& context) override;
 
  private:
-  // Signals an integrity violation by emitting an unencrypted IntegrityFault record,
-  // logging an error on Context, and returning a FailedPreconditionError.
-  absl::Status SignalIntegrityFault(Context& context);
+  using FnContext = confidential_federated_compute::fns::Fn::FnContext;
+  using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
+
+  // Signals an integrity violation by emitting an unencrypted IntegrityFault record
+  // and returning a FailedPreconditionError.
+  absl::Status SignalIntegrityFault(FnContext& context);
 
   std::optional<VerifiedIngestionVerificationResult> verified_result_;
   std::optional<BatchParameters> batch_parameters_;

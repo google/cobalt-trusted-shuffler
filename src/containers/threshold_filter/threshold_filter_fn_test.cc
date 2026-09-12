@@ -34,7 +34,6 @@ namespace {
 
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
-using KV = ::confidential_federated_compute::Session::KV;
 using ::cobalt::trusted_shuffler::testing::CreateIntegrityFaultPayload;
 using ::cobalt::trusted_shuffler::testing::CreateMetricEpochKey;
 using ::cobalt::trusted_shuffler::testing::CreateShuffledMessage;
@@ -42,10 +41,11 @@ using ::cobalt::trusted_shuffler::testing::CreateThresholdReportPayload;
 using ::cobalt::trusted_shuffler::testing::CreateValidRunContext;
 using ::cobalt::trusted_shuffler::testing::CreateValidSignedRunContext;
 using ::cobalt::trusted_shuffler::testing::EquivToProto;
-using ::cobalt::trusted_shuffler::testing::FakeContext;
 using ::cobalt::trusted_shuffler::testing::kTestRunId;
 using ::cobalt::trusted_shuffler::testing::MetricEpochSpec;
 using ::cobalt::trusted_shuffler::testing::MetricIdentifierSpec;
+using FakeContext = ::cobalt::trusted_shuffler::testing::FakeCombinedContext;
+using KV = ::confidential_federated_compute::Session::KV;
 using ::testing::IsEmpty;
 using ::testing::SizeIs;
 

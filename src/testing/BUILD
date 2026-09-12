@@ -22,6 +22,7 @@ cc_library(
     hdrs = ["fake_context.h"],
     deps = [
         "@confidential-federated-compute//containers:session",
+        "@confidential-federated-compute//containers/fns:fns",
         "@federated-compute//fcp/protos/confidentialcompute:confidential_transform_cc_proto",
         "@oak//cc/containers/sdk:encryption_key_handle",
         "@oak//cc/containers/sdk:signing_key_handle",

@@ -36,7 +36,7 @@ absl::Status CounterFn::InitializeReplica(google::protobuf::Any config, Context&
   return absl::OkStatus();
 }
 
-absl::Status CounterFn::Do(KV input, Context& context) {
+absl::Status CounterFn::Do(KV input, DoContext& context) {
   count_++;
 
   OutputKey output_key;
@@ -49,7 +49,7 @@ absl::Status CounterFn::Do(KV input, Context& context) {
   return absl::OkStatus();
 }
 
-absl::Status CounterFn::FinalizeReplica(google::protobuf::Any config, Context& context) {
+absl::Status CounterFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
   CountReport report;
   report.set_counter_name(counter_name_);
   report.set_count(count_);

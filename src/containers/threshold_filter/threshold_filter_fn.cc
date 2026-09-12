@@ -34,7 +34,7 @@ namespace cobalt::trusted_shuffler {
 using ::cobalt::trusted_shuffler::RunContext;
 using ::cobalt::trusted_shuffler::SignedRunContext;
 
-void ThresholdFilterFn::EmitIntegrityFault(Context& context) {
+void ThresholdFilterFn::EmitIntegrityFault(FnContext& context) {
   has_integrity_fault_ = true;
   IntegrityFault fault;
   google::protobuf::Any key;
@@ -43,7 +43,7 @@ void ThresholdFilterFn::EmitIntegrityFault(Context& context) {
 }
 
 absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& config,
-                                         Context& context) {
+                                         DoContext& context) {
   if (has_integrity_fault_ || config.has_integrity_fault()) {
     EmitIntegrityFault(context);
     return absl::FailedPreconditionError("Ingestion verification failed with integrity fault.");
@@ -71,7 +71,7 @@ absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& con
 }
 
 absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message,
-                                         Context& context) {
+                                         DoContext& context) {
   if (has_integrity_fault_) {
     EmitIntegrityFault(context);
     return absl::FailedPreconditionError("ThresholdFilterFn::OnRecord: Integrity fault occurred.");
@@ -109,7 +109,7 @@ absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message
   return absl::OkStatus();
 }
 
-absl::Status ThresholdFilterFn::FinalizeReplica(google::protobuf::Any config, Context& context) {
+absl::Status ThresholdFilterFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
   if (!HasConfig()) {
     return absl::FailedPreconditionError(
         "ThresholdFilterFn::FinalizeReplica called before IngestionVerificationPayload "

@@ -46,7 +46,7 @@ namespace {
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
 using ::cobalt::trusted_shuffler::testing::EquivToProto;
-using ::cobalt::trusted_shuffler::testing::FakeContext;
+using FakeContext = ::cobalt::trusted_shuffler::testing::FakeCombinedContext;
 using ::testing::ElementsAre;
 using ::testing::Eq;
 using ::testing::IsEmpty;

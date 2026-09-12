@@ -19,6 +19,11 @@ module(
 
 bazel_dep(name = "abseil-cpp", version = "20250814.1")
 bazel_dep(name = "confidential-federated-compute", version = "0.0.12")
+git_override(
+    module_name = "confidential-federated-compute",
+    commit = "92dda81a5bb8c3fabae82d96b6e802f96f2f64bd",
+    remote = "https://github.com/google-parfait/confidential-federated-compute.git",
+)
 bazel_dep(name = "googletest", version = "1.17.0")
 bazel_dep(name = "grpc", version = "1.76.0")
 bazel_dep(name = "boringssl", version = "0.20250514.0")
@@ -32,11 +37,25 @@ bazel_dep(name = "tink_cc", version = "2.7.0")
 
 single_version_override(
     module_name = "abseil-cpp",
-    version = "20250814.1",
+    version = "20260526.0",
 )
 
-cfc_deps = use_extension("@confidential-federated-compute//:extensions.bzl", "cfc_deps")
-use_repo(cfc_deps, "federated-compute", "oak")
+bazel_dep(name = "federated-compute")
+bazel_dep(name = "oak")
+
+archive_override(
+    module_name = "federated-compute",
+    integrity = "sha256-jMrmTFRcRysQZ6QDrwNdwGhxHLYyS/2QK3D+SBboSkU=",
+    strip_prefix = "federated-compute-9a644dfbeef1225540577a85e1c2dfd8f15c7ff9",
+    urls = ["https://github.com/google-parfait/federated-compute/archive/9a644dfbeef1225540577a85e1c2dfd8f15c7ff9.tar.gz"],
+)
+
+archive_override(
+    module_name = "oak",
+    integrity = "sha256-I7HdbkLQ7fhDRap2RUzVYq3W97QNOpKc5TXo0fl/gcQ=",
+    strip_prefix = "oak-f7393a196c9158c28cba2f9b37994a5a349083d9",
+    urls = ["https://github.com/project-oak/oak/archive/f7393a196c9158c28cba2f9b37994a5a349083d9.tar.gz"],
+)
 
 stub_tf_proto_library = use_repo_rule("@confidential-federated-compute//:stub_tf_proto_library.bzl", "stub_tf_proto_library")
 stub_tf_proto_library(

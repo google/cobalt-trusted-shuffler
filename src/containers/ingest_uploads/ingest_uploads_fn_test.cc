@@ -47,6 +47,9 @@ namespace {
 
 using absl_testing::IsOk;
 using absl_testing::StatusIs;
+using ::cobalt::trusted_shuffler::testing::FakeContext;
+using ::cobalt::trusted_shuffler::testing::FakeDoContext;
+using ::cobalt::trusted_shuffler::testing::FakeFnContext;
 using testing::CreateTestFcCheckpoint;
 using testing::CreateValidSignedRunContext;
 using ::testing::Eq;
@@ -64,7 +67,9 @@ IngestUploadsFn::KV CreateBlobRecord(absl::string_view checkpoint_data) {
 }
 
 TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads) {
-  testing::FakeContext context;
+  FakeContext context;
+  FakeDoContext do_context(context);
+  FakeFnContext fn_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   EXPECT_FALSE(fn.HasConfig());
@@ -74,7 +79,8 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
       /*max_epoch_index=*/10);
 
   // Record 0: Ingests SignedRunContext configuration
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), context), IsOk());
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), do_context),
+              IsOk());
 
   EXPECT_TRUE(fn.HasConfig());
   ASSERT_TRUE(fn.Config().has_value());
@@ -88,7 +94,7 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
 
   std::string checkpoint_data =
       CreateTestFcCheckpoint({upload}, {"1970-01-01T00:00:00Z"}, std::string(kTestPrivacyId));
-  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), do_context), IsOk());
 
   // Verify message emitted encrypted with key index 0 (reencryption_key 2)
   auto encrypted_messages = context.Encrypted();
@@ -109,7 +115,7 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
   EXPECT_THAT(shuffled_msg.customer_message(), Eq("sample_payload_data"));
 
   // Finalize replica
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context), IsOk());
 
   // Verify partial report emitted encrypted with key index 1 (reencryption_key 3)
   auto all_encrypted = context.Encrypted();
@@ -131,13 +137,15 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
 }
 
 TEST(IngestUploadsFnTest, ProcessesEncodedClientPayloadInput) {
-  testing::FakeContext context;
+  FakeContext context;
+  FakeDoContext do_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
       /*max_epoch_index=*/10);
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), context), IsOk());
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), do_context),
+              IsOk());
 
   TrustedShufflerUpload upload;
   upload.set_project_id(1);
@@ -155,7 +163,7 @@ TEST(IngestUploadsFnTest, ProcessesEncodedClientPayloadInput) {
   std::string encoded_input =
       fcp::confidential_compute::EncodeClientPayload(header, checkpoint_data);
 
-  ASSERT_THAT(fn.Do(CreateBlobRecord(encoded_input), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(encoded_input), do_context), IsOk());
 
   auto encrypted_messages = context.Encrypted();
   ASSERT_THAT(encrypted_messages, SizeIs(1));
@@ -166,13 +174,16 @@ TEST(IngestUploadsFnTest, ProcessesEncodedClientPayloadInput) {
 }
 
 TEST(IngestUploadsFnTest, DropsUnallowedMetrics) {
-  testing::FakeContext context;
+  FakeContext context;
+  FakeDoContext do_context(context);
+  FakeFnContext fn_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
       /*max_epoch_index=*/10);
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), context), IsOk());
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), do_context),
+              IsOk());
 
   // Unallowed metric
   TrustedShufflerUpload upload;
@@ -182,12 +193,12 @@ TEST(IngestUploadsFnTest, DropsUnallowedMetrics) {
 
   std::string checkpoint_data =
       CreateTestFcCheckpoint({upload}, {"1970-01-01T00:00:00Z"}, std::string(kTestPrivacyId));
-  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), do_context), IsOk());
 
   // Nothing emitted for dropped message
   EXPECT_THAT(context.Encrypted(), SizeIs(0));
 
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context), IsOk());
   auto all_encrypted = context.Encrypted();
   ASSERT_THAT(all_encrypted, SizeIs(1));
 
@@ -197,13 +208,15 @@ TEST(IngestUploadsFnTest, DropsUnallowedMetrics) {
 }
 
 TEST(IngestUploadsFnTest, DropsInvalidCheckpointAndEmitsError) {
-  testing::FakeContext context;
+  FakeContext context;
+  FakeDoContext do_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
       /*max_epoch_index=*/10);
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), context), IsOk());
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), do_context),
+              IsOk());
 
   TrustedShufflerUpload upload;
   upload.set_project_id(1);
@@ -213,16 +226,15 @@ TEST(IngestUploadsFnTest, DropsInvalidCheckpointAndEmitsError) {
   // Checkpoint without event times is invalid.
   std::string checkpoint_data =
       CreateTestFcCheckpoint({upload}, /*event_times=*/{}, std::string(kTestPrivacyId));
-  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), do_context), IsOk());
 
-  // Checkpoint is dropped and recorded as an error on context.
+  // Checkpoint is dropped.
   EXPECT_THAT(context.Encrypted(), SizeIs(0));
-  ASSERT_THAT(context.Errors(), SizeIs(1));
-  EXPECT_THAT(context.Errors()[0], StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(IngestUploadsFnTest, FailsOnMissingRunConfig) {
   testing::FakeContext context;
+  testing::FakeDoContext do_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   RunContext run_context;
@@ -233,12 +245,13 @@ TEST(IngestUploadsFnTest, FailsOnMissingRunConfig) {
   signed_context.set_serialized_run_context(run_context.SerializeAsString());
   signed_context.set_signature("test_signature");
 
-  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), context),
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(IngestUploadsFnTest, FailsOnEmptyMetricIdentifiers) {
   testing::FakeContext context;
+  testing::FakeDoContext do_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   RunContext run_context;
@@ -253,12 +266,13 @@ TEST(IngestUploadsFnTest, FailsOnEmptyMetricIdentifiers) {
   signed_context.set_serialized_run_context(run_context.SerializeAsString());
   signed_context.set_signature("test_signature");
 
-  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), context),
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(IngestUploadsFnTest, FailsOnEmptySignature) {
   testing::FakeContext context;
+  testing::FakeDoContext do_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   SignedRunContext signed_context = CreateValidSignedRunContext(
@@ -266,18 +280,19 @@ TEST(IngestUploadsFnTest, FailsOnEmptySignature) {
       /*max_epoch_index=*/10);
   signed_context.clear_signature();
 
-  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), context),
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(IngestUploadsFnTest, AllowsOnlyEpochZeroWhenMinAndMaxEpochAreZero) {
   testing::FakeContext context;
+  testing::FakeDoContext do_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   SignedRunContext signed_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
       /*max_epoch_index=*/0);
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), context), IsOk());
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), do_context), IsOk());
 
   TrustedShufflerUpload upload;
   upload.set_project_id(1);
@@ -287,37 +302,41 @@ TEST(IngestUploadsFnTest, AllowsOnlyEpochZeroWhenMinAndMaxEpochAreZero) {
   // Epoch 0 (1970-01-01) is allowed.
   std::string checkpoint_epoch_0 =
       CreateTestFcCheckpoint({upload}, {"1970-01-01T00:00:00Z"}, std::string(kTestPrivacyId));
-  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_epoch_0), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_epoch_0), do_context), IsOk());
   EXPECT_THAT(context.Encrypted(), SizeIs(1));
 
   // Epoch 1 (1970-01-02) is not allowed.
   std::string checkpoint_epoch_1 =
       CreateTestFcCheckpoint({upload}, {"1970-01-02T00:00:00Z"}, std::string(kTestPrivacyId));
-  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_epoch_1), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_epoch_1), do_context), IsOk());
   EXPECT_THAT(context.Encrypted(), SizeIs(1));
 }
 
 TEST(IngestUploadsFnTest, FailsOnEmptyFirstRecordAndRejectsSubsequentRecords) {
   testing::FakeContext context;
+  testing::FakeDoContext do_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
-  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(""), context),
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(""), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_FALSE(fn.HasConfig());
 
   // One-shot semantics: subsequent records are rejected.
-  EXPECT_THAT(fn.Do(CreateBlobRecord("checkpoint_data"), context),
+  EXPECT_THAT(fn.Do(CreateBlobRecord("checkpoint_data"), do_context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
 TEST(IngestUploadsFnTest, EstimatesDeviceCardinalityUsingPrivacyId) {
   testing::FakeContext context;
+  testing::FakeDoContext do_context(context);
+  testing::FakeFnContext fn_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   const SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
       /*max_epoch_index=*/10);
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), context), IsOk());
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), do_context),
+              IsOk());
 
   TrustedShufflerUpload upload1;
   upload1.set_project_id(1);
@@ -343,11 +362,11 @@ TEST(IngestUploadsFnTest, EstimatesDeviceCardinalityUsingPrivacyId) {
   const std::string checkpoint3 =
       CreateTestFcCheckpoint({upload3}, {"1970-01-01T00:00:03Z"}, std::string("device_2"));
 
-  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint1), context), IsOk());
-  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint2), context), IsOk());
-  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint3), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint1), do_context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint2), do_context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint3), do_context), IsOk());
 
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context), IsOk());
 
   const std::vector<std::pair<int, IngestUploadsFn::KV>> all_encrypted = context.Encrypted();
   // 3 messages + 1 report
@@ -365,14 +384,16 @@ TEST(IngestUploadsFnTest, EstimatesDeviceCardinalityUsingPrivacyId) {
   EXPECT_THAT(sketch->EstimateCardinality(), Eq(2));
 }
 
-TEST(IngestUploadsFnTest, DropsCheckpointMissingPrivacyIdAndEmitsError) {
+TEST(IngestUploadsFnTest, DropsCheckpointMissingPrivacyId) {
   testing::FakeContext context;
+  testing::FakeDoContext do_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   const SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
       /*max_epoch_index=*/10);
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), context), IsOk());
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), do_context),
+              IsOk());
 
   TrustedShufflerUpload upload;
   upload.set_project_id(1);
@@ -381,38 +402,39 @@ TEST(IngestUploadsFnTest, DropsCheckpointMissingPrivacyIdAndEmitsError) {
 
   const std::string checkpoint_data =
       CreateTestFcCheckpoint({upload}, {"1970-01-01T00:00:00Z"}, /*privacy_id=*/std::nullopt);
-  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), do_context), IsOk());
 
   EXPECT_THAT(context.Encrypted(), SizeIs(0));
-  ASSERT_THAT(context.Errors(), SizeIs(1));
-  EXPECT_THAT(context.Errors()[0], StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(IngestUploadsFnTest, FailsOnCorruptedConfigProtoAndRejectsSubsequentRecords) {
   testing::FakeContext context;
+  testing::FakeDoContext do_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   // Invalid proto wire data
-  EXPECT_THAT(fn.Do(IngestUploadsFn::KV("\xff\xff\xff\xff"), context),
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV("\xff\xff\xff\xff"), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_FALSE(fn.HasConfig());
 
   // One-shot semantics: subsequent records are rejected.
-  EXPECT_THAT(fn.Do(CreateBlobRecord("checkpoint_data"), context),
+  EXPECT_THAT(fn.Do(CreateBlobRecord("checkpoint_data"), do_context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
 TEST(IngestUploadsFnTest, RejectsCorruptedRecordPayload) {
   testing::FakeContext context;
+  testing::FakeDoContext do_context(context);
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
 
   const SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
       /*max_epoch_index=*/10);
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), context), IsOk());
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), do_context),
+              IsOk());
 
   // Invalid proto wire data for RecordProto (BlobData)
-  EXPECT_THAT(fn.Do(IngestUploadsFn::KV("corrupted_record_payload"), context),
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV("corrupted_record_payload"), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 

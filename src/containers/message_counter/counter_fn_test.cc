@@ -30,6 +30,8 @@ static constexpr int kKeyIndex = 5;
 
 using absl_testing::IsOk;
 using absl_testing::StatusIs;
+using ::cobalt::trusted_shuffler::testing::FakeDoContext;
+using ::cobalt::trusted_shuffler::testing::FakeFnContext;
 using ::testing::Eq;
 using ::testing::IsEmpty;
 using ::testing::SizeIs;
@@ -72,18 +74,20 @@ TEST(CounterFnTest, InitializeReplicaFailsOnMissingCounterName) {
 
 TEST(CounterFnTest, DoReturnsOk) {
   testing::FakeContext context;
+  FakeDoContext do_context(context);
   CounterFn fn(kKeyIndex);
 
-  EXPECT_THAT(fn.Do(CounterFn::KV(), context), IsOk());
+  EXPECT_THAT(fn.Do(CounterFn::KV(), do_context), IsOk());
 }
 
 TEST(CounterFnTest, DoEmitsMessages) {
   CounterFn fn(kKeyIndex);
 
   testing::FakeContext context;
+  FakeDoContext do_context(context);
 
   const std::string message = "a message";
-  ASSERT_THAT(fn.Do(CounterFn::KV(google::protobuf::Any(), message), context), IsOk());
+  ASSERT_THAT(fn.Do(CounterFn::KV(google::protobuf::Any(), message), do_context), IsOk());
 
   ASSERT_THAT(context.Encrypted(), SizeIs(1));
 
@@ -103,15 +107,18 @@ TEST(CounterFnTest, DoEmitsMessages) {
 
 TEST(CounterFnTest, FinalizeReplicaReturnsOk) {
   testing::FakeContext context;
+  FakeFnContext fn_context(context);
   CounterFn fn(kKeyIndex);
 
-  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context), IsOk());
 }
 
 TEST(CounterFnTest, FinalizeReplicaEmitsReport) {
   CounterFn fn(kKeyIndex);
 
   testing::FakeContext context;
+  FakeDoContext do_context(context);
+  FakeFnContext fn_context(context);
 
   const std::string counter_name = "the_counter_name";
 
@@ -125,10 +132,10 @@ TEST(CounterFnTest, FinalizeReplicaEmitsReport) {
 
   int message_count = 10;
   for (int i = 0; i < message_count; i++) {
-    ASSERT_THAT(fn.Do(CounterFn::KV(google::protobuf::Any(), "message"), context), IsOk());
+    ASSERT_THAT(fn.Do(CounterFn::KV(google::protobuf::Any(), "message"), do_context), IsOk());
   }
 
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context), IsOk());
 
   EXPECT_THAT(context.Encrypted(), SizeIs(message_count));
   EXPECT_THAT(context.ReadResponses(), IsEmpty());

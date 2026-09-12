@@ -26,6 +26,8 @@ namespace {
 
 using ::absl_testing::IsOk;
 using ::cobalt::trusted_shuffler::testing::FakeContext;
+using ::cobalt::trusted_shuffler::testing::FakeDoContext;
+using ::cobalt::trusted_shuffler::testing::FakeFnContext;
 using ::fcp::confidentialcompute::CommitRequest;
 using ::fcp::confidentialcompute::ConfigureRequest;
 using ::testing::Eq;
@@ -40,11 +42,11 @@ TEST(ReleaserFnTest, ConfigureReturnsOk) {
 
 TEST(ReleaserFnTest, DoEmitsUnencrypted) {
   FakeContext context;
+  FakeDoContext do_context(context);
   ReleaserFn fn;
   const std::string message = "hello world";
 
-  EXPECT_THAT(fn.Do(ReleaserFn::KV(google::protobuf::Any(), message), context),
-              IsOk());
+  EXPECT_THAT(fn.Do(ReleaserFn::KV(google::protobuf::Any(), message), do_context), IsOk());
 
   const std::vector<ReleaserFn::KV> unencrypted_list = context.Unencrypted();
   ASSERT_THAT(unencrypted_list, SizeIs(1));
@@ -61,9 +63,10 @@ TEST(ReleaserFnTest, CommitReturnsOk) {
 
 TEST(ReleaserFnTest, FinalizeReplicaReturnsOk) {
   FakeContext context;
+  FakeFnContext fn_context(context);
   ReleaserFn fn;
 
-  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context), IsOk());
 }
 
 }  // namespace

@@ -54,7 +54,7 @@ class ThresholdFilterFn
   ~ThresholdFilterFn() override = default;
 
   // Finalizes the replica, verifying that configuration was successfully received.
-  absl::Status FinalizeReplica(google::protobuf::Any config, Context& context) override;
+  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
 
   // Accessors.
   const std::optional<cobalt::trusted_shuffler::RunContext>& RunContext() const {
@@ -76,14 +76,17 @@ class ThresholdFilterFn
 
  protected:
   // Ingests IngestionVerificationPayload on record 0.
-  absl::Status OnConfig(const IngestionVerificationPayload& config, Context& context) override;
+  absl::Status OnConfig(const IngestionVerificationPayload& config, DoContext& context) override;
 
   // Ingests incoming customer data records (Records 1..N) from partition grouping.
-  absl::Status OnRecord(const ShuffledMessage& shuffled_message, Context& context) override;
+  absl::Status OnRecord(const ShuffledMessage& shuffled_message, DoContext& context) override;
 
  private:
+  using FnContext = confidential_federated_compute::fns::Fn::FnContext;
+  using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
+
   // Emits an unencrypted IntegrityFault record to notify the untrusted orchestrator.
-  void EmitIntegrityFault(Context& context);
+  void EmitIntegrityFault(FnContext& context);
 
   std::optional<cobalt::trusted_shuffler::RunContext> run_context_;
   std::optional<cobalt::trusted_shuffler::SignedRunContext> signed_run_context_;

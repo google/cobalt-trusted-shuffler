@@ -46,10 +46,10 @@ absl::Status RunContextInitializerFn::InitializeReplica(google::protobuf::Any co
   return absl::OkStatus();
 }
 
-absl::Status RunContextInitializerFn::Do(KV input, Context& context) { return absl::OkStatus(); }
+absl::Status RunContextInitializerFn::Do(KV input, DoContext& context) { return absl::OkStatus(); }
 
 absl::Status RunContextInitializerFn::FinalizeReplica(google::protobuf::Any config,
-                                                      Context& context) {
+                                                      FnContext& context) {
   if (!run_config_.has_value()) {
     return absl::FailedPreconditionError("No RunConfig was provided in InitializeReplica");
   }

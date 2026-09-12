@@ -36,7 +36,7 @@
 namespace cobalt::trusted_shuffler {
 
 absl::Status EncryptOutputFn::OnConfig(
-    const IngestionVerificationPayload& ingestion_verification_payload, Context& context) {
+    const IngestionVerificationPayload& ingestion_verification_payload, DoContext& context) {
   absl::StatusOr<VerifiedIngestionVerificationResult> verified_payload =
       VerifyIngestionVerificationPayload(ingestion_verification_payload);
   if (!verified_payload.ok()) {
@@ -57,7 +57,7 @@ absl::Status EncryptOutputFn::OnConfig(
   return absl::OkStatus();
 }
 
-absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, Context& context) {
+absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, DoContext& context) {
   if (has_integrity_fault_) {
     return SignalIntegrityFault(context);
   }
@@ -107,15 +107,15 @@ absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, Context& 
   return absl::OkStatus();
 }
 
-absl::Status EncryptOutputFn::SignalIntegrityFault(Context& context) {
+absl::Status EncryptOutputFn::SignalIntegrityFault(FnContext& context) {
   return EmitIntegrityFault("IntegrityFault", context);
 }
 
-absl::Status EncryptOutputFn::SignalIntegrityFault(absl::string_view reason, Context& context) {
+absl::Status EncryptOutputFn::SignalIntegrityFault(absl::string_view reason, FnContext& context) {
   return EmitIntegrityFault(absl::StrCat("IntegrityFault: ", reason), context);
 }
 
-absl::Status EncryptOutputFn::EmitIntegrityFault(absl::string_view message, Context& context) {
+absl::Status EncryptOutputFn::EmitIntegrityFault(absl::string_view message, FnContext& context) {
   has_integrity_fault_ = true;
   LOG(ERROR) << message;
 
@@ -127,12 +127,10 @@ absl::Status EncryptOutputFn::EmitIntegrityFault(absl::string_view message, Cont
   IntegrityFault fault;
   context.EmitUnencrypted(KV(std::move(key), fault.SerializeAsString()));
 
-  const absl::Status status = absl::FailedPreconditionError(message);
-  context.EmitError(status);
-  return status;
+  return absl::FailedPreconditionError(message);
 }
 
-absl::Status EncryptOutputFn::FinalizeReplica(google::protobuf::Any config, Context& context) {
+absl::Status EncryptOutputFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
   if (has_integrity_fault_) {
     return SignalIntegrityFault(context);
   }
@@ -162,7 +160,6 @@ absl::Status EncryptOutputFn::FinalizeReplica(google::protobuf::Any config, Cont
 
   context.EmitEncrypted(kReencryptionKeyIndex,
                         KV(std::move(key), partial_report.SerializeAsString()));
-
   return absl::OkStatus();
 }
 
