@@ -41,6 +41,18 @@ namespace cobalt::trusted_shuffler::testing {
 inline constexpr absl::string_view kTestRunId = "0123456789abcdef0123456789abcdef";
 inline constexpr absl::string_view kTestRunHashKey = "fedcba9876543210fedcba9876543210";
 
+// Returns a 32-byte run_id padded with trailing zeros or unchanged if empty.
+inline std::string PadRunId(absl::string_view prefix) {
+  if (prefix.empty()) {
+    return "";
+  }
+  std::string padded(prefix);
+  if (padded.size() < kRunIdByteLength) {
+    padded.resize(kRunIdByteLength, '0');
+  }
+  return padded;
+}
+
 struct MetricEpochSpec {
   int32_t project_id;
   int32_t metric_id;

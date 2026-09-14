@@ -300,6 +300,7 @@ TEST(VerifyIngestionVerificationResultTest, PopulatesCanonicalFingerprint) {
   auto* entry = result.mutable_canonical_fingerprint()->add_entries();
   *entry->mutable_metric_epoch_key() = CreateMetricEpochKey(approved[0]);
   entry->set_message_count(42);
+  entry->set_fingerprint(std::string(32, 'a'));
 
   const absl::StatusOr<VerifiedIngestionVerificationResult> verified =
       VerifyIngestionVerificationResult(result);
@@ -432,6 +433,118 @@ TEST(VerifyIngestionVerificationPayloadTest, FailsWhenCanonicalFingerprintIsPart
   EXPECT_THAT(
       VerifyIngestionVerificationPayload(payload),
       StatusIs(absl::StatusCode::kInvalidArgument, "RunFingerprint is_partial must be false."));
+}
+
+TEST(VerifyIngestionVerificationPayloadTest, FailsWhenCanonicalFingerprintEntryMissingKey) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-100");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationPayload payload =
+      CreateVerificationPayload(signed_context, "run-100", approved);
+  payload.mutable_success()->mutable_canonical_fingerprint()->add_entries();
+
+  EXPECT_THAT(
+      VerifyIngestionVerificationPayload(payload),
+      StatusIs(absl::StatusCode::kInvalidArgument, "FingerprintEntry missing metric_epoch_key."));
+}
+
+TEST(VerifyIngestionVerificationPayloadTest, FailsWhenCanonicalFingerprintEntryInvalidKey) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-100");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationPayload payload =
+      CreateVerificationPayload(signed_context, "run-100", approved);
+  auto* entry = payload.mutable_success()->mutable_canonical_fingerprint()->add_entries();
+  entry->mutable_metric_epoch_key()->set_project_id(0);
+  entry->mutable_metric_epoch_key()->set_metric_id(2);
+  entry->mutable_metric_epoch_key()->set_epoch_index(100);
+
+  EXPECT_THAT(VerifyIngestionVerificationPayload(payload),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       "Invalid MetricEpochKey in canonical_fingerprint."));
+}
+
+TEST(VerifyIngestionVerificationPayloadTest, FailsWhenCanonicalFingerprintDuplicatePartition) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-100");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationPayload payload =
+      CreateVerificationPayload(signed_context, "run-100", approved);
+  for (int i = 0; i < 2; ++i) {
+    auto* entry = payload.mutable_success()->mutable_canonical_fingerprint()->add_entries();
+    entry->mutable_metric_epoch_key()->set_project_id(1);
+    entry->mutable_metric_epoch_key()->set_metric_id(2);
+    entry->mutable_metric_epoch_key()->set_epoch_index(100);
+    entry->set_message_count(0);
+  }
+
+  EXPECT_THAT(VerifyIngestionVerificationPayload(payload),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       "Duplicate partition in canonical_fingerprint."));
+}
+
+TEST(VerifyIngestionVerificationPayloadTest, FailsWhenCanonicalFingerprintNegativeMessageCount) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-100");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationPayload payload =
+      CreateVerificationPayload(signed_context, "run-100", approved);
+  auto* entry = payload.mutable_success()->mutable_canonical_fingerprint()->add_entries();
+  entry->mutable_metric_epoch_key()->set_project_id(1);
+  entry->mutable_metric_epoch_key()->set_metric_id(2);
+  entry->mutable_metric_epoch_key()->set_epoch_index(100);
+  entry->set_message_count(-1);
+
+  EXPECT_THAT(VerifyIngestionVerificationPayload(payload),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       "Negative message_count in canonical_fingerprint."));
+}
+
+TEST(VerifyIngestionVerificationPayloadTest, FailsWhenCanonicalFingerprintInvalidSize) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-100");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationPayload payload =
+      CreateVerificationPayload(signed_context, "run-100", approved);
+  auto* entry = payload.mutable_success()->mutable_canonical_fingerprint()->add_entries();
+  entry->mutable_metric_epoch_key()->set_project_id(1);
+  entry->mutable_metric_epoch_key()->set_metric_id(2);
+  entry->mutable_metric_epoch_key()->set_epoch_index(100);
+  entry->set_message_count(1);
+  entry->set_fingerprint("invalid_size");
+
+  EXPECT_THAT(VerifyIngestionVerificationPayload(payload),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       "Invalid fingerprint size in canonical_fingerprint."));
+}
+
+TEST(VerifyIngestionVerificationPayloadTest,
+     FailsWhenCanonicalFingerprintZeroCountNonZeroFingerprint) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-100");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationPayload payload =
+      CreateVerificationPayload(signed_context, "run-100", approved);
+  auto* entry = payload.mutable_success()->mutable_canonical_fingerprint()->add_entries();
+  entry->mutable_metric_epoch_key()->set_project_id(1);
+  entry->mutable_metric_epoch_key()->set_metric_id(2);
+  entry->mutable_metric_epoch_key()->set_epoch_index(100);
+  entry->set_message_count(0);
+  entry->set_fingerprint(std::string(32, 'x'));
+
+  EXPECT_THAT(VerifyIngestionVerificationPayload(payload),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       "Non-zero fingerprint for zero message_count in canonical_fingerprint."));
+}
+
+TEST(VerifyIngestionVerificationPayloadTest,
+     SucceedsWhenCanonicalFingerprintZeroCountAllZeroFingerprint) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-100");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationPayload payload =
+      CreateVerificationPayload(signed_context, "run-100", approved);
+  auto* entry = payload.mutable_success()->mutable_canonical_fingerprint()->add_entries();
+  entry->mutable_metric_epoch_key()->set_project_id(1);
+  entry->mutable_metric_epoch_key()->set_metric_id(2);
+  entry->mutable_metric_epoch_key()->set_epoch_index(100);
+  entry->set_message_count(0);
+  entry->set_fingerprint(std::string(32, '\0'));
+
+  EXPECT_THAT(VerifyIngestionVerificationPayload(payload), IsOk());
 }
 
 }  // namespace

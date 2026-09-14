@@ -98,7 +98,11 @@ IngestionVerificationResult CreateIngestionVerificationResult(
   entry->mutable_metric_epoch_key()->set_project_id(spec.project_id);
   entry->mutable_metric_epoch_key()->set_metric_id(spec.metric_id);
   entry->mutable_metric_epoch_key()->set_epoch_index(spec.epoch_index);
-  entry->set_fingerprint("fake_digest_32_bytes_long_012345");
+  if (spec.message_count == 0) {
+    entry->set_fingerprint(std::string(32, '\0'));
+  } else {
+    entry->set_fingerprint("fake_digest_32_bytes_long_012345");
+  }
   entry->set_message_count(spec.message_count);
 
   return result;
@@ -459,6 +463,7 @@ TEST(ScatterShuffleFnTest, RejectsMessageWithMismatchedMetricEpochKeyInBatch) {
   entry2->mutable_metric_epoch_key()->set_project_id(10);
   entry2->mutable_metric_epoch_key()->set_metric_id(99);
   entry2->mutable_metric_epoch_key()->set_epoch_index(30);
+  entry2->set_fingerprint("fake_digest_32_bytes_long_012345");
   entry2->set_message_count(5);
 
   ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());

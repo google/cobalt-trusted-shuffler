@@ -19,6 +19,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "src/crypto/multiset_fingerprint.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/fingerprint.pb.h"
@@ -68,6 +69,32 @@ absl::StatusOr<VerifiedIngestionVerificationResult> VerifyIngestionVerificationR
     }
     if (canonical_fingerprint.is_partial()) {
       return absl::InvalidArgumentError("RunFingerprint is_partial must be false.");
+    }
+
+    absl::flat_hash_set<MetricEpochKey> seen_fingerprint_partitions;
+    for (const FingerprintEntry& entry : canonical_fingerprint.entries()) {
+      if (!entry.has_metric_epoch_key()) {
+        return absl::InvalidArgumentError("FingerprintEntry missing metric_epoch_key.");
+      }
+      const MetricEpochKey& key = entry.metric_epoch_key();
+      if (key.project_id() <= 0 || key.metric_id() <= 0 || key.epoch_index() < 0) {
+        return absl::InvalidArgumentError("Invalid MetricEpochKey in canonical_fingerprint.");
+      }
+      if (!seen_fingerprint_partitions.insert(key).second) {
+        return absl::InvalidArgumentError("Duplicate partition in canonical_fingerprint.");
+      }
+      if (entry.message_count() < 0) {
+        return absl::InvalidArgumentError("Negative message_count in canonical_fingerprint.");
+      }
+      if (entry.message_count() == 0) {
+        if (!entry.fingerprint().empty() &&
+            entry.fingerprint() != std::string(MultisetFingerprint::kFingerprintSize, '\0')) {
+          return absl::InvalidArgumentError(
+              "Non-zero fingerprint for zero message_count in canonical_fingerprint.");
+        }
+      } else if (entry.fingerprint().size() != MultisetFingerprint::kFingerprintSize) {
+        return absl::InvalidArgumentError("Invalid fingerprint size in canonical_fingerprint.");
+      }
     }
   }
 

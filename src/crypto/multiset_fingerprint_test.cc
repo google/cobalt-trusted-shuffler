@@ -667,5 +667,81 @@ TEST(MultisetFingerprintTest, GoldenTestCaseMSetAddHash) {
   EXPECT_TRUE(direct_fp.VerifyComplete(canonical));
 }
 
+TEST(MultisetFingerprintTest, VerifyCompleteSucceedsWithZeroCountPartitionOmittedFromMerged) {
+  const MetricEpochKey key1 = CreateMetricEpochKey(1, 2, 100);
+  const MetricEpochKey key2 = CreateMetricEpochKey(1, 2, 101);
+
+  ShuffledMessage msg;
+  *msg.mutable_metric_epoch_key() = key1;
+  msg.set_is_padding(false);
+  msg.set_customer_message("payload1");
+
+  const RunContext run_context = CreateTestRunContext("run-zero-count", kTestRunHashKey);
+  MultisetFingerprint fp(kStage3, /*is_partial=*/false, run_context, kFingerprintSize);
+  fp.AddMessage(msg);
+
+  RunFingerprint complete_fp = fp.Build();
+  // Add a second approved partition with message_count = 0 and empty fingerprint.
+  FingerprintEntry* empty_entry = complete_fp.add_entries();
+  *empty_entry->mutable_metric_epoch_key() = key2;
+  empty_entry->set_message_count(0);
+  empty_entry->set_fingerprint("");
+
+  EXPECT_TRUE(fp.VerifyComplete(complete_fp));
+}
+
+TEST(MultisetFingerprintTest, VerifyCompleteSucceedsWithZeroCountPartition32ZeroBytes) {
+  const MetricEpochKey key1 = CreateMetricEpochKey(1, 2, 100);
+  const MetricEpochKey key2 = CreateMetricEpochKey(1, 2, 101);
+
+  ShuffledMessage msg;
+  *msg.mutable_metric_epoch_key() = key1;
+  msg.set_is_padding(false);
+  msg.set_customer_message("payload1");
+
+  const RunContext run_context = CreateTestRunContext("run-zero-count", kTestRunHashKey);
+  MultisetFingerprint fp(kStage3, /*is_partial=*/false, run_context, kFingerprintSize);
+  fp.AddMessage(msg);
+
+  RunFingerprint complete_fp = fp.Build();
+  // Add a second approved partition with message_count = 0 and 32 zero bytes fingerprint.
+  FingerprintEntry* empty_entry = complete_fp.add_entries();
+  *empty_entry->mutable_metric_epoch_key() = key2;
+  empty_entry->set_message_count(0);
+  empty_entry->set_fingerprint(std::string(kFingerprintSize, '\0'));
+
+  EXPECT_TRUE(fp.VerifyComplete(complete_fp));
+}
+
+TEST(MultisetFingerprintTest,
+     VerifyCompleteReturnsFalseWhenMergedContainsUnapprovedZeroCountPartition) {
+  const MetricEpochKey key1 = CreateMetricEpochKey(1, 2, 100);
+  const MetricEpochKey unapproved_key = CreateMetricEpochKey(1, 2, 999);
+
+  ShuffledMessage msg;
+  *msg.mutable_metric_epoch_key() = key1;
+  msg.set_is_padding(false);
+  msg.set_customer_message("payload1");
+
+  const RunContext run_context = CreateTestRunContext("run-unapproved-zero", kTestRunHashKey);
+  MultisetFingerprint fp(kStage3, /*is_partial=*/false, run_context, kFingerprintSize);
+  fp.AddMessage(msg);
+
+  const RunFingerprint complete_fp = fp.Build();
+
+  // Merge a partial fingerprint containing an unapproved zero-count partition.
+  RunFingerprint partial_with_unapproved;
+  partial_with_unapproved.set_run_id("run-unapproved-zero");
+  partial_with_unapproved.set_stage_id(kStage3);
+  partial_with_unapproved.set_is_partial(true);
+  FingerprintEntry* unapproved_entry = partial_with_unapproved.add_entries();
+  *unapproved_entry->mutable_metric_epoch_key() = unapproved_key;
+  unapproved_entry->set_message_count(0);
+  unapproved_entry->set_fingerprint("");
+
+  ASSERT_THAT(fp.Merge(partial_with_unapproved), IsOk());
+  EXPECT_FALSE(fp.VerifyComplete(complete_fp));
+}
+
 }  // namespace
 }  // namespace cobalt::trusted_shuffler

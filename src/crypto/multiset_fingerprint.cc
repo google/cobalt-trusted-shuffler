@@ -155,6 +155,16 @@ RunFingerprint MultisetFingerprint::Build() const {
   return fingerprint;
 }
 
+bool IsZeroFingerprint(absl::string_view fp, std::size_t fingerprint_size) {
+  if (fp.empty()) {
+    return true;
+  }
+  if (fp.size() != fingerprint_size) {
+    return false;
+  }
+  return std::all_of(fp.begin(), fp.end(), [](char c) { return c == '\0'; });
+}
+
 bool MultisetFingerprint::VerifyComplete(const RunFingerprint& complete_fingerprint) const {
   if (run_id_ != complete_fingerprint.run_id()) {
     return false;
@@ -165,9 +175,6 @@ bool MultisetFingerprint::VerifyComplete(const RunFingerprint& complete_fingerpr
   if (complete_fingerprint.is_partial()) {
     return false;
   }
-  if (static_cast<std::size_t>(complete_fingerprint.entries_size()) != partitions_.size()) {
-    return false;
-  }
 
   absl::flat_hash_set<MetricEpochTuple> seen_keys;
   for (const FingerprintEntry& entry : complete_fingerprint.entries()) {
@@ -176,13 +183,25 @@ bool MultisetFingerprint::VerifyComplete(const RunFingerprint& complete_fingerpr
       return false;
     }
     const auto it = partitions_.find(tuple);
-    if (it == partitions_.end()) {
+    const int64_t actual_count = (it != partitions_.end()) ? it->second.count : 0;
+    const absl::string_view actual_fp =
+        (it != partitions_.end()) ? absl::string_view(it->second.fingerprint) : absl::string_view();
+
+    if (actual_count != entry.message_count()) {
       return false;
     }
-    if (it->second.count != entry.message_count()) {
+    if (actual_count == 0) {
+      if (!IsZeroFingerprint(actual_fp, fingerprint_size_) ||
+          !IsZeroFingerprint(entry.fingerprint(), fingerprint_size_)) {
+        return false;
+      }
+    } else if (actual_fp != entry.fingerprint()) {
       return false;
     }
-    if (it->second.fingerprint != entry.fingerprint()) {
+  }
+
+  for (const auto& [tuple, partition] : partitions_) {
+    if (!seen_keys.contains(tuple)) {
       return false;
     }
   }
@@ -213,8 +232,8 @@ bool MultisetFingerprint::VerifyCompleteForMetricEpoch(
 
   const auto it = partitions_.find(tuple_key);
   const int64_t expected_count = (it != partitions_.end()) ? it->second.count : 0;
-  const std::string& expected_fp =
-      (it != partitions_.end()) ? it->second.fingerprint : std::string();
+  const absl::string_view expected_fp =
+      (it != partitions_.end()) ? absl::string_view(it->second.fingerprint) : absl::string_view();
 
   const auto& entries = complete_fingerprint.entries();
   const auto matching_it =
@@ -223,7 +242,7 @@ bool MultisetFingerprint::VerifyCompleteForMetricEpoch(
       });
 
   if (matching_it == entries.end()) {
-    return expected_count == 0 && expected_fp.empty();
+    return expected_count == 0 && IsZeroFingerprint(expected_fp, fingerprint_size_);
   }
 
   // Ensure there are no duplicate entries for the partition.
@@ -233,6 +252,11 @@ bool MultisetFingerprint::VerifyCompleteForMetricEpoch(
       });
   if (duplicate_it != entries.end()) {
     return false;
+  }
+
+  if (expected_count == 0) {
+    return matching_it->message_count() == 0 && IsZeroFingerprint(expected_fp, fingerprint_size_) &&
+           IsZeroFingerprint(matching_it->fingerprint(), fingerprint_size_);
   }
 
   return matching_it->message_count() == expected_count &&
