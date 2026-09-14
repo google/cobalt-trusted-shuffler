@@ -32,6 +32,21 @@ struct VerifiedIngestionVerificationResult {
   RunFingerprint canonical_fingerprint;
 };
 
+// Validates an IngestionVerificationResult:
+// - `signed_run_context` must be present and verified via `VerifySignedRunContext`.
+// - `threshold_report` must be present and its `run_id` must match the verified
+//   `run_context.run_id()`.
+// - Each partition in `threshold_report.approved_partitions()` must have valid
+//   bounds: `project_id > 0`, `metric_id > 0`, and `epoch_index >= 0`.
+// - If `canonical_fingerprint` is present, its `run_id` must match the verified
+//   `run_context.run_id()`, its `stage_id` must be `STAGE_INGESTION`, and its
+//   `is_partial` must be `false`.
+// Returns a VerifiedIngestionVerificationResult containing the verified RunContext,
+// deduplicated set of approved partitions, and canonical_fingerprint, or an error status on
+// failure.
+absl::StatusOr<VerifiedIngestionVerificationResult> VerifyIngestionVerificationResult(
+    const IngestionVerificationResult& ingestion_verification_result);
+
 // Validates an IngestionVerificationPayload:
 // - Must not contain `integrity_fault` and must contain `success`
 //   (`IngestionVerificationResult`).

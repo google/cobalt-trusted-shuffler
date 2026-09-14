@@ -28,19 +28,8 @@
 
 namespace cobalt::trusted_shuffler {
 
-absl::StatusOr<VerifiedIngestionVerificationResult> VerifyIngestionVerificationPayload(
-    const IngestionVerificationPayload& ingestion_verification_payload) {
-  if (ingestion_verification_payload.has_integrity_fault()) {
-    return absl::FailedPreconditionError("Ingestion verification failed with integrity fault.");
-  }
-
-  if (!ingestion_verification_payload.has_success()) {
-    return absl::InvalidArgumentError("IngestionVerificationPayload missing success result.");
-  }
-
-  const IngestionVerificationResult& ingestion_verification_result =
-      ingestion_verification_payload.success();
-
+absl::StatusOr<VerifiedIngestionVerificationResult> VerifyIngestionVerificationResult(
+    const IngestionVerificationResult& ingestion_verification_result) {
   if (!ingestion_verification_result.has_signed_run_context()) {
     return absl::InvalidArgumentError("IngestionVerificationResult missing signed_run_context.");
   }
@@ -68,29 +57,51 @@ absl::StatusOr<VerifiedIngestionVerificationResult> VerifyIngestionVerificationP
     approved_partitions.insert(partition);
   }
 
-  if (!ingestion_verification_result.has_canonical_fingerprint()) {
-    return absl::InvalidArgumentError("IngestionVerificationResult missing canonical_fingerprint.");
-  }
-
-  const RunFingerprint& canonical_fingerprint =
-      ingestion_verification_result.canonical_fingerprint();
-  if (canonical_fingerprint.run_id() != verified_run_context->run_id()) {
-    return absl::FailedPreconditionError("RunFingerprint run_id mismatch.");
-  }
-
-  if (canonical_fingerprint.stage_id() != STAGE_INGESTION) {
-    return absl::InvalidArgumentError("RunFingerprint stage_id must be STAGE_INGESTION.");
-  }
-
-  if (canonical_fingerprint.is_partial()) {
-    return absl::InvalidArgumentError("RunFingerprint is_partial must be false.");
+  if (ingestion_verification_result.has_canonical_fingerprint()) {
+    const RunFingerprint& canonical_fingerprint =
+        ingestion_verification_result.canonical_fingerprint();
+    if (canonical_fingerprint.run_id() != verified_run_context->run_id()) {
+      return absl::FailedPreconditionError("RunFingerprint run_id mismatch.");
+    }
+    if (canonical_fingerprint.stage_id() != STAGE_INGESTION) {
+      return absl::InvalidArgumentError("RunFingerprint stage_id must be STAGE_INGESTION.");
+    }
+    if (canonical_fingerprint.is_partial()) {
+      return absl::InvalidArgumentError("RunFingerprint is_partial must be false.");
+    }
   }
 
   return VerifiedIngestionVerificationResult{
       .run_context = *std::move(verified_run_context),
       .approved_partitions = std::move(approved_partitions),
-      .canonical_fingerprint = canonical_fingerprint,
+      .canonical_fingerprint = ingestion_verification_result.canonical_fingerprint(),
   };
+}
+
+absl::StatusOr<VerifiedIngestionVerificationResult> VerifyIngestionVerificationPayload(
+    const IngestionVerificationPayload& ingestion_verification_payload) {
+  if (ingestion_verification_payload.has_integrity_fault()) {
+    return absl::FailedPreconditionError("Ingestion verification failed with integrity fault.");
+  }
+
+  if (!ingestion_verification_payload.has_success()) {
+    return absl::InvalidArgumentError("IngestionVerificationPayload missing success result.");
+  }
+
+  const IngestionVerificationResult& ingestion_verification_result =
+      ingestion_verification_payload.success();
+
+  absl::StatusOr<VerifiedIngestionVerificationResult> verified_result =
+      VerifyIngestionVerificationResult(ingestion_verification_result);
+  if (!verified_result.ok()) {
+    return verified_result.status();
+  }
+
+  if (!ingestion_verification_result.has_canonical_fingerprint()) {
+    return absl::InvalidArgumentError("IngestionVerificationResult missing canonical_fingerprint.");
+  }
+
+  return verified_result;
 }
 
 }  // namespace cobalt::trusted_shuffler

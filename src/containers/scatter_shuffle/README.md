@@ -21,7 +21,7 @@ The `scatter_shuffle` container is the confidential data transformation stage re
 ## Overview
 
 In the two-pass shuffling architecture, the scatter shuffle container processes batches of messages partitioned by `MetricEpochKey`:
-1. **First Record Configuration**: Record 0 ingests an `IngestionVerificationResult`, establishing the execution `run_id`, run configuration (`target_batch_size`, epoch bounds), approved partitions from `ThresholdReport`, and partition message counts from `canonical_fingerprint`.
+1. **First Record Configuration**: Record 0 ingests an `IngestionVerificationPayload`, establishing the execution `run_id`, run configuration (`target_batch_size`, epoch bounds), approved partitions from `ThresholdReport`, and partition message counts from `canonical_fingerprint`.
 2. **Batch Invariant Validation**: Records 1..N ingest `ShuffledMessage` records (both real encrypted customer messages and dummy padding messages). The container validates that every message shares an identical `MetricEpochKey`, matching `run_id`, and `shuffle_count == 0`. It computes batching parameters (`target_batch_size`, `batch_num`, `padding_count`) for the partition dynamically using the batch calculator library.
 3. **Batch Size Confirmation**: The container verifies that the batch contains exactly `target_batch_size` messages. If any validation check, partition approval, or batch size expectation fails, it emits an unencrypted `IntegrityFault` to alert the untrusted orchestrator and halts session processing.
 4. **Cryptographic Shuffling**: The verified batch is cryptographically shuffled using a Fisher-Yates CSPRNG algorithm (`src/crypto/shuffle.h`).
@@ -32,7 +32,7 @@ In the two-pass shuffling architecture, the scatter shuffle container processes 
 ## Inputs & Outputs
 
 ### Inputs
-- **Record 0 (`IngestionVerificationResult`)**: Contains the `SignedRunContext` (with `run_id`, secret keys, and `RunConfig` containing `target_batch_size`), the `ThresholdReport` (approved partitions), and the `canonical_fingerprint` (`FingerprintEntry` message counts per partition).
+- **Record 0 (`IngestionVerificationPayload`)**: Contains `IngestionVerificationResult` (with the `SignedRunContext` (with `run_id`, secret keys, and `RunConfig` containing `target_batch_size`), the `ThresholdReport` (approved partitions), and the `canonical_fingerprint` (`FingerprintEntry` message counts per partition)) or an `IntegrityFault`.
 - **Records 1..N (Batch Messages)**: `target_batch_size` messages with payload `ShuffledMessage`:
   - Real customer messages (`is_padding == false`).
   - Dummy padding messages (`is_padding == true`).
@@ -62,7 +62,7 @@ In the two-pass shuffling architecture, the scatter shuffle container processes 
 
 ## Configuration & Batch Calculation
 
-The container determines its batch parameters dynamically from the `IngestionVerificationResult` received on Record 0:
+The container determines its batch parameters dynamically from the `IngestionVerificationPayload` received on Record 0:
 - **`target_batch_size`**: Target batch size configured in `SignedRunContext`.
 - **`message_count`**: Total count of messages for the partition in `canonical_fingerprint`.
 - **Batch Parameters**: Computed via the batch calculator library (`src/batching/batch_calculator.h`):

@@ -143,7 +143,8 @@ Define necessary schemas according to their scope:
 
 ### Step 2: Implement the Container Logic (`src/containers/foo_bar/`)
 1. **`foo_bar_fn.h` / `foo_bar_fn.cc`**:
-   - Subclass `confidential_federated_compute::fns::DoFn`.
+   - Subclass `confidential_federated_compute::fns::DoFn` (or `FirstRecordConfigDoFn<IngestionVerificationPayload>` for stages receiving dynamic run configuration on Record 0).
+   - For stages receiving `IngestionVerificationPayload` on Record 0, validate the configuration using `VerifyIngestionVerificationPayload` in `OnConfig` and always use `VerifiedIngestionVerificationResult` instead of raw `IngestionVerificationPayload` or `IngestionVerificationResult` protos across your container state, methods, and helper libraries.
    - Implement `InitializeReplica(google::protobuf::Any config, Context& context)`.
    - Implement `Do(KV input, Context& context)` using the appropriate emission primitive (`EmitEncrypted`, `EmitReleasable`, or `EmitUnencrypted`).
    - Implement `FinalizeReplica(google::protobuf::Any config, Context& context)`.
@@ -263,6 +264,7 @@ When ready for production release, failing to update Kokoro will cause builds an
 244: 
 245: All C++ implementations, container transforms, and tests must adhere to the conventions documented in [`.agents/rules/cpp_conventions.md`](rules/cpp_conventions.md):
 246: - **Lifecycle Integrity**: DoFn session configuration must be unpacked inside `InitializeReplica`; never add testing-only backdoor constructors or setters to `DoFn` classes.
+- **Verified Ingestion Verification Results**: Always use `VerifiedIngestionVerificationResult` (validated via `VerifyIngestionVerificationPayload` in `//src/crypto:verify_ingestion_verification_payload`) instead of the raw `IngestionVerificationPayload` or `IngestionVerificationResult` protos across container state, methods, and downstream libraries.
 247: - **Explicit Arguments**: Avoid default arguments (`= std::nullopt`, default booleans) in constructors or stage APIs where values must be passed explicitly.
 248: - **Schema Casing**: Match Protobuf schema casing for accessor methods (`SignedRunContext()`, `ConfigConstraints()`).
 249: - **Declarative Test Fixtures**: Use C++20 designated initializers (`{.project_id = 1, ...}`) and clean helper structs in anonymous namespaces instead of positional magic tuples.
@@ -306,6 +308,7 @@ Before completing a task or submitting a change:
 - [ ] Avoided spec jargon and stage numbers (e.g. "Stage 3B") in comments, descriptions, and names; used descriptive domain terms throughout.
 - [ ] Team awareness satisfied: Alex Pankhurst (`pankhurst@google.com`), Steve Fung (`stevefung@google.com`), Anivia Li (`aniviali@google.com`), and Alex Zani (`azani@google.com`) are each included as either a reviewer or a CC on the CL.
 - [ ] Verified that `run_id`, `fingerprint_key` (`run_hash_key`), `customer_message`, and `is_padding` are never given to the orchestrator in emitted messages, error messages (`absl::Status` / `EmitError`), or logs (`LOG`), and that `release_key` is only ever emitted to the orchestrator by the final release stage.
+- [ ] Verified that containers consuming configuration on Record 0 validate `IngestionVerificationPayload` via `VerifyIngestionVerificationPayload` and always use `VerifiedIngestionVerificationResult` instead of raw protos.
 - [ ] Protos defined in `src/proto/<name>/` (or `src/proto/` for shared schemas) with `BUILD` rules.
 - [ ] `DoFn` and transform service implemented in C++20 following [`.agents/rules/cpp_conventions.md`](rules/cpp_conventions.md).
 - [ ] `main.cc` notifies `OrchestratorClient().NotifyAppReady()`.

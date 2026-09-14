@@ -84,13 +84,16 @@ IngestionVerificationResult CreateIngestionVerificationResult(
   signed_run_context->set_serialized_run_context(run_context.SerializeAsString());
   signed_run_context->set_signature("fake_signature");
 
+  result.mutable_threshold_report()->set_run_id(std::string(spec.run_id));
   MetricEpochKey* const approved_partition =
       result.mutable_threshold_report()->add_approved_partitions();
   approved_partition->set_project_id(spec.project_id);
   approved_partition->set_metric_id(spec.metric_id);
   approved_partition->set_epoch_index(spec.epoch_index);
 
+  result.mutable_canonical_fingerprint()->set_run_id(std::string(spec.run_id));
   result.mutable_canonical_fingerprint()->set_stage_id(Stage::STAGE_INGESTION);
+  result.mutable_canonical_fingerprint()->set_is_partial(false);
   FingerprintEntry* const entry = result.mutable_canonical_fingerprint()->add_entries();
   entry->mutable_metric_epoch_key()->set_project_id(spec.project_id);
   entry->mutable_metric_epoch_key()->set_metric_id(spec.metric_id);
@@ -101,8 +104,15 @@ IngestionVerificationResult CreateIngestionVerificationResult(
   return result;
 }
 
-ScatterShuffleFn::KV CreateConfigRecord(const IngestionVerificationResult& result) {
-  return ScatterShuffleFn::KV(google::protobuf::Any(), result.SerializeAsString());
+IngestionVerificationPayload CreateIngestionVerificationPayload(
+    const TestIngestionVerificationResultSpec& spec) {
+  IngestionVerificationPayload payload;
+  *payload.mutable_success() = CreateIngestionVerificationResult(spec);
+  return payload;
+}
+
+ScatterShuffleFn::KV CreateConfigRecord(const IngestionVerificationPayload& payload) {
+  return ScatterShuffleFn::KV(google::protobuf::Any(), payload.SerializeAsString());
 }
 
 struct TestMessageSpec {
@@ -140,15 +150,15 @@ TEST(ScatterShuffleFnTest, SuccessfulScatterShuffleAndGroupAssignment) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  // Ingest Record 0: IngestionVerificationResult with target_batch_size = 6, message_count = 11.
+  // Ingest Record 0: IngestionVerificationPayload with target_batch_size = 6, message_count = 11.
   // Batch calculation:
   // batch_num = ceil(11 / 6) = 2
   // remainder_count = 11 % 6 = 5
   // padding_count = (6 - 5) % 6 = 1 (so 11 + 1 = 12 = 2 * 6)
   // target_batch_size = 6
-  const IngestionVerificationResult verification_result =
-      CreateIngestionVerificationResult({.target_batch_size = 6, .message_count = 11});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.target_batch_size = 6, .message_count = 11});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   // Ingest Records 1..6: 4 real messages + 2 padding messages.
   const std::vector<std::string> real_payloads = {"msg_0", "msg_1", "msg_2", "msg_3"};
@@ -223,9 +233,9 @@ TEST(ScatterShuffleFnTest, BatchParametersEstablishedOnFirstDataRecord) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  const IngestionVerificationResult verification_result =
-      CreateIngestionVerificationResult({.target_batch_size = 6, .message_count = 11});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.target_batch_size = 6, .message_count = 11});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   // Batch parameters are not established before any data records arrive.
   EXPECT_FALSE(fn.CurrentBatchParameters().has_value());
@@ -244,10 +254,10 @@ TEST(ScatterShuffleFnTest, RejectsRecordWithUnapprovedPartition) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  // IngestionVerificationResult only approves (100, 200, 42).
-  const IngestionVerificationResult verification_result =
-      CreateIngestionVerificationResult({.project_id = 100, .metric_id = 200, .epoch_index = 42});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  // IngestionVerificationPayload only approves (100, 200, 42).
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.project_id = 100, .metric_id = 200, .epoch_index = 42});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   // Record has unapproved partition (999, 200, 42).
   const ShuffledMessage message = CreateMessage({
@@ -270,12 +280,12 @@ TEST(ScatterShuffleFnTest, RejectsRecordWithMissingPartitionInFingerprint) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  IngestionVerificationResult verification_result =
-      CreateIngestionVerificationResult({.project_id = 100, .metric_id = 200, .epoch_index = 42});
+  IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.project_id = 100, .metric_id = 200, .epoch_index = 42});
   // Clear canonical_fingerprint entries so partition is approved but has no fingerprint entry.
-  verification_result.mutable_canonical_fingerprint()->clear_entries();
+  verification_payload.mutable_success()->mutable_canonical_fingerprint()->clear_entries();
 
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   const ShuffledMessage message = CreateMessage({.payload = "m1"});
   EXPECT_THAT(fn.Do(CreateMessageRecord(message), context),
@@ -292,13 +302,13 @@ TEST(ScatterShuffleFnTest, RejectsRecordWithZeroMessageCountInFingerprint) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({
+  const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({
       .message_count = 0,
       .project_id = 100,
       .metric_id = 200,
       .epoch_index = 42,
   });
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   const ShuffledMessage message = CreateMessage({.payload = "m1"});
   EXPECT_THAT(fn.Do(CreateMessageRecord(message), context),
@@ -315,8 +325,8 @@ TEST(ScatterShuffleFnTest, RejectsRecordWithNonMetricEpochKeyHeader) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   const ShuffledMessage message = CreateMessage({.payload = "m1"});
   // Provide empty Any as key rather than MetricEpochKey.
@@ -335,8 +345,8 @@ TEST(ScatterShuffleFnTest, RejectsEmptyBatchWithIntegrityFault) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   // Finalize without sending any messages.
   EXPECT_THAT(
@@ -360,9 +370,9 @@ TEST(ScatterShuffleFnTest, RejectsTooFewMessagesWithIntegrityFault) {
   ScatterShuffleFn fn;
 
   // target_batch_size = 5, message_count = 5 -> batch_num = 1, target_batch_size = 5.
-  const IngestionVerificationResult verification_result =
-      CreateIngestionVerificationResult({.target_batch_size = 5, .message_count = 5});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.target_batch_size = 5, .message_count = 5});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   // Send only 3 messages when 5 are expected.
   for (int i = 0; i < 3; ++i) {
@@ -386,9 +396,9 @@ TEST(ScatterShuffleFnTest, RejectsTooManyMessagesWithIntegrityFault) {
   ScatterShuffleFn fn;
 
   // target_batch_size = 2, message_count = 2 -> batch_num = 1, target_batch_size = 2.
-  const IngestionVerificationResult verification_result =
-      CreateIngestionVerificationResult({.target_batch_size = 2, .message_count = 2});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.target_batch_size = 2, .message_count = 2});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   ASSERT_THAT(fn.Do(CreateMessageRecord(CreateMessage({.payload = "m1"})), context), IsOk());
   ASSERT_THAT(fn.Do(CreateMessageRecord(CreateMessage({.payload = "m2"})), context), IsOk());
@@ -416,9 +426,9 @@ TEST(ScatterShuffleFnTest, RejectsMessageWithMismatchedRunId) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  const IngestionVerificationResult verification_result =
-      CreateIngestionVerificationResult({.run_id = "expected_run_id_0123456789012345"});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.run_id = "expected_run_id_0123456789012345"});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   const ShuffledMessage message = CreateMessage(
       {.payload = "m1", .is_padding = false, .run_id = "unexpected_run_id_01234567890123"});
@@ -436,8 +446,8 @@ TEST(ScatterShuffleFnTest, RejectsMessageWithNonZeroShuffleCount) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   const ShuffledMessage message =
       CreateMessage({.payload = "m1", .is_padding = false, .shuffle_count = 1});
@@ -455,22 +465,22 @@ TEST(ScatterShuffleFnTest, RejectsMessageWithMismatchedMetricEpochKeyInBatch) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  // IngestionVerificationResult with multiple approved partitions.
-  IngestionVerificationResult verification_result =
-      CreateIngestionVerificationResult({.target_batch_size = 5, .message_count = 5});
+  // IngestionVerificationPayload with multiple approved partitions.
+  IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.target_batch_size = 5, .message_count = 5});
   MetricEpochKey* const approved2 =
-      verification_result.mutable_threshold_report()->add_approved_partitions();
+      verification_payload.mutable_success()->mutable_threshold_report()->add_approved_partitions();
   approved2->set_project_id(10);
   approved2->set_metric_id(99);
   approved2->set_epoch_index(30);
   FingerprintEntry* const entry2 =
-      verification_result.mutable_canonical_fingerprint()->add_entries();
+      verification_payload.mutable_success()->mutable_canonical_fingerprint()->add_entries();
   entry2->mutable_metric_epoch_key()->set_project_id(10);
   entry2->mutable_metric_epoch_key()->set_metric_id(99);
   entry2->mutable_metric_epoch_key()->set_epoch_index(30);
   entry2->set_message_count(5);
 
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   const ShuffledMessage message1 = CreateMessage({
       .payload = "m1",
@@ -501,8 +511,8 @@ TEST(ScatterShuffleFnTest, RejectsHeaderKeyMismatchedFromPayloadMetricEpochKey) 
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   // Payload key has mismatched epoch_index (999) while header key matches the approved partition.
   const ShuffledMessage message = CreateMessage({
@@ -534,8 +544,8 @@ TEST(ScatterShuffleFnTest, RejectsCorruptedShuffledMessagePayload) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   MetricEpochKey header_key;
   header_key.set_project_id(kDefaultProjectId);
@@ -559,8 +569,8 @@ TEST(ScatterShuffleFnTest, RejectsMessageMissingMetricEpochKey) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  const IngestionVerificationResult verification_result = CreateIngestionVerificationResult({});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   ShuffledMessage message = CreateMessage({.payload = "m1"});
   message.clear_metric_epoch_key();
@@ -596,35 +606,90 @@ TEST(ScatterShuffleFnTest, RejectsCorruptedFirstRecord) {
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
+TEST(ScatterShuffleFnTest, RejectsIntegrityFaultInPayload) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  IngestionVerificationPayload payload;
+  payload.mutable_integrity_fault();
+
+  EXPECT_THAT(fn.Do(CreateConfigRecord(payload), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "Ingestion verification failed with integrity fault."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
 TEST(ScatterShuffleFnTest, RejectsEmptyRunIdInRunContext) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  const IngestionVerificationResult verification_result =
-      CreateIngestionVerificationResult({.run_id = ""});
-  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_result), context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.run_id = ""});
+  EXPECT_THAT(
+      fn.Do(CreateConfigRecord(verification_payload), context),
+      StatusIs(absl::StatusCode::kFailedPrecondition, "Failed to verify SignedRunContext."));
 }
 
 TEST(ScatterShuffleFnTest, RejectsMissingSignedRunContext) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  IngestionVerificationResult verification_result;
-  verification_result.mutable_threshold_report()->set_run_id("some_run_id");
-  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_result), context),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       "IngestionVerificationResult missing required SignedRunContext."));
+  IngestionVerificationPayload verification_payload;
+  verification_payload.mutable_success()->mutable_threshold_report()->set_run_id("some_run_id");
+  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IngestionVerificationResult missing signed_run_context."));
+}
+
+TEST(ScatterShuffleFnTest, RejectsMissingThresholdReport) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
+  verification_payload.mutable_success()->clear_threshold_report();
+  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IngestionVerificationResult missing threshold_report."));
+}
+
+TEST(ScatterShuffleFnTest, RejectsMismatchedThresholdReportRunId) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
+  verification_payload.mutable_success()->mutable_threshold_report()->set_run_id(
+      "mismatched_run_id_01234567890123");
+  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition, "ThresholdReport run_id mismatch."));
+}
+
+TEST(ScatterShuffleFnTest, RejectsInvalidApprovedPartitionBounds) {
+  testing::FakeContext context;
+  ScatterShuffleFn fn;
+
+  IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
+  verification_payload.mutable_success()
+      ->mutable_threshold_report()
+      ->mutable_approved_partitions(0)
+      ->set_project_id(0);
+  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "Invalid MetricEpochKey in approved_partitions."));
 }
 
 TEST(ScatterShuffleFnTest, RejectsInvalidTargetBatchSize) {
   testing::FakeContext context;
   ScatterShuffleFn fn;
 
-  const IngestionVerificationResult verification_result =
-      CreateIngestionVerificationResult({.target_batch_size = 0});
-  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_result), context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.target_batch_size = 0});
+  EXPECT_THAT(
+      fn.Do(CreateConfigRecord(verification_payload), context),
+      StatusIs(absl::StatusCode::kFailedPrecondition, "Failed to verify SignedRunContext."));
 }
 
 TEST(ScatterShuffleFnTest, RejectsFinalizeWithoutConfig) {
@@ -647,11 +712,11 @@ TEST(ScatterShuffleFnTest, ShufflingPreservesMultisetAcrossLargeBatch) {
   const int32_t batch_size = 50;
   const int32_t batch_num = 5;
   // target_batch_size = 50, message_count = 250 -> batch_num = 5, target_batch_size = 50.
-  const IngestionVerificationResult verification_result =
-      CreateIngestionVerificationResult({.target_batch_size = 50, .message_count = 250});
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.target_batch_size = 50, .message_count = 250});
 
   ScatterShuffleFn fn;
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_result), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
 
   std::vector<std::string> input_payloads;
   for (int i = 0; i < batch_size; ++i) {

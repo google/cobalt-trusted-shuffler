@@ -42,7 +42,7 @@ cc_library(
         "//src/batching:batch_calculator",
         "//src/containers/base:first_record_config_do_fn",
         "//src/crypto:shuffle",
-        "//src/crypto:verify_signed_run_context",
+        "//src/crypto:verify_ingestion_verification_payload",
         "//src/proto:common_cc_proto",
         "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",

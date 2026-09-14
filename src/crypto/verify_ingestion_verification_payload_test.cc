@@ -88,18 +88,26 @@ SignedRunContext CreateSignedRunContext(absl::string_view run_id) {
   return signed_context;
 }
 
-IngestionVerificationPayload CreateVerificationPayload(
+IngestionVerificationResult CreateVerificationResult(
     const SignedRunContext& signed_context, absl::string_view run_id,
     absl::Span<const PartitionSpec> approved_partitions) {
-  IngestionVerificationPayload payload;
-  IngestionVerificationResult* const result = payload.mutable_success();
-  *result->mutable_signed_run_context() = signed_context;
-  auto* report = result->mutable_threshold_report();
+  IngestionVerificationResult result;
+  *result.mutable_signed_run_context() = signed_context;
+  auto* report = result.mutable_threshold_report();
   report->set_run_id(PadRunId(run_id));
   for (const auto& spec : approved_partitions) {
     *report->add_approved_partitions() = CreateMetricEpochKey(spec);
   }
-  RunFingerprint* const canonical_fp = result->mutable_canonical_fingerprint();
+  return result;
+}
+
+IngestionVerificationPayload CreateVerificationPayload(
+    const SignedRunContext& signed_context, absl::string_view run_id,
+    absl::Span<const PartitionSpec> approved_partitions) {
+  IngestionVerificationPayload payload;
+  *payload.mutable_success() =
+      CreateVerificationResult(signed_context, run_id, approved_partitions);
+  RunFingerprint* const canonical_fp = payload.mutable_success()->mutable_canonical_fingerprint();
   canonical_fp->set_run_id(PadRunId(run_id));
   canonical_fp->set_stage_id(STAGE_INGESTION);
   canonical_fp->set_is_partial(false);
@@ -265,6 +273,97 @@ TEST(VerifyIngestionVerificationPayloadTest, FailsWhenApprovedPartitionEpochInde
   EXPECT_THAT(VerifyIngestionVerificationPayload(payload),
               StatusIs(absl::StatusCode::kInvalidArgument,
                        "Invalid MetricEpochKey in approved_partitions."));
+}
+
+TEST(VerifyIngestionVerificationResultTest, SucceedsWithoutCanonicalFingerprint) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-abc-123");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationResult result =
+      CreateVerificationResult(signed_context, "run-abc-123", approved);
+  result.clear_canonical_fingerprint();
+
+  const absl::StatusOr<VerifiedIngestionVerificationResult> verified =
+      VerifyIngestionVerificationResult(result);
+  ASSERT_THAT(verified, IsOk());
+  EXPECT_THAT(verified->approved_partitions, SizeIs(1));
+  EXPECT_THAT(verified->canonical_fingerprint.entries(), IsEmpty());
+}
+
+TEST(VerifyIngestionVerificationResultTest, PopulatesCanonicalFingerprint) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-abc-123");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationResult result =
+      CreateVerificationResult(signed_context, "run-abc-123", approved);
+  result.mutable_canonical_fingerprint()->set_run_id(PadRunId("run-abc-123"));
+  result.mutable_canonical_fingerprint()->set_stage_id(STAGE_INGESTION);
+  result.mutable_canonical_fingerprint()->set_is_partial(false);
+  auto* entry = result.mutable_canonical_fingerprint()->add_entries();
+  *entry->mutable_metric_epoch_key() = CreateMetricEpochKey(approved[0]);
+  entry->set_message_count(42);
+
+  const absl::StatusOr<VerifiedIngestionVerificationResult> verified =
+      VerifyIngestionVerificationResult(result);
+  ASSERT_THAT(verified, IsOk());
+  ASSERT_THAT(verified->canonical_fingerprint.entries(), SizeIs(1));
+  EXPECT_EQ(verified->canonical_fingerprint.entries(0).message_count(), 42);
+}
+
+TEST(VerifyIngestionVerificationResultTest, FailsWhenCanonicalFingerprintRunIdMismatch) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-abc-123");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationResult result =
+      CreateVerificationResult(signed_context, "run-abc-123", approved);
+  result.mutable_canonical_fingerprint()->set_run_id(PadRunId("wrong-run-id"));
+
+  EXPECT_THAT(VerifyIngestionVerificationResult(result),
+              StatusIs(absl::StatusCode::kFailedPrecondition, "RunFingerprint run_id mismatch."));
+}
+
+TEST(VerifyIngestionVerificationResultTest, FailsWhenCanonicalFingerprintStageIdNotIngestion) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-abc-123");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationResult result =
+      CreateVerificationResult(signed_context, "run-abc-123", approved);
+  result.mutable_canonical_fingerprint()->set_run_id(PadRunId("run-abc-123"));
+  result.mutable_canonical_fingerprint()->set_stage_id(STAGE_RELEASE);
+
+  EXPECT_THAT(VerifyIngestionVerificationResult(result),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       "RunFingerprint stage_id must be STAGE_INGESTION."));
+}
+
+TEST(VerifyIngestionVerificationResultTest, FailsWhenCanonicalFingerprintIsPartial) {
+  const SignedRunContext signed_context = CreateSignedRunContext("run-abc-123");
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  IngestionVerificationResult result =
+      CreateVerificationResult(signed_context, "run-abc-123", approved);
+  result.mutable_canonical_fingerprint()->set_run_id(PadRunId("run-abc-123"));
+  result.mutable_canonical_fingerprint()->set_stage_id(STAGE_INGESTION);
+  result.mutable_canonical_fingerprint()->set_is_partial(true);
+
+  EXPECT_THAT(
+      VerifyIngestionVerificationResult(result),
+      StatusIs(absl::StatusCode::kInvalidArgument, "RunFingerprint is_partial must be false."));
+}
+
+TEST(VerifyIngestionVerificationResultTest, NeverLeaksSecretsInErrorMessages) {
+  const std::string run_id = PadRunId("secret-run-id-123456");
+  const SignedRunContext signed_context = CreateSignedRunContext("secret-run-id-123456");
+  RunContext parsed_context;
+  ASSERT_TRUE(parsed_context.ParseFromString(signed_context.serialized_run_context()));
+  const std::string run_hash_key = parsed_context.run_hash_key();
+  const std::string release_key = parsed_context.release_key();
+
+  const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
+  const IngestionVerificationResult mismatch_result =
+      CreateVerificationResult(signed_context, "mismatched-run-id", approved);
+
+  const absl::StatusOr<VerifiedIngestionVerificationResult> verified =
+      VerifyIngestionVerificationResult(mismatch_result);
+  ASSERT_FALSE(verified.ok());
+  EXPECT_THAT(verified.status().message(), Not(HasSubstr(run_id)));
+  EXPECT_THAT(verified.status().message(), Not(HasSubstr(run_hash_key)));
+  EXPECT_THAT(verified.status().message(), Not(HasSubstr(release_key)));
 }
 
 TEST(VerifyIngestionVerificationPayloadTest, NeverLeaksSecretsInErrorMessages) {

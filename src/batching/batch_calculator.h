@@ -18,8 +18,8 @@
 #include <cstdint>
 
 #include "absl/status/statusor.h"
+#include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
-#include "src/proto/ingestion.pb.h"
 
 namespace cobalt::trusted_shuffler {
 
@@ -42,14 +42,14 @@ struct BatchParameters {
   bool operator==(const BatchParameters&) const = default;
 };
 
-// Computes batch parameters for a specific partition from IngestionVerificationResult.
+// Computes batch parameters for a specific partition from VerifiedIngestionVerificationResult.
 //
 // Validates:
-// 1. result contains a valid signed_run_context with target_batch_size > 0.
-// 2. partition_key is an approved partition in threshold_report.
-// 3. partition_key exists in canonical_fingerprint with a positive message_count.
+// 1. result.run_context has target_batch_size > 0.
+// 2. partition_key is an approved partition in result.approved_partitions.
+// 3. partition_key exists in result.canonical_fingerprint with a positive message_count.
 absl::StatusOr<BatchParameters> ComputeBatchParametersForPartition(
-    const IngestionVerificationResult& result, const MetricEpochKey& partition_key);
+    const VerifiedIngestionVerificationResult& result, const MetricEpochKey& partition_key);
 
 }  // namespace cobalt::trusted_shuffler
 
