@@ -25,6 +25,7 @@
 #include "absl/strings/string_view.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/counter_names.h"
+#include "src/containers/base/integrity_fault.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
@@ -36,19 +37,30 @@
 
 namespace cobalt::trusted_shuffler {
 
+EncryptOutputFn::EncryptOutputFn()
+    : fault_handler_([]() {
+        ReleaseOutputHeader header;
+        header.set_type(ReleaseOutputHeader::TYPE_INTEGRITY_FAULT);
+        return header;
+      }()) {}
+
 absl::Status EncryptOutputFn::OnConfig(
     const IngestionVerificationPayload& ingestion_verification_payload, DoContext& context) {
   context.IncrementCounter(kInputConfigCount);
   absl::StatusOr<VerifiedIngestionVerificationResult> verified_payload =
       VerifyIngestionVerificationPayload(ingestion_verification_payload);
   if (!verified_payload.ok()) {
-    return SignalIntegrityFault(verified_payload.status().message(), context);
+    context.IncrementCounter(kInputConfigInvalid);
+    return fault_handler_.SignalFault(verified_payload.status().message(), *this, context)
+        .ToStatus();
   }
 
   absl::StatusOr<ReleaseEncrypter> encrypter =
       ReleaseEncrypter::Create(verified_payload->run_context);
   if (!encrypter.ok()) {
-    return SignalIntegrityFault("Failed to initialize ReleaseEncrypter from RunContext.", context);
+    return fault_handler_
+        .SignalFault("Failed to initialize ReleaseEncrypter from RunContext.", *this, context)
+        .ToStatus();
   }
   release_encrypter_.emplace(std::move(*encrypter));
 
@@ -61,28 +73,32 @@ absl::Status EncryptOutputFn::OnConfig(
 
 absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, DoContext& context) {
   context.IncrementCounter(kInputRecordCount);
-  if (has_integrity_fault_) {
-    return SignalIntegrityFault(context);
+  if (fault_handler_.HasFault()) {
+    return fault_handler_.SignalFault(*this, context).ToStatus();
   }
   if (is_finalized_) {
     return absl::FailedPreconditionError("Replica is already finalized.");
   }
 
   if (message.shuffle_count() != 2) {
-    return SignalIntegrityFault("Message shuffle_count must be exactly 2.", context);
+    return fault_handler_.SignalFault("Message shuffle_count must be exactly 2.", *this, context)
+        .ToStatus();
   }
 
   if (message.run_id() != run_id_) {
-    return SignalIntegrityFault("Message run_id mismatch.", context);
+    return fault_handler_.SignalFault("Message run_id mismatch.", *this, context).ToStatus();
   }
 
   if (!message.has_metric_epoch_key()) {
-    return SignalIntegrityFault("Message missing metric_epoch_key.", context);
+    return fault_handler_.SignalFault("Message missing metric_epoch_key.", *this, context)
+        .ToStatus();
   }
 
   const MetricEpochKey& metric_epoch_key = message.metric_epoch_key();
   if (!approved_partitions_.contains(metric_epoch_key)) {
-    return SignalIntegrityFault("Message partition not in approved partitions.", context);
+    return fault_handler_
+        .SignalFault("Message partition not in approved partitions.", *this, context)
+        .ToStatus();
   }
 
   fingerprint_->AddMessage(message);
@@ -94,7 +110,9 @@ absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, DoContext
   auto ciphertext =
       release_encrypter_->EncryptForRelease(message.customer_message(), /*associated_data=*/"");
   if (!ciphertext.ok()) {
-    return SignalIntegrityFault("Failed to encrypt customer message for release.", context);
+    return fault_handler_
+        .SignalFault("Failed to encrypt customer message for release.", *this, context)
+        .ToStatus();
   }
 
   EncryptedMessageOutput output;
@@ -108,37 +126,17 @@ absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, DoContext
   return absl::OkStatus();
 }
 
-absl::Status EncryptOutputFn::SignalIntegrityFault(FnContext& context) {
-  return EmitIntegrityFault("IntegrityFault", context);
-}
-
-absl::Status EncryptOutputFn::SignalIntegrityFault(absl::string_view reason, FnContext& context) {
-  return EmitIntegrityFault(absl::StrCat("IntegrityFault: ", reason), context);
-}
-
-absl::Status EncryptOutputFn::EmitIntegrityFault(absl::string_view message, FnContext& context) {
-  has_integrity_fault_ = true;
-  LOG(ERROR) << message;
-
-  ReleaseOutputHeader header;
-  header.set_type(ReleaseOutputHeader::TYPE_INTEGRITY_FAULT);
-  IntegrityFault fault;
-  context.IncrementCounter(kUnencryptedOutputRecordCount);
-  EmitUnencrypted(context, header, fault).IgnoreError();
-
-  return absl::FailedPreconditionError(message);
-}
-
 absl::Status EncryptOutputFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
-  if (has_integrity_fault_) {
-    return SignalIntegrityFault(context);
+  if (fault_handler_.HasFault()) {
+    return fault_handler_.SignalFault(*this, context).ToStatus();
   }
   if (is_finalized_) {
     return absl::FailedPreconditionError("Replica is already finalized.");
   }
   if (!HasConfig() || !Config().has_value()) {
-    return SignalIntegrityFault("Configuration was not established before FinalizeReplica.",
-                                context);
+    return fault_handler_
+        .SignalFault("Configuration was not established before FinalizeReplica.", *this, context)
+        .ToStatus();
   }
 
   is_finalized_ = true;

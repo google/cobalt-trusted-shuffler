@@ -24,6 +24,7 @@
 #include "absl/status/statusor.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/counter_names.h"
+#include "src/containers/base/integrity_fault.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -35,20 +36,14 @@ namespace cobalt::trusted_shuffler {
 using ::cobalt::trusted_shuffler::RunContext;
 using ::cobalt::trusted_shuffler::SignedRunContext;
 
-void ThresholdFilterFn::EmitIntegrityFault(FnContext& context) {
-  has_integrity_fault_ = true;
-  IntegrityFault fault;
-  context.IncrementCounter(kUnencryptedOutputRecordCount);
-  EmitUnencrypted(context, fault, fault).IgnoreError();
-}
-
 absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& config,
                                          DoContext& context) {
   context.IncrementCounter(kInputConfigCount);
-  if (has_integrity_fault_ || config.has_integrity_fault()) {
+  if (fault_handler_.HasFault() || config.has_integrity_fault()) {
     context.IncrementCounter(kInputConfigInvalid);
-    EmitIntegrityFault(context);
-    return absl::FailedPreconditionError("Ingestion verification failed with integrity fault.");
+    return fault_handler_
+        .SignalFault("Ingestion verification failed with integrity fault.", *this, context)
+        .ToStatus();
   }
 
   if (!config.has_success()) {
@@ -77,9 +72,10 @@ absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& con
 absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message,
                                          DoContext& context) {
   context.IncrementCounter(kInputRecordCount);
-  if (has_integrity_fault_) {
-    EmitIntegrityFault(context);
-    return absl::FailedPreconditionError("ThresholdFilterFn::OnRecord: Integrity fault occurred.");
+  if (fault_handler_.HasFault()) {
+    return fault_handler_
+        .SignalFault("ThresholdFilterFn::OnRecord: Integrity fault occurred.", *this, context)
+        .ToStatus();
   }
 
   if (!run_context_.has_value()) {
@@ -95,15 +91,17 @@ absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message
   }
 
   if (shuffled_message.run_id() != run_context_->run_id()) {
-    EmitIntegrityFault(context);
-    return absl::FailedPreconditionError(
-        "ThresholdFilterFn::OnRecord: ShuffledMessage run_id mismatch.");
+    return fault_handler_
+        .SignalFault("ThresholdFilterFn::OnRecord: ShuffledMessage run_id mismatch.", *this,
+                     context)
+        .ToStatus();
   }
 
   if (shuffled_message.shuffle_count() != 0) {
-    EmitIntegrityFault(context);
-    return absl::FailedPreconditionError(
-        "ThresholdFilterFn::OnRecord: ShuffledMessage shuffle_count must be 0.");
+    return fault_handler_
+        .SignalFault("ThresholdFilterFn::OnRecord: ShuffledMessage shuffle_count must be 0.", *this,
+                     context)
+        .ToStatus();
   }
 
   if (approved_partitions_.contains(shuffled_message.metric_epoch_key())) {
@@ -123,7 +121,7 @@ absl::Status ThresholdFilterFn::FinalizeReplica(google::protobuf::Any config, Fn
         "ThresholdFilterFn::FinalizeReplica called before IngestionVerificationPayload "
         "configuration was established.");
   }
-  if (has_integrity_fault_) {
+  if (fault_handler_.HasFault()) {
     return absl::FailedPreconditionError(
         "Cannot finalize ThresholdFilter replica due to upstream integrity fault.");
   }

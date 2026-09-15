@@ -55,6 +55,8 @@ using ::confidential_federated_compute::fns::FnConfidentialTransform;
 using ::confidential_federated_compute::fns::FnFactory;
 using ::confidential_federated_compute::fns::WriteConfigurationMap;
 using ::testing::ElementsAre;
+using ::testing::IsEmpty;
+using ::testing::SizeIs;
 
 struct MetricThresholdSpec {
   int32_t project_id;
@@ -263,18 +265,17 @@ TEST(IngestionVerificationTransformTest,
 
   FakeContext context;
   ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
-  ASSERT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  ASSERT_EQ(context.Encrypted().size(), 1);
-  EXPECT_EQ(context.Encrypted()[0].first, 0);
-
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
   IngestionVerificationHeader header;
-  ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
   EXPECT_TRUE(header.has_integrity_fault());
 
-  IngestionVerificationPayload payload;
-  ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
-  EXPECT_TRUE(payload.has_integrity_fault());
+  IntegrityFault fault;
+  EXPECT_TRUE(fault.ParseFromString(context.Unencrypted()[0].data));
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
 }
 
 }  // namespace

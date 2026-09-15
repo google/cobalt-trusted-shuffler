@@ -22,6 +22,7 @@
 #include "containers/fns/do_fn.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/integrity_fault.h"
 #include "src/containers/base/pipeline_nodes.h"
 #include "src/containers/base/with_outputs.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
@@ -43,22 +44,20 @@ class PrePaddingFn
 
   absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
 
+  bool HasIntegrityFault() const { return fault_handler_.HasFault(); }
+  bool IsFinalized() const { return is_finalized_; }
+
  protected:
   absl::Status OnConfig(const IngestionVerificationPayload& config, DoContext& context) override;
   absl::Status OnRecord(const ShuffledMessage& input, DoContext& context) override;
 
  private:
-  absl::Status SignalIntegrityFault(absl::string_view reason, FnContext& context);
-
   // Verified run context, approved partitions, and canonical ingestion fingerprint
   // unpacked from Record 0.
   std::optional<VerifiedIngestionVerificationResult> verified_result_;
 
-  // Indicates whether an integrity fault occurred during the replica lifecycle.
-  bool has_integrity_fault_ = false;
-
-  // Ensures at most one unencrypted IntegrityFault record is emitted per replica.
-  bool fault_emitted_ = false;
+  bool is_finalized_ = false;
+  IntegrityFaultHandler<NoKey> fault_handler_;
 };
 
 }  // namespace cobalt::trusted_shuffler

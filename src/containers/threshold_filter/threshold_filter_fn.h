@@ -25,6 +25,7 @@
 #include "absl/status/status.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/integrity_fault.h"
 #include "src/containers/base/pipeline_nodes.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -68,7 +69,6 @@ class ThresholdFilterFn
   const std::optional<IngestionVerificationPayload>& VerificationPayload() const {
     return Config();
   }
-  bool HasIntegrityFault() const { return has_integrity_fault_; }
   bool HasVerificationReport() const { return has_verification_report_; }
   const absl::flat_hash_set<MetricEpochKey>& ApprovedPartitions() const {
     return approved_partitions_;
@@ -87,13 +87,10 @@ class ThresholdFilterFn
   using FnContext = confidential_federated_compute::fns::Fn::FnContext;
   using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
 
-  // Emits an unencrypted IntegrityFault record to notify the untrusted orchestrator.
-  void EmitIntegrityFault(FnContext& context);
-
   std::optional<cobalt::trusted_shuffler::RunContext> run_context_;
   std::optional<cobalt::trusted_shuffler::SignedRunContext> signed_run_context_;
   absl::flat_hash_set<MetricEpochKey> approved_partitions_;
-  bool has_integrity_fault_ = false;
+  IntegrityFaultHandler<IntegrityFault> fault_handler_;
   bool has_verification_report_ = false;
 };
 

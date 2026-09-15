@@ -83,7 +83,6 @@ TEST(ThresholdFilterFnTest, ConfigSucceedsWithValidVerificationPayload) {
   EXPECT_TRUE(fn.SignedRunContext().has_value());
   EXPECT_TRUE(fn.RunContext().has_value());
   EXPECT_TRUE(fn.VerificationPayload().has_value());
-  EXPECT_FALSE(fn.HasIntegrityFault());
   EXPECT_EQ(fn.ApprovedPartitionCount(), 1);
 }
 
@@ -132,7 +131,6 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithIntegrityFault) {
   auto fault_payload = CreateIntegrityFaultPayload();
   EXPECT_THAT(fn.Do(CreateVerificationKV(fault_payload), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_TRUE(fn.HasIntegrityFault());
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
   IntegrityFault fault;
   EXPECT_TRUE(context.Unencrypted().at(0).key.UnpackTo(&fault));
@@ -382,7 +380,6 @@ TEST(ThresholdFilterFnTest, OnRecordRejectsRunIdMismatch) {
 
   EXPECT_THAT(fn.Do(KV(msg.SerializeAsString()), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_TRUE(fn.HasIntegrityFault());
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
   IntegrityFault fault;
   EXPECT_TRUE(context.Unencrypted().at(0).key.UnpackTo(&fault));
@@ -410,7 +407,6 @@ TEST(ThresholdFilterFnTest, OnRecordRejectsNonZeroShuffleCount) {
 
   EXPECT_THAT(fn.Do(KV(msg.SerializeAsString()), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_TRUE(fn.HasIntegrityFault());
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
   IntegrityFault fault;
   EXPECT_TRUE(context.Unencrypted().at(0).key.UnpackTo(&fault));
@@ -439,10 +435,9 @@ TEST(ThresholdFilterFnTest, OnRecordRejectsWhenAlreadyFaulted) {
   // Record 1 triggers the integrity fault.
   EXPECT_THAT(fn.Do(KV(bad_msg.SerializeAsString()), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_TRUE(fn.HasIntegrityFault());
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
 
-  // Record 2 is rejected because has_integrity_fault_ is true, and emits another fault.
+  // Record 2 is rejected because fault_handler_.HasFault() is true; fault is emitted at most once.
   ShuffledMessage valid_msg = CreateShuffledMessage({
       .payload = "valid_payload",
       .run_id = kTestRunId,
@@ -451,7 +446,7 @@ TEST(ThresholdFilterFnTest, OnRecordRejectsWhenAlreadyFaulted) {
   });
   EXPECT_THAT(fn.Do(KV(valid_msg.SerializeAsString()), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_THAT(context.Unencrypted(), SizeIs(2));
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 }
 
 class TestThresholdFilterFn : public ThresholdFilterFn {
@@ -466,10 +461,10 @@ TEST(ThresholdFilterFnTest, OnConfigRejectsWhenAlreadyFaulted) {
   // Trigger an integrity fault on the first config.
   auto fault_payload = CreateIntegrityFaultPayload();
   EXPECT_THAT(fn.OnConfig(fault_payload, context), StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_TRUE(fn.HasIntegrityFault());
   EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 
-  // Verify that subsequent OnConfig call rejects because has_integrity_fault_ is true.
+  // Verify that subsequent OnConfig call rejects because fault_handler_.HasFault() is true; fault
+  // is emitted at most once.
   RunContext run_context = CreateValidRunContext({{10, 1}}, 100, 200, 50);
   SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
   auto report_payload = CreateThresholdReportPayload(
@@ -477,7 +472,7 @@ TEST(ThresholdFilterFnTest, OnConfigRejectsWhenAlreadyFaulted) {
 
   EXPECT_THAT(fn.OnConfig(report_payload, context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_THAT(context.Unencrypted(), SizeIs(2));
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 }
 
 TEST(ThresholdFilterFnTest, FinalizeFailsWithoutConfig) {

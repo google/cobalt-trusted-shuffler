@@ -170,6 +170,15 @@ TEST(PrePaddingFnTest, EmitsPaddingMessagesWhenPartitionHasNonZeroRemainder) {
   EXPECT_THAT(context.Encrypted(), SizeIs(9));
 }
 
+void ExpectIntegrityFaultEmitted(const FakeContext& context) {
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  EXPECT_TRUE(context.Unencrypted()[0].key.type_url().empty());
+  IntegrityFault fault;
+  EXPECT_TRUE(fault.ParseFromString(context.Unencrypted()[0].data));
+  EXPECT_THAT(GetCounterValue(context, kUnencryptedOutputRecordCount), Eq(1));
+  EXPECT_THAT(GetCounterValue(context, kIntegrityFaultCount), Eq(1));
+}
+
 TEST(PrePaddingFnTest, RejectsAnyTrailingRecordsAndEmitsIntegrityFault) {
   PrePaddingFn fn;
   FakeContext context;
@@ -188,13 +197,13 @@ TEST(PrePaddingFnTest, RejectsAnyTrailingRecordsAndEmitsIntegrityFault) {
 
   EXPECT_THAT(fn.Do(PrePaddingFn::KV(ShuffledMessage().SerializeAsString()), do_context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
+  ExpectIntegrityFaultEmitted(context);
+  EXPECT_THAT(GetCounterValue(context, kInputRecordDropped), Eq(1));
 
   // Subsequent FinalizeReplica also fails with FailedPrecondition without emitting a second fault.
   EXPECT_THAT(fn.FinalizeReplica(PackToAny(payload), do_context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
-  EXPECT_THAT(GetCounterValue(context, kUnencryptedOutputRecordCount), Eq(1));
+  ExpectIntegrityFaultEmitted(context);
 }
 
 TEST(PrePaddingFnTest, FinalizeReplicaReturnsErrorAndEmitsIntegrityFaultWhenNoConfigPresent) {
@@ -207,8 +216,7 @@ TEST(PrePaddingFnTest, FinalizeReplicaReturnsErrorAndEmitsIntegrityFaultWhenNoCo
   EXPECT_THAT(fn.FinalizeReplica(PackToAny(empty_payload), do_context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
-  EXPECT_THAT(GetCounterValue(context, kUnencryptedOutputRecordCount), Eq(1));
+  ExpectIntegrityFaultEmitted(context);
 }
 
 TEST(PrePaddingFnTest, ReturnsErrorAndEmitsIntegrityFaultWhenPayloadIsInvalid) {
@@ -222,10 +230,9 @@ TEST(PrePaddingFnTest, ReturnsErrorAndEmitsIntegrityFaultWhenPayloadIsInvalid) {
   EXPECT_THAT(fn.Do(PrePaddingFn::KV(invalid_payload.SerializeAsString()), do_context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
+  ExpectIntegrityFaultEmitted(context);
   EXPECT_THAT(GetCounterValue(context, kInputConfigCount), Eq(1));
   EXPECT_THAT(GetCounterValue(context, kInputConfigInvalid), Eq(1));
-  EXPECT_THAT(GetCounterValue(context, kUnencryptedOutputRecordCount), Eq(1));
 }
 
 TEST(PrePaddingFnTest, EmitsIntegrityFaultWhenBatchParametersCannotBeComputed) {
@@ -249,8 +256,72 @@ TEST(PrePaddingFnTest, EmitsIntegrityFaultWhenBatchParametersCannotBeComputed) {
   EXPECT_THAT(fn.FinalizeReplica(PackToAny(payload), do_context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
-  EXPECT_THAT(GetCounterValue(context, kUnencryptedOutputRecordCount), Eq(1));
+  ExpectIntegrityFaultEmitted(context);
+}
+
+TEST(PrePaddingFnTest, SuccessiveFaultsPreserveSingleEmissionInvariant) {
+  PrePaddingFn fn;
+  FakeContext context;
+  FakeDoContext do_context(context);
+
+  IngestionVerificationPayload invalid_payload;
+  invalid_payload.mutable_integrity_fault();
+
+  EXPECT_THAT(fn.Do(PrePaddingFn::KV(invalid_payload.SerializeAsString()), do_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_TRUE(fn.HasIntegrityFault());
+
+  EXPECT_THAT(fn.FinalizeReplica(PackToAny(invalid_payload), do_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+
+  ExpectIntegrityFaultEmitted(context);
+}
+
+TEST(PrePaddingFnTest, DoubleFinalizeReturnsFailedPrecondition) {
+  PrePaddingFn fn;
+  FakeContext context;
+  FakeDoContext do_context(context);
+
+  MetricEpochKey partition1 =
+      CreateMetricEpochKey({.project_id = 1001, .metric_id = 2, .epoch_index = 50});
+  auto signed_run_context =
+      CreateValidSignedRunContext(/*project_id=*/1001, /*metric_id=*/2, testing::kTestRunId,
+                                  /*min_epoch_index=*/0, /*max_epoch_index=*/100);
+  auto payload = CreateIngestionVerificationPayload(testing::kTestRunId,
+                                                    /*approved_partitions=*/{partition1},
+                                                    /*canonical_fingerprint=*/
+                                                    {{partition1, /*message_count=*/1000}},
+                                                    signed_run_context);
+
+  EXPECT_THAT(fn.Do(PrePaddingFn::KV(payload.SerializeAsString()), do_context), IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(PackToAny(payload), do_context), IsOk());
+  EXPECT_TRUE(fn.IsFinalized());
+
+  EXPECT_THAT(fn.FinalizeReplica(PackToAny(payload), do_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(PrePaddingFnTest, DoAfterFinalizeReturnsFailedPrecondition) {
+  PrePaddingFn fn;
+  FakeContext context;
+  FakeDoContext do_context(context);
+
+  MetricEpochKey partition1 =
+      CreateMetricEpochKey({.project_id = 1001, .metric_id = 2, .epoch_index = 50});
+  auto signed_run_context =
+      CreateValidSignedRunContext(/*project_id=*/1001, /*metric_id=*/2, testing::kTestRunId,
+                                  /*min_epoch_index=*/0, /*max_epoch_index=*/100);
+  auto payload = CreateIngestionVerificationPayload(testing::kTestRunId,
+                                                    /*approved_partitions=*/{partition1},
+                                                    /*canonical_fingerprint=*/
+                                                    {{partition1, /*message_count=*/1000}},
+                                                    signed_run_context);
+
+  EXPECT_THAT(fn.Do(PrePaddingFn::KV(payload.SerializeAsString()), do_context), IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(PackToAny(payload), do_context), IsOk());
+
+  EXPECT_THAT(fn.Do(PrePaddingFn::KV(ShuffledMessage().SerializeAsString()), do_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
 }  // namespace

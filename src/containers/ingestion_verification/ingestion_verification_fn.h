@@ -26,6 +26,7 @@
 #include "absl/status/status.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/integrity_fault.h"
 #include "src/containers/base/pipeline_nodes.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/proto/common.pb.h"
@@ -55,7 +56,8 @@ class IngestionVerificationFn
     : public FirstRecordConfigDoFn<SignedRunContext, PartialIngestionReport>::WithOutputs<
           EncryptsTo<Node::kVerifiedIngestion>,
           EncryptedKV<IngestionVerificationHeader, IngestionVerificationPayload,
-                      Node::kVerifiedIngestion>> {
+                      Node::kVerifiedIngestion>,
+          UnencryptedKV<IngestionVerificationHeader, IntegrityFault>> {
  public:
   explicit IngestionVerificationFn(TrustedShufflerConfigConstraints config_constraints);
 
@@ -84,9 +86,6 @@ class IngestionVerificationFn
   using FnContext = confidential_federated_compute::fns::Fn::FnContext;
   using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
 
-  // Emits an IntegrityFault header and payload encrypted for downstream consumption.
-  void EmitIntegrityFault(FnContext& context);
-
   // Project ID and Metric ID pair identifying a metric configuration.
   using MetricKey = std::pair<int32_t, int32_t>;
 
@@ -100,7 +99,7 @@ class IngestionVerificationFn
   std::optional<MultisetFingerprint> multiset_fingerprint_;
   std::map<MetricEpochTuple, HllSketch> partition_sketches_;
   std::map<MetricEpochTuple, MetricEpochKey> partition_keys_;
-  bool has_integrity_fault_ = false;
+  IntegrityFaultHandler<IngestionVerificationHeader> fault_handler_;
 };
 
 }  // namespace cobalt::trusted_shuffler

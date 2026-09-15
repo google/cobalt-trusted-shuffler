@@ -26,6 +26,7 @@
 #include "containers/fns/do_fn.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/integrity_fault.h"
 #include "src/containers/base/pipeline_nodes.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/crypto/release_encrypter.h"
@@ -62,7 +63,7 @@ class EncryptOutputFn
           UnencryptedKV<ReleaseOutputHeader, IntegrityFault>,
           EncryptedKV<ReleaseOutputHeader, PartialReleaseReport, Node::kPartialReleaseReports>> {
  public:
-  EncryptOutputFn() = default;
+  EncryptOutputFn();
   ~EncryptOutputFn() override = default;
 
   // Finalizes the replica by emitting PartialReleaseReport encrypted for the
@@ -78,19 +79,12 @@ class EncryptOutputFn
   absl::Status OnRecord(const ShuffledMessage& message, DoContext& context) override;
 
  private:
-  using FnContext = confidential_federated_compute::fns::Fn::FnContext;
-  using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
-
-  absl::Status SignalIntegrityFault(FnContext& context);
-  absl::Status SignalIntegrityFault(absl::string_view reason, FnContext& context);
-  absl::Status EmitIntegrityFault(absl::string_view message, FnContext& context);
-
   bool is_finalized_ = false;
   std::optional<ReleaseEncrypter> release_encrypter_;
   std::string run_id_;
   std::optional<MultisetFingerprint> fingerprint_;
   absl::flat_hash_set<MetricEpochKey> approved_partitions_;
-  bool has_integrity_fault_ = false;
+  IntegrityFaultHandler<ReleaseOutputHeader> fault_handler_;
 };
 
 }  // namespace cobalt::trusted_shuffler

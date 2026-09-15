@@ -23,6 +23,7 @@
 #include "absl/strings/string_view.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/integrity_fault.h"
 #include "src/containers/base/pipeline_nodes.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
@@ -52,17 +53,14 @@ class GatherShuffleFn
 
   absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
 
+  bool HasIntegrityFault() const { return fault_handler_.HasFault(); }
+
  protected:
   absl::Status OnConfig(const IngestionVerificationPayload& config, DoContext& context) override;
   absl::Status OnRecord(const ShuffledMessage& input, DoContext& context) override;
 
  private:
-  absl::Status SignalIntegrityFault(absl::string_view reason, FnContext& context);
-
-  // Whether the replica has faulted. Set by the first fault, which is also the
-  // only one to emit an unencrypted IntegrityFault record; every later call
-  // returns the failure without emitting again.
-  bool has_integrity_fault_ = false;
+  IntegrityFaultHandler<NoKey> fault_handler_;
 
   // Verified run context, approved partitions, and canonical ingestion fingerprint
   // unpacked from Record 0.

@@ -25,6 +25,7 @@
 #include "google/protobuf/any.pb.h"
 #include "src/batching/batch_calculator.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/integrity_fault.h"
 #include "src/containers/base/pipeline_nodes.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
@@ -59,7 +60,7 @@ class ScatterShuffleFn
           EncryptedKV<ScatterShuffleHeader, ShuffledMessage, Node::kScatteredMessages>,
           UnencryptedKV<ScatterShuffleHeader, IntegrityFault>> {
  public:
-  ScatterShuffleFn() = default;
+  ScatterShuffleFn();
   ~ScatterShuffleFn() override = default;
 
   // Finalizes the replica session: validates batch size, cryptographically shuffles,
@@ -82,17 +83,12 @@ class ScatterShuffleFn
   using FnContext = confidential_federated_compute::fns::Fn::FnContext;
   using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
 
-  // Signals an integrity violation by emitting an unencrypted IntegrityFault record
-  // and returning a FailedPreconditionError.
-  absl::Status SignalIntegrityFault(FnContext& context);
-
   std::optional<VerifiedIngestionVerificationResult> verified_result_;
   std::optional<BatchParameters> batch_parameters_;
   std::optional<MetricEpochKey> expected_metric_epoch_key_;
   std::vector<ShuffledMessage> messages_;
 
-  std::optional<std::string> fault_reason_;
-  bool fault_emitted_ = false;
+  IntegrityFaultHandler<ScatterShuffleHeader> fault_handler_;
 };
 
 }  // namespace cobalt::trusted_shuffler

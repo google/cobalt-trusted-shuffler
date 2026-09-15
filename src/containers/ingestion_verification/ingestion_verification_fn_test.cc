@@ -173,7 +173,7 @@ TEST(IngestionVerificationFnTest, SuccessfulConfigUnpackFollowedByDataRecords) {
   ASSERT_TRUE(fn.Config().has_value());
   EXPECT_THAT(fn.Config()->signature(), Eq("valid_signature_bytes"));
 
-  // Records 1..N: Ingests client data records
+  // Records 1..N: Ingests valid client data records (PartialIngestionReport)
   const PartitionSpec partition_specs[] = {
       {.project_id = 1001,
        .metric_id = 2,
@@ -252,6 +252,16 @@ TEST(IngestionVerificationFnTest, ConfigConstraintsAccessor) {
               ElementsAre(EquivToProto(constraints.metric_thresholds(0))));
 }
 
+void ExpectIntegrityFaultEmitted(const FakeContext& context) {
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  IngestionVerificationHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_TRUE(header.has_integrity_fault());
+  IntegrityFault fault;
+  EXPECT_TRUE(fault.ParseFromString(context.Unencrypted()[0].data));
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+}
+
 TEST(IngestionVerificationFnTest, FinalizeReplicaWithoutConfigEmitsIntegrityFault) {
   const MetricThresholdSpec specs[] = {
       {.project_id = 1001, .metric_id = 2, .threshold = 50},
@@ -261,19 +271,10 @@ TEST(IngestionVerificationFnTest, FinalizeReplicaWithoutConfigEmitsIntegrityFaul
   FakeContext context;
 
   ASSERT_THAT(fn.InitializeReplica(google::protobuf::Any(), context), IsOk());
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  ASSERT_EQ(context.Encrypted().size(), 1);
-  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
-  EXPECT_EQ(context.Encrypted()[0].first, 0);
-
-  IngestionVerificationHeader header;
-  ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_TRUE(header.has_integrity_fault());
-
-  IngestionVerificationPayload payload;
-  ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
-  EXPECT_TRUE(payload.has_integrity_fault());
+  ExpectIntegrityFaultEmitted(context);
 }
 
 TEST(IngestionVerificationFnTest, RejectsCorruptedRecordPayload) {
@@ -289,7 +290,7 @@ TEST(IngestionVerificationFnTest, RejectsCorruptedRecordPayload) {
   ASSERT_THAT(fn.Do(IngestionVerificationFn::KV(signed_context.SerializeAsString()), context),
               IsOk());
 
-  // Record 1 is corrupted bytes
+  // Record 1 is corrupted bytes: FirstRecordConfigDoFn fails to parse record proto
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV("corrupted_record_payload"), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
@@ -319,17 +320,12 @@ TEST(IngestionVerificationFnTest, FinalizeReplicaWithRunIdMismatchEmitsIntegrity
   const PartialIngestionReport report =
       CreatePartialIngestionReport("different_run_id_9999", partition_specs);
 
-  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context), IsOk());
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  ASSERT_EQ(context.Encrypted().size(), 1);
-  IngestionVerificationHeader header;
-  ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_TRUE(header.has_integrity_fault());
-
-  IngestionVerificationPayload payload;
-  ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
-  EXPECT_TRUE(payload.has_integrity_fault());
+  ExpectIntegrityFaultEmitted(context);
 }
 
 TEST(IngestionVerificationFnTest, FinalizeReplicaWithInvalidPartialFingerprintEmitsIntegrityFault) {
@@ -351,17 +347,12 @@ TEST(IngestionVerificationFnTest, FinalizeReplicaWithInvalidPartialFingerprintEm
   report.mutable_partial_fingerprint()->set_stage_id(Stage::STAGE_UNSPECIFIED);
   report.mutable_partial_fingerprint()->set_is_partial(true);
 
-  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context), IsOk());
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  ASSERT_EQ(context.Encrypted().size(), 1);
-  IngestionVerificationHeader header;
-  ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_TRUE(header.has_integrity_fault());
-
-  IngestionVerificationPayload payload;
-  ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
-  EXPECT_TRUE(payload.has_integrity_fault());
+  ExpectIntegrityFaultEmitted(context);
 }
 
 TEST(IngestionVerificationFnTest, FinalizeReplicaWithInvalidHllSketchEmitsIntegrityFault) {
@@ -386,17 +377,12 @@ TEST(IngestionVerificationFnTest, FinalizeReplicaWithInvalidHllSketchEmitsIntegr
   *sketch->mutable_metric_epoch_key() = CreateMetricEpochKey(1001, 2, 100);
   sketch->mutable_hyperloglog_sketch()->set_precision(99);  // Invalid precision
 
-  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context), IsOk());
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  ASSERT_EQ(context.Encrypted().size(), 1);
-  IngestionVerificationHeader header;
-  ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_TRUE(header.has_integrity_fault());
-
-  IngestionVerificationPayload payload;
-  ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
-  EXPECT_TRUE(payload.has_integrity_fault());
+  ExpectIntegrityFaultEmitted(context);
 }
 
 TEST(IngestionVerificationFnTest, SuccessfulIngestionVerificationSinglePartitionMeetsThreshold) {
@@ -837,20 +823,13 @@ TEST(IngestionVerificationFnTest, IncompatibleHllSketchPrecisionAcrossWorkersEmi
   };
   const PartialIngestionReport report2 =
       CreatePartialIngestionReport(std::string(kTestRunId), worker2_specs);
-  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report2.SerializeAsString()), context), IsOk());
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report2.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  ASSERT_EQ(context.Encrypted().size(), 1);
-
-  IngestionVerificationHeader header;
-  ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_TRUE(header.has_integrity_fault());
-
-  IngestionVerificationPayload payload;
-  ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
-  EXPECT_TRUE(payload.has_integrity_fault());
-  EXPECT_FALSE(payload.has_success());
+  ExpectIntegrityFaultEmitted(context);
 }
 
 TEST(IngestionVerificationFnTest, SubsequentRecordProcessingAfterFaultPreservesIntegrityFault) {
@@ -878,9 +857,10 @@ TEST(IngestionVerificationFnTest, SubsequentRecordProcessingAfterFaultPreservesI
   const PartialIngestionReport fault_report =
       CreatePartialIngestionReport("mismatched_run_id", fault_specs);
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(fault_report.SerializeAsString()), context),
-              IsOk());
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  // Record 2: Valid PartialIngestionReport exceeding threshold
+  // Record 2: Valid PartialIngestionReport exceeding threshold is rejected because fault occurred;
+  // fault is emitted at most once.
   const PartitionSpec partition_specs[] = {
       {.project_id = 1001,
        .metric_id = 2,
@@ -892,20 +872,12 @@ TEST(IngestionVerificationFnTest, SubsequentRecordProcessingAfterFaultPreservesI
   const PartialIngestionReport valid_report =
       CreatePartialIngestionReport(std::string(kTestRunId), partition_specs);
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(valid_report.SerializeAsString()), context),
-              IsOk());
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 
-  ASSERT_EQ(context.Encrypted().size(), 1);
-
-  IngestionVerificationHeader header;
-  ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_TRUE(header.has_integrity_fault());
-
-  IngestionVerificationPayload payload;
-  ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
-  EXPECT_TRUE(payload.has_integrity_fault());
-  EXPECT_FALSE(payload.has_success());
+  ExpectIntegrityFaultEmitted(context);
 }
 
 }  // namespace

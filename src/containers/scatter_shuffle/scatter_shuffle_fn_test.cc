@@ -412,8 +412,7 @@ TEST(ScatterShuffleFnTest, RejectsTooManyMessagesWithIntegrityFault) {
 
   // FinalizeReplica must also fail and not duplicate fault emission.
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition,
-                       "IntegrityFault: Received more messages than expected batch size."));
+              StatusIs(absl::StatusCode::kFailedPrecondition, "Integrity fault already emitted."));
   EXPECT_THAT(context.Unencrypted(), SizeIs(1));
   EXPECT_THAT(context.Encrypted(), IsEmpty());
 }
@@ -572,7 +571,7 @@ TEST(ScatterShuffleFnTest, RejectsIntegrityFaultInPayload) {
 
   EXPECT_THAT(fn.Do(CreateConfigRecord(payload), context),
               StatusIs(absl::StatusCode::kFailedPrecondition,
-                       "Ingestion verification failed with integrity fault."));
+                       "IntegrityFault: Ingestion verification failed with integrity fault."));
 
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
@@ -587,9 +586,9 @@ TEST(ScatterShuffleFnTest, RejectsEmptyRunIdInRunContext) {
 
   const IngestionVerificationPayload verification_payload =
       CreateIngestionVerificationPayload({.run_id = ""});
-  EXPECT_THAT(
-      fn.Do(CreateConfigRecord(verification_payload), context),
-      StatusIs(absl::StatusCode::kFailedPrecondition, "Failed to verify SignedRunContext."));
+  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Failed to verify SignedRunContext."));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
@@ -601,7 +600,7 @@ TEST(ScatterShuffleFnTest, RejectsMissingSignedRunContext) {
   verification_payload.mutable_success()->mutable_threshold_report()->set_run_id("some_run_id");
   EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
               StatusIs(absl::StatusCode::kFailedPrecondition,
-                       "IngestionVerificationResult missing signed_run_context."));
+                       "IntegrityFault: IngestionVerificationResult missing signed_run_context."));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
@@ -613,7 +612,7 @@ TEST(ScatterShuffleFnTest, RejectsMissingThresholdReport) {
   verification_payload.mutable_success()->clear_threshold_report();
   EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
               StatusIs(absl::StatusCode::kFailedPrecondition,
-                       "IngestionVerificationResult missing threshold_report."));
+                       "IntegrityFault: IngestionVerificationResult missing threshold_report."));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
@@ -625,7 +624,8 @@ TEST(ScatterShuffleFnTest, RejectsMismatchedThresholdReportRunId) {
   verification_payload.mutable_success()->mutable_threshold_report()->set_run_id(
       "mismatched_run_id_01234567890123");
   EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition, "ThresholdReport run_id mismatch."));
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: ThresholdReport run_id mismatch."));
 }
 
 TEST(ScatterShuffleFnTest, RejectsInvalidApprovedPartitionBounds) {
@@ -639,7 +639,7 @@ TEST(ScatterShuffleFnTest, RejectsInvalidApprovedPartitionBounds) {
       ->set_project_id(0);
   EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
               StatusIs(absl::StatusCode::kFailedPrecondition,
-                       "Invalid MetricEpochKey in approved_partitions."));
+                       "IntegrityFault: Invalid MetricEpochKey in approved_partitions."));
 }
 
 TEST(ScatterShuffleFnTest, RejectsInvalidTargetBatchSize) {
@@ -648,9 +648,9 @@ TEST(ScatterShuffleFnTest, RejectsInvalidTargetBatchSize) {
 
   const IngestionVerificationPayload verification_payload =
       CreateIngestionVerificationPayload({.target_batch_size = 0});
-  EXPECT_THAT(
-      fn.Do(CreateConfigRecord(verification_payload), context),
-      StatusIs(absl::StatusCode::kFailedPrecondition, "Failed to verify SignedRunContext."));
+  EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Failed to verify SignedRunContext."));
 }
 
 TEST(ScatterShuffleFnTest, RejectsFinalizeWithoutConfig) {

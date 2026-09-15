@@ -737,8 +737,10 @@ TEST_F(EncryptOutputFnTest, FinalizeReplicaWithActiveFaultDoesNotEmitReport) {
                        "IntegrityFault: Message partition not in approved partitions."));
 
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition, "IntegrityFault"));
-  ExpectIntegrityFaultEmitted(context, "IntegrityFault");
+              StatusIs(absl::StatusCode::kFailedPrecondition, "Integrity fault already emitted."));
+  ExpectIntegrityFaultEmitted(context,
+                              "IntegrityFault: Message partition not in approved partitions.");
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
   EXPECT_THAT(context.Encrypted(), IsEmpty());
 }
 
@@ -839,22 +841,25 @@ TEST_F(EncryptOutputFnTest, SubsequentRecordsAndFinalizeLogGenericIntegrityFault
                        "IntegrityFault: Message partition not in approved partitions."));
   ExpectIntegrityFaultEmitted(context,
                               "IntegrityFault: Message partition not in approved partitions.");
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 
-  // Subsequent records log/return generic "IntegrityFault".
+  // Subsequent records return generic "Integrity fault already emitted." without duplicating fault
+  // emissions.
   const ShuffledMessage next_msg =
       CreateShuffledMessage({.project_id = 1, .metric_id = 2, .epoch_index = 100}, "run-100",
                             /*shuffle_count=*/2, /*is_padding=*/false, "payload");
   EXPECT_THAT(fn.Do(MakeMessageRecord(next_msg), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition, "IntegrityFault"));
-  ExpectIntegrityFaultEmitted(context, "IntegrityFault");
+              StatusIs(absl::StatusCode::kFailedPrecondition, "Integrity fault already emitted."));
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 
-  // FinalizeReplica also logs/returns generic "IntegrityFault".
+  // FinalizeReplica also returns generic "Integrity fault already emitted." without duplicating
+  // fault emissions.
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition, "IntegrityFault"));
-  ExpectIntegrityFaultEmitted(context, "IntegrityFault");
+              StatusIs(absl::StatusCode::kFailedPrecondition, "Integrity fault already emitted."));
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 }
 
-TEST_F(EncryptOutputFnTest, FinalizeReplicaAfterConfigFaultLogsGenericIntegrityFault) {
+TEST_F(EncryptOutputFnTest, FinalizeReplicaAfterConfigFaultRejectsWithGenericIntegrityFault) {
   EncryptOutputFn fn;
   FakeContext context;
 
@@ -868,15 +873,17 @@ TEST_F(EncryptOutputFnTest, FinalizeReplicaAfterConfigFaultLogsGenericIntegrityF
               StatusIs(absl::StatusCode::kFailedPrecondition,
                        "IntegrityFault: ThresholdReport run_id mismatch."));
   ExpectIntegrityFaultEmitted(context, "IntegrityFault: ThresholdReport run_id mismatch.");
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 
-  // Subsequent FinalizeReplica call logs/returns generic "IntegrityFault".
+  // Subsequent FinalizeReplica call returns generic "Integrity fault already emitted." without
+  // duplicating emission.
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition, "IntegrityFault"));
-  ExpectIntegrityFaultEmitted(context, "IntegrityFault");
+              StatusIs(absl::StatusCode::kFailedPrecondition, "Integrity fault already emitted."));
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 }
 
 TEST_F(EncryptOutputFnTest,
-       FinalizeReplicaBeforeConfigThenSubsequentFinalizeLogsGenericIntegrityFault) {
+       FinalizeReplicaBeforeConfigThenSubsequentFinalizeRejectsWithGenericIntegrityFault) {
   EncryptOutputFn fn;
   FakeContext context;
 
@@ -887,11 +894,13 @@ TEST_F(EncryptOutputFnTest,
                "IntegrityFault: Configuration was not established before FinalizeReplica."));
   ExpectIntegrityFaultEmitted(
       context, "IntegrityFault: Configuration was not established before FinalizeReplica.");
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 
-  // Second FinalizeReplica call logs/returns generic "IntegrityFault".
+  // Second FinalizeReplica call returns generic "Integrity fault already emitted." without
+  // duplicating emission.
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition, "IntegrityFault"));
-  ExpectIntegrityFaultEmitted(context, "IntegrityFault");
+              StatusIs(absl::StatusCode::kFailedPrecondition, "Integrity fault already emitted."));
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 }
 
 TEST_F(EncryptOutputFnTest, ProcessRecordAfterFinalizeReplicaFailsPrecondition) {

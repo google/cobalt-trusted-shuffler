@@ -24,8 +24,10 @@
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/counter_names.h"
+#include "src/containers/base/integrity_fault.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
@@ -39,7 +41,11 @@ namespace cobalt::trusted_shuffler {
 
 IngestionVerificationFn::IngestionVerificationFn(
     TrustedShufflerConfigConstraints config_constraints)
-    : config_constraints_(std::move(config_constraints)) {
+    : config_constraints_(std::move(config_constraints)), fault_handler_([]() {
+        IngestionVerificationHeader header;
+        header.mutable_integrity_fault();
+        return header;
+      }()) {
   for (const auto& metric_threshold : config_constraints_.metric_thresholds()) {
     threshold_map_[{metric_threshold.project_id(), metric_threshold.metric_id()}] =
         metric_threshold.threshold();
@@ -59,6 +65,9 @@ absl::Status IngestionVerificationFn::InitializeReplica(google::protobuf::Any co
 absl::Status IngestionVerificationFn::OnConfig(
     const cobalt::trusted_shuffler::SignedRunContext& signed_run_context, DoContext& context) {
   context.IncrementCounter(kInputConfigCount);
+  if (fault_handler_.HasFault()) {
+    return fault_handler_.SignalFault(*this, context).ToStatus();
+  }
   const absl::StatusOr<RunContext> verified_run_context =
       VerifySignedRunContext(signed_run_context);
   if (!verified_run_context.ok()) {
@@ -75,16 +84,17 @@ absl::Status IngestionVerificationFn::OnConfig(
 absl::Status IngestionVerificationFn::OnRecord(const PartialIngestionReport& report,
                                                DoContext& context) {
   context.IncrementCounter(kInputRecordCount);
-  if (has_integrity_fault_) {
-    return absl::OkStatus();
+  if (fault_handler_.HasFault()) {
+    return fault_handler_.SignalFault(*this, context).ToStatus();
   }
 
   // Merge the partial multiset fingerprint (validates run_id, stage_id, and partial status).
   const absl::Status fp_status = multiset_fingerprint_->Merge(report.partial_fingerprint());
   if (!fp_status.ok()) {
-    LOG(ERROR) << "Failed to merge partial fingerprint: " << fp_status;
-    has_integrity_fault_ = true;
-    return absl::OkStatus();
+    return fault_handler_
+        .SignalFault(absl::StrCat("Failed to merge partial fingerprint: ", fp_status.message()),
+                     *this, context)
+        .ToStatus();
   }
 
   // Collect and merge HyperLogLog sketches.
@@ -97,17 +107,21 @@ absl::Status IngestionVerificationFn::OnRecord(const PartialIngestionReport& rep
       const absl::Status merge_status =
           it->second.MergeFrom(metric_epoch_sketch.hyperloglog_sketch());
       if (!merge_status.ok()) {
-        LOG(ERROR) << "Failed to merge HllSketch for partition: " << merge_status;
-        has_integrity_fault_ = true;
-        return absl::OkStatus();
+        return fault_handler_
+            .SignalFault(
+                absl::StrCat("Failed to merge HllSketch for partition: ", merge_status.message()),
+                *this, context)
+            .ToStatus();
       }
     } else {
       absl::StatusOr<HllSketch> sketch =
           HllSketch::FromProto(metric_epoch_sketch.hyperloglog_sketch());
       if (!sketch.ok()) {
-        LOG(ERROR) << "Failed to deserialize HllSketch for partition: " << sketch.status();
-        has_integrity_fault_ = true;
-        return absl::OkStatus();
+        return fault_handler_
+            .SignalFault(absl::StrCat("Failed to deserialize HllSketch for partition: ",
+                                      sketch.status().message()),
+                         *this, context)
+            .ToStatus();
       }
       partition_sketches_.emplace(tuple_key, std::move(*sketch));
       partition_keys_.emplace(tuple_key, key);
@@ -117,22 +131,15 @@ absl::Status IngestionVerificationFn::OnRecord(const PartialIngestionReport& rep
   return absl::OkStatus();
 }
 
-void IngestionVerificationFn::EmitIntegrityFault(FnContext& context) {
-  IngestionVerificationHeader header;
-  header.mutable_integrity_fault();
-
-  IngestionVerificationPayload payload;
-  payload.mutable_integrity_fault();
-
-  context.IncrementCounter(kEncryptedOutputRecordCount);
-  EmitEncrypted(context, header, payload).IgnoreError();
-}
-
 absl::Status IngestionVerificationFn::FinalizeReplica(google::protobuf::Any config,
                                                       FnContext& context) {
-  if (!HasConfig() || has_integrity_fault_ || !multiset_fingerprint_.has_value()) {
-    EmitIntegrityFault(context);
-    return absl::OkStatus();
+  if (fault_handler_.HasFault()) {
+    return fault_handler_.SignalFault(*this, context).ToStatus();
+  }
+  if (!HasConfig() || !multiset_fingerprint_.has_value()) {
+    return fault_handler_
+        .SignalFault("Configuration was not established before FinalizeReplica.", *this, context)
+        .ToStatus();
   }
 
   ThresholdReport threshold_report;
