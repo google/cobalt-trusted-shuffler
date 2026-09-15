@@ -26,15 +26,15 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 
 | Container | Role & Purpose | Data Visibility & Emission | Protos / Config |
 | :--- | :--- | :--- | :--- |
-| [`run_context_initializer`](run_context_initializer/) | Bootstraps the pipeline execution. Validates `RunConfig`, generates cryptographically secure `run_id` and `run_hash_key`, and signs the `RunContext`. | Emits encrypted `SignedRunContext` (key index 0) for downstream TEE stages. | [`src/proto/run_context.proto`](../proto/run_context.proto) |
-| [`ingest_uploads`](ingest_uploads/) | Placeholder skeleton; currently does nothing. TODO(b/555370722): Implement ingest uploads logic. | Emits nothing currently. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
+| [`run_context_initializer`](run_context_initializer/) | Bootstraps the pipeline execution. Validates `RunConfig`, generates cryptographically secure `run_id`, `run_hash_key`, and `release_key`, and signs the `RunContext`. | Emits encrypted `SignedRunContext` (key index 0) for downstream TEE stages. | [`src/proto/run_context.proto`](../proto/run_context.proto) |
+| [`ingest_uploads`](ingest_uploads/) | Ingests device uploads, validates metric identifiers and epoch bounds against `SignedRunContext`, and updates HyperLogLog cardinality sketches and `MultisetFingerprint`. | Emits encrypted `ShuffledMessage` records (key index 0) and `PartialIngestionReport` outputs (key index 1). | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`message_counter`](message_counter/) | Counts incoming messages while forwarding them. Outputs a final count summary report. | Emits messages encrypted (`OutputKey.type = MESSAGE`) and final `CountReport` unencrypted (`OutputKey.type = REPORT`). | [`src/proto/message_counter/`](../proto/message_counter/) |
 | [`releaser`](releaser/) | Unconditionally releases messages passed from upstream confidential stages. | Emits messages unencrypted via `EmitUnencrypted` at the pipeline's privacy/release boundary. | None (empty config) |
 | [`simple`](simple/) | Proof-of-concept identity transform. Buffers incoming blobs and forwards them. | Emits buffered blobs encrypted with key index 0 upon commit. | None (empty config) |
 | [`ingestion_verification`](ingestion_verification/) | Verifies runtime configuration, merges partial multiset fingerprints and HyperLogLog cardinality sketches, and evaluates device counts against privacy thresholds. | Emits unencrypted `IngestionVerificationHeader` for the orchestrator and encrypted `IngestionVerificationPayload` (key index 0) for `ThresholdFilter`. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto), [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`threshold_filter`](threshold_filter/) | Filters messages by approved partition thresholds from Ingestion Verification report, drops unapproved partitions, and emits encrypted message streams. | Emits messages encrypted (`EmitEncrypted`) with key index 0 and plaintext `MetricEpochKey` headers. Partitions below threshold are dropped completely. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`scatter_shuffle`](scatter_shuffle/) | Cryptographically shuffles batches of messages partitioned by `MetricEpochKey`, validates batch size invariants, assigns group IDs (`group_id = new_position % batch_num`), increments `shuffle_count`, and re-encrypts payloads. | Emits encrypted KV records (`ScatterShuffleHeader` with `group_id` and encrypted `ShuffledMessage`) via `EmitEncrypted`; emits `IntegrityFault` via `EmitUnencrypted` on validation failure. | Record 0 `IngestionVerificationResult` (`src/proto/ingestion.proto`) |
-| [`encrypt_output`](encrypt_output/) | Placeholder skeleton; currently does nothing. TODO(b/557302528): Implement output encryption and release fingerprinting logic. | Emits nothing currently. | None (accepts empty config) |
+| [`encrypt_output`](encrypt_output/) | Encrypts shuffled messages for release using `RunContext.release_key` via `ReleaseEncrypter` and accumulates the partial multiset release fingerprint. | Emits streaming `EncryptedMessageOutput` unencrypted (payloads encrypted for release) and final `PartialReleaseReport` encrypted under key index 0 (`kReencryptionKeyIndex`). | [`src/proto/run_context.proto`](../proto/run_context.proto), [`src/proto/release.proto`](../proto/release.proto) |
 
 ---
 
@@ -53,11 +53,7 @@ The **`run_context_initializer`** container is executed **first** in the pipelin
 
 The **`ingest_uploads`** container is responsible for the First Ingestion Stage of device uploads in the Trusted Shuffler.
 
-> [!NOTE]
-> **This container currently serves as an empty skeleton.**
-> TODO(b/555370722): Implement message validation, multiset fingerprinting, HLL sketch aggregation, and report generation logic.
-
-- **Purpose**: First ingestion stage for device uploads (currently empty skeleton).
+- **Purpose**: Parses client device uploads (`TrustedShufflerUpload` and `ClientPayload` input envelopes), validates metric identifiers and epoch bounds against `SignedRunContext`, updates per-partition HyperLogLog (`HllSketch`) sketches and `MultisetFingerprint`, and emits encrypted `ShuffledMessage` records and `PartialIngestionReport` outputs.
 - **Documentation**: See [`src/containers/ingest_uploads/README.md`](ingest_uploads/README.md).
 
 ---
@@ -140,11 +136,9 @@ The **`scatter_shuffle`** container is responsible for the scatter shuffle and g
 
 The **`encrypt_output`** container is responsible for output encryption and release fingerprinting in the Trusted Shuffler pipeline.
 
-**Note:** This container currently serves as an empty skeleton. It is currently a no-op placeholder.
-TODO(b/557302528): Implement output encryption, invariant validation, multiset fingerprint accumulation, and key release emission.
-
-- **Purpose**: Encrypts customer payloads under a per-worker release key (AES-256-GCM), accumulates release multiset fingerprints, and emits encrypted payloads and key release material.
-- **Configuration**: None currently (accepts empty config).
-- **Inputs**: `IngestionVerificationResult` (containing `SignedRunContext` and approved partitions) on record 0, and `ShuffledMessage` records with `shuffle_count == 2`.
-- **Outputs**: Streaming `EncryptedMessageOutput` emitted unencrypted (payloads encrypted under release key), and `WorkerKeyAndFingerprint` emitted encrypted under key index 0 to the downstream key release verification stage upon finalization.
+- **Purpose**: Encrypts customer payloads under the run's release key (`RunContext.release_key`) using `ReleaseEncrypter` (AES-256-GCM AEAD), accumulates partial release multiset fingerprints, and emits encrypted output records and partial release reports.
+- **Configuration**: Dynamic configuration via `IngestionVerificationPayload` on Record 0.
+- **Inputs**: `IngestionVerificationPayload` on record 0 (containing `IngestionVerificationResult` with `SignedRunContext` and `ThresholdReport` with approved partitions), and `ShuffledMessage` records (`record.data`) with `shuffle_count == 2`.
+- **Outputs**: Streaming `EncryptedMessageOutput` emitted unencrypted (payloads encrypted under `RunContext.release_key`), and `PartialReleaseReport` emitted encrypted under key index 0 (`kReencryptionKeyIndex`) to the downstream release verification stage upon finalization.
 - **Documentation**: See [`src/containers/encrypt_output/README.md`](encrypt_output/README.md).
+
