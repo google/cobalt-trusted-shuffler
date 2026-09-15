@@ -39,7 +39,8 @@ namespace cobalt::trusted_shuffler {
 //   Extracts SignedRunContext from IngestionVerificationResult, verifies the cryptographic
 //   signature and runtime parameters, validates the run ID against ThresholdReport, and
 //   populates approved partitions that met the device threshold.
-// - Records 1..N: Ingests grouped ShuffledMessages from partition grouping via OnRecord().
+// - Records 1..N: Ingests ShuffledMessages from partition grouping via OnRecord().
+//   Validates that the message run_id matches RunContext and shuffle_count is 0.
 //   Forwards ShuffledMessages matching approved partitions encrypted under key index 0
 //   (kReencryptionKeyIndex) with unencrypted MetricEpochKey headers. Messages for
 //   unapproved partitions are discarded.
@@ -80,6 +81,9 @@ class ThresholdFilterFn : public FirstRecordConfigDoFn<IngestionVerificationPayl
   absl::Status OnRecord(KV record, Context& context) override;
 
  private:
+  // Emits an unencrypted IntegrityFault record to notify the untrusted orchestrator.
+  void EmitIntegrityFault(Context& context);
+
   std::optional<cobalt::trusted_shuffler::RunContext> run_context_;
   std::optional<cobalt::trusted_shuffler::SignedRunContext> signed_run_context_;
   absl::flat_hash_set<MetricEpochKey> approved_partitions_;

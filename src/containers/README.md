@@ -118,7 +118,7 @@ The **`threshold_filter`** container filters incoming partitions against approve
 
 - **Purpose**: Drops unapproved partitions failing privacy thresholds, strips sensitive privacy IDs, and forwards encrypted customer messages to Scatter Shuffle.
 - **Configuration**: `IngestionVerificationPayload` (record 0) containing `IngestionVerificationResult` (with `SignedRunContext`, `ThresholdReport`, and `RunFingerprint`).
-- **Inputs**: `IngestionVerificationPayload` (record 0) and `EncryptedKV<MetricEpochKey, ShuffledMessage, 2>` from Partition Grouping (records 1..N).
+- **Inputs**: `IngestionVerificationPayload` (record 0) and encrypted `ShuffledMessage` records (with header key stripped by Partition Grouping, or optional `MetricEpochKey` header) for records 1..N.
 - **Outputs**: Emits `EncryptedKV<MetricEpochKey, ShuffledMessage, 0>` with `MetricEpochKey` in plaintext for routing and message payload encrypted under key 0 via `EmitEncrypted`.
 - **Documentation**: See [`src/containers/threshold_filter/README.md`](threshold_filter/README.md).
 

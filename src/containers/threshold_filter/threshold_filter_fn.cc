@@ -34,10 +34,18 @@ namespace cobalt::trusted_shuffler {
 using ::cobalt::trusted_shuffler::RunContext;
 using ::cobalt::trusted_shuffler::SignedRunContext;
 
+void ThresholdFilterFn::EmitIntegrityFault(Context& context) {
+  has_integrity_fault_ = true;
+  IntegrityFault fault;
+  google::protobuf::Any key;
+  key.PackFrom(fault);
+  context.EmitUnencrypted(KV(std::move(key), fault.SerializeAsString()));
+}
+
 absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& config,
                                          Context& context) {
-  if (config.has_integrity_fault()) {
-    has_integrity_fault_ = true;
+  if (has_integrity_fault_ || config.has_integrity_fault()) {
+    EmitIntegrityFault(context);
     return absl::FailedPreconditionError("Ingestion verification failed with integrity fault.");
   }
 
@@ -62,6 +70,10 @@ absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& con
   signed_run_context_ = result.signed_run_context();
   LOG(INFO) << "SignedRunContext received and validated in OnConfig.";
 
+  if (!result.has_threshold_report()) {
+    return absl::InvalidArgumentError("IngestionVerificationResult must contain threshold_report.");
+  }
+
   const ThresholdReport& report = result.threshold_report();
   if (report.run_id() != run_context_->run_id()) {
     return absl::FailedPreconditionError("ThresholdReport run_id mismatch.");
@@ -76,10 +88,14 @@ absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& con
 }
 
 absl::Status ThresholdFilterFn::OnRecord(KV record, Context& context) {
-  MetricEpochKey metric_epoch_key;
-  if (!record.key.UnpackTo(&metric_epoch_key)) {
-    return absl::InvalidArgumentError(
-        "ThresholdFilterFn::OnRecord: record.key cannot be unpacked as MetricEpochKey.");
+  if (has_integrity_fault_) {
+    EmitIntegrityFault(context);
+    return absl::FailedPreconditionError("ThresholdFilterFn::OnRecord: Integrity fault occurred.");
+  }
+
+  if (!run_context_.has_value()) {
+    return absl::FailedPreconditionError(
+        "ThresholdFilterFn::OnRecord: configuration not established.");
   }
 
   ShuffledMessage shuffled_message;
@@ -88,8 +104,27 @@ absl::Status ThresholdFilterFn::OnRecord(KV record, Context& context) {
         "ThresholdFilterFn::OnRecord: record.data cannot be parsed as ShuffledMessage.");
   }
 
-  if (approved_partitions_.contains(metric_epoch_key)) {
-    context.EmitEncrypted(kReencryptionKeyIndex, std::move(record));
+  if (!shuffled_message.has_metric_epoch_key()) {
+    return absl::InvalidArgumentError(
+        "ThresholdFilterFn::OnRecord: ShuffledMessage missing required MetricEpochKey.");
+  }
+
+  if (shuffled_message.run_id() != run_context_->run_id()) {
+    EmitIntegrityFault(context);
+    return absl::FailedPreconditionError(
+        "ThresholdFilterFn::OnRecord: ShuffledMessage run_id mismatch.");
+  }
+
+  if (shuffled_message.shuffle_count() != 0) {
+    EmitIntegrityFault(context);
+    return absl::FailedPreconditionError(
+        "ThresholdFilterFn::OnRecord: ShuffledMessage shuffle_count must be 0.");
+  }
+
+  if (approved_partitions_.contains(shuffled_message.metric_epoch_key())) {
+    google::protobuf::Any key;
+    key.PackFrom(shuffled_message.metric_epoch_key());
+    context.EmitEncrypted(kReencryptionKeyIndex, KV(std::move(key), std::move(record.data)));
   }
   // If not approved, message is discarded per specification.
   return absl::OkStatus();

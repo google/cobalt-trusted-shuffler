@@ -98,6 +98,24 @@ inline ShuffledMessage CreateShuffledMessage(absl::string_view payload) {
   return msg;
 }
 
+// Specification struct for building a ShuffledMessage in tests.
+struct ShuffledMessageSpec {
+  absl::string_view payload;
+  absl::string_view run_id;
+  MetricEpochKey metric_epoch_key;
+  int32_t shuffle_count;
+};
+
+// Builds a ShuffledMessage proto with the specified parameters.
+inline ShuffledMessage CreateShuffledMessage(const ShuffledMessageSpec& spec) {
+  ShuffledMessage msg;
+  msg.set_customer_message(std::string(spec.payload));
+  msg.set_run_id(std::string(spec.run_id));
+  *msg.mutable_metric_epoch_key() = spec.metric_epoch_key;
+  msg.set_shuffle_count(spec.shuffle_count);
+  return msg;
+}
+
 // Builds an IngestionVerificationPayload containing a ThresholdReport with approved partitions
 // and the signed run context.
 inline IngestionVerificationPayload CreateThresholdReportPayload(

@@ -94,7 +94,12 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithEmptyPayload) {
 
   // Subsequent record rejected under one-shot failure semantics.
   MetricEpochKey key = CreateMetricEpochKey({.project_id = 10, .metric_id = 1, .epoch_index = 150});
-  ShuffledMessage msg = CreateShuffledMessage("payload");
+  ShuffledMessage msg = CreateShuffledMessage({
+      .payload = "payload",
+      .run_id = kTestRunId,
+      .metric_epoch_key = key,
+      .shuffle_count = 0,
+  });
   EXPECT_THAT(fn.Do(CreateMessageKV(key, msg), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
@@ -108,7 +113,12 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithCorruptPayload) {
 
   // Subsequent record rejected under one-shot failure semantics.
   MetricEpochKey key = CreateMetricEpochKey({.project_id = 10, .metric_id = 1, .epoch_index = 150});
-  ShuffledMessage msg = CreateShuffledMessage("payload");
+  ShuffledMessage msg = CreateShuffledMessage({
+      .payload = "payload",
+      .run_id = kTestRunId,
+      .metric_epoch_key = key,
+      .shuffle_count = 0,
+  });
   EXPECT_THAT(fn.Do(CreateMessageKV(key, msg), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
@@ -121,6 +131,9 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithIntegrityFault) {
   EXPECT_THAT(fn.Do(CreateVerificationKV(fault_payload), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_TRUE(fn.HasIntegrityFault());
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  IntegrityFault fault;
+  EXPECT_TRUE(context.Unencrypted().at(0).key.UnpackTo(&fault));
 
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
@@ -143,6 +156,22 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithMissingSignedRunContext) {
   IngestionVerificationPayload payload;
   auto* success = payload.mutable_success();
   success->mutable_threshold_report()->set_run_id(std::string(kTestRunId));
+
+  EXPECT_THAT(fn.Do(CreateVerificationKV(payload), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_FALSE(fn.HasConfig());
+}
+
+TEST(ThresholdFilterFnTest, ConfigFailsWithMissingThresholdReport) {
+  FakeContext context;
+  ThresholdFilterFn fn;
+
+  RunContext run_context = CreateValidRunContext({{10, 1}}, 100, 200, 50);
+  SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
+
+  IngestionVerificationPayload payload;
+  auto* success = payload.mutable_success();
+  *success->mutable_signed_run_context() = signed_context;
 
   EXPECT_THAT(fn.Do(CreateVerificationKV(payload), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
@@ -218,13 +247,23 @@ TEST(ThresholdFilterFnTest, FiltersMessagesForApprovedPartitions) {
   // Record 1: Send message for approved partition.
   MetricEpochKey approved_key =
       CreateMetricEpochKey({.project_id = 10, .metric_id = 1, .epoch_index = 150});
-  ShuffledMessage msg1 = CreateShuffledMessage("payload_approved");
+  ShuffledMessage msg1 = CreateShuffledMessage({
+      .payload = "payload_approved",
+      .run_id = kTestRunId,
+      .metric_epoch_key = approved_key,
+      .shuffle_count = 0,
+  });
   ASSERT_THAT(fn.Do(CreateMessageKV(approved_key, msg1), context), IsOk());
 
   // Record 2: Send message for unapproved partition.
   MetricEpochKey unapproved_key =
       CreateMetricEpochKey({.project_id = 10, .metric_id = 2, .epoch_index = 150});
-  ShuffledMessage msg2 = CreateShuffledMessage("payload_unapproved");
+  ShuffledMessage msg2 = CreateShuffledMessage({
+      .payload = "payload_unapproved",
+      .run_id = kTestRunId,
+      .metric_epoch_key = unapproved_key,
+      .shuffle_count = 0,
+  });
   ASSERT_THAT(fn.Do(CreateMessageKV(unapproved_key, msg2), context), IsOk());
 
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
@@ -241,6 +280,177 @@ TEST(ThresholdFilterFnTest, FiltersMessagesForApprovedPartitions) {
   ShuffledMessage emitted_msg;
   ASSERT_TRUE(emitted_msg.ParseFromString(context.Encrypted().at(0).second.data));
   EXPECT_EQ(emitted_msg.customer_message(), "payload_approved");
+  EXPECT_EQ(emitted_msg.run_id(), kTestRunId);
+  EXPECT_EQ(emitted_msg.shuffle_count(), 0);
+  EXPECT_THAT(emitted_msg.metric_epoch_key(), EquivToProto(approved_key));
+}
+
+TEST(ThresholdFilterFnTest, ForwardsApprovedPartitionWithStrippedHeaderKey) {
+  FakeContext context;
+  ThresholdFilterFn fn;
+
+  RunContext run_context = CreateValidRunContext({{10, 1}}, 100, 200, 50);
+  SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
+
+  auto report_payload = CreateThresholdReportPayload(
+      kTestRunId, {{.project_id = 10, .metric_id = 1, .epoch_index = 150}}, signed_context);
+  ASSERT_THAT(fn.Do(CreateVerificationKV(report_payload), context), IsOk());
+
+  MetricEpochKey approved_key =
+      CreateMetricEpochKey({.project_id = 10, .metric_id = 1, .epoch_index = 150});
+  ShuffledMessage msg = CreateShuffledMessage({
+      .payload = "payload_stripped_header",
+      .run_id = kTestRunId,
+      .metric_epoch_key = approved_key,
+      .shuffle_count = 0,
+  });
+
+  // Upstream Stage 4 (GroupByMetricEpochKey) strips the header key, passing KV with empty key.
+  KV stripped_record(msg.SerializeAsString());
+  ASSERT_THAT(fn.Do(std::move(stripped_record), context), IsOk());
+
+  ASSERT_THAT(context.Encrypted(), SizeIs(1));
+  MetricEpochKey emitted_key;
+  ASSERT_TRUE(context.Encrypted().at(0).second.key.UnpackTo(&emitted_key));
+  EXPECT_THAT(emitted_key, EquivToProto(approved_key));
+}
+
+TEST(ThresholdFilterFnTest, OnRecordRejectsMissingMetricEpochKey) {
+  FakeContext context;
+  ThresholdFilterFn fn;
+
+  RunContext run_context = CreateValidRunContext({{10, 1}}, 100, 200, 50);
+  SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
+  auto report_payload = CreateThresholdReportPayload(
+      kTestRunId, {{.project_id = 10, .metric_id = 1, .epoch_index = 150}}, signed_context);
+  ASSERT_THAT(fn.Do(CreateVerificationKV(report_payload), context), IsOk());
+
+  ShuffledMessage msg;
+  msg.set_customer_message("missing_key");
+  msg.set_run_id(std::string(kTestRunId));
+  msg.set_shuffle_count(0);
+
+  EXPECT_THAT(fn.Do(KV(msg.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(ThresholdFilterFnTest, OnRecordRejectsRunIdMismatch) {
+  FakeContext context;
+  ThresholdFilterFn fn;
+
+  RunContext run_context = CreateValidRunContext({{10, 1}}, 100, 200, 50);
+  SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
+  auto report_payload = CreateThresholdReportPayload(
+      kTestRunId, {{.project_id = 10, .metric_id = 1, .epoch_index = 150}}, signed_context);
+  ASSERT_THAT(fn.Do(CreateVerificationKV(report_payload), context), IsOk());
+
+  MetricEpochKey approved_key =
+      CreateMetricEpochKey({.project_id = 10, .metric_id = 1, .epoch_index = 150});
+  ShuffledMessage msg = CreateShuffledMessage({
+      .payload = "wrong_run_id",
+      .run_id = "different_run_id_0123456789abcdef",
+      .metric_epoch_key = approved_key,
+      .shuffle_count = 0,
+  });
+
+  EXPECT_THAT(fn.Do(KV(msg.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_TRUE(fn.HasIntegrityFault());
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  IntegrityFault fault;
+  EXPECT_TRUE(context.Unencrypted().at(0).key.UnpackTo(&fault));
+  EXPECT_TRUE(fault.ParseFromString(context.Unencrypted().at(0).data));
+}
+
+TEST(ThresholdFilterFnTest, OnRecordRejectsNonZeroShuffleCount) {
+  FakeContext context;
+  ThresholdFilterFn fn;
+
+  RunContext run_context = CreateValidRunContext({{10, 1}}, 100, 200, 50);
+  SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
+  auto report_payload = CreateThresholdReportPayload(
+      kTestRunId, {{.project_id = 10, .metric_id = 1, .epoch_index = 150}}, signed_context);
+  ASSERT_THAT(fn.Do(CreateVerificationKV(report_payload), context), IsOk());
+
+  MetricEpochKey approved_key =
+      CreateMetricEpochKey({.project_id = 10, .metric_id = 1, .epoch_index = 150});
+  ShuffledMessage msg = CreateShuffledMessage({
+      .payload = "already_shuffled",
+      .run_id = kTestRunId,
+      .metric_epoch_key = approved_key,
+      .shuffle_count = 1,
+  });
+
+  EXPECT_THAT(fn.Do(KV(msg.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_TRUE(fn.HasIntegrityFault());
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  IntegrityFault fault;
+  EXPECT_TRUE(context.Unencrypted().at(0).key.UnpackTo(&fault));
+  EXPECT_TRUE(fault.ParseFromString(context.Unencrypted().at(0).data));
+}
+
+TEST(ThresholdFilterFnTest, OnRecordRejectsWhenAlreadyFaulted) {
+  FakeContext context;
+  ThresholdFilterFn fn;
+
+  RunContext run_context = CreateValidRunContext({{10, 1}}, 100, 200, 50);
+  SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
+  auto report_payload = CreateThresholdReportPayload(
+      kTestRunId, {{.project_id = 10, .metric_id = 1, .epoch_index = 150}}, signed_context);
+  ASSERT_THAT(fn.Do(CreateVerificationKV(report_payload), context), IsOk());
+
+  MetricEpochKey approved_key =
+      CreateMetricEpochKey({.project_id = 10, .metric_id = 1, .epoch_index = 150});
+  ShuffledMessage bad_msg = CreateShuffledMessage({
+      .payload = "wrong_run_id",
+      .run_id = "different_run_id_0123456789abcdef",
+      .metric_epoch_key = approved_key,
+      .shuffle_count = 0,
+  });
+
+  // Record 1 triggers the integrity fault.
+  EXPECT_THAT(fn.Do(KV(bad_msg.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_TRUE(fn.HasIntegrityFault());
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+
+  // Record 2 is rejected because has_integrity_fault_ is true, and emits another fault.
+  ShuffledMessage valid_msg = CreateShuffledMessage({
+      .payload = "valid_payload",
+      .run_id = kTestRunId,
+      .metric_epoch_key = approved_key,
+      .shuffle_count = 0,
+  });
+  EXPECT_THAT(fn.Do(KV(valid_msg.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(context.Unencrypted(), SizeIs(2));
+}
+
+class TestThresholdFilterFn : public ThresholdFilterFn {
+ public:
+  using ThresholdFilterFn::OnConfig;
+};
+
+TEST(ThresholdFilterFnTest, OnConfigRejectsWhenAlreadyFaulted) {
+  FakeContext context;
+  TestThresholdFilterFn fn;
+
+  // Trigger an integrity fault on the first config.
+  auto fault_payload = CreateIntegrityFaultPayload();
+  EXPECT_THAT(fn.OnConfig(fault_payload, context), StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_TRUE(fn.HasIntegrityFault());
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
+
+  // Verify that subsequent OnConfig call rejects because has_integrity_fault_ is true.
+  RunContext run_context = CreateValidRunContext({{10, 1}}, 100, 200, 50);
+  SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
+  auto report_payload = CreateThresholdReportPayload(
+      kTestRunId, {{.project_id = 10, .metric_id = 1, .epoch_index = 150}}, signed_context);
+
+  EXPECT_THAT(fn.OnConfig(report_payload, context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(context.Unencrypted(), SizeIs(2));
 }
 
 TEST(ThresholdFilterFnTest, FinalizeFailsWithoutConfig) {
