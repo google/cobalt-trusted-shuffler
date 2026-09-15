@@ -23,7 +23,7 @@ The `threshold_filter` container filters partitions and strips privacy identifie
 ## 1. Overview & Pipeline Role
 
 In the Trusted Shuffler architecture:
-1. **`ingestion_verification`**: Calculates device cardinality sketches and evaluates privacy thresholds, producing an `IngestionVerificationPayload` containing an `IngestionVerificationResult` with a `ThresholdReport` of approved `MetricEpochKey` partitions, a canonical `RunFingerprint`, and the `SignedRunContext`.
+1. **`ingestion_verification`**: Calculates device cardinality sketches and evaluates privacy thresholds, producing an `IngestionVerificationPayload` containing an `IngestionVerificationResult` with a `ThresholdReport` of approved `MetricEpochKey` partitions and the `SignedRunContext`.
 2. **`GroupByPartitionKey` (Partition Grouping)**: Groups partially-encrypted `ShuffledMessage` streams by unencrypted `MetricEpochKey`.
 3. **`threshold_filter`**: Consumes the single configuration payload `IngestionVerificationPayload` on record 0. It extracts and verifies `SignedRunContext` from `IngestionVerificationResult`, validates the run ID against `ThresholdReport.run_id`, checks each incoming message's partition key against the approved partitions list, drops any partitions below threshold, and re-encrypts approved messages under re-encryption key index 0 (`kReencryptionKeyIndex`) for downstream shuffling stages. *(Note: sensitive `privacy_id` tokens were already discarded during client upload ingestion and are omitted from `ShuffledMessage`)*.
 
@@ -34,7 +34,7 @@ In the Trusted Shuffler architecture:
 The container uses `FirstRecordConfigDoFn<IngestionVerificationPayload>`:
 - **`IngestionVerificationPayload`** ([`src/proto/ingestion.proto`](../../proto/ingestion.proto)):
   - Ingested on record 0 as the single configuration record via `FirstRecordConfigDoFn::OnConfig`:
-    - Contains `IngestionVerificationResult` which holds `SignedRunContext`, `ThresholdReport`, and canonical `RunFingerprint`.
+    - Contains `IngestionVerificationResult` which holds `SignedRunContext` and `ThresholdReport`.
     - Extracts `SignedRunContext` and verifies cryptographic signature and runtime parameters (`run_id`, `run_hash_key`, `metric_identifiers`, epoch range, batch size) via `VerifySignedRunContext`.
     - Verifies that `ThresholdReport.run_id == RunContext.run_id`.
     - Caches the set of `approved_partitions`.
@@ -49,20 +49,26 @@ The container uses `FirstRecordConfigDoFn<IngestionVerificationPayload>`:
    - Ingests and verifies the execution configuration proto and approved partition report.
    - If `integrity_fault` is present, or if `run_id` mismatches, or if `signed_run_context` fails verification, returns an error and halts processing under one-shot failure semantics.
 
-2. **Records 1..N: Grouped Messages Stream (from Partition Grouping `GroupByPartitionKey`)**:
-   - **Key**: `MetricEpochKey` identifying project ID, metric ID, and epoch index.
-   - **Data**: `ShuffledMessage` (decrypted by Oak runtime via key 2).
-   - **Behavior**: Processed in `OnRecord`. If the partition is in `ThresholdReport.approved_partitions`, it is re-encrypted and emitted under key index 0 (`kReencryptionKeyIndex`). If the partition is not approved, the message is discarded.
+2. **Records 1..N: Grouped Messages Stream (from Partition Grouping `GroupByMetricEpochKey`)**:
+   - **Key**: Stripped/empty (or optional `MetricEpochKey` header).
+   - **Data**: Serialized `ShuffledMessage` (decrypted by Oak runtime via key 2).
+   - **Validation**:
+     - `ShuffledMessage.run_id == RunContext.run_id`.
+     - `ShuffledMessage.shuffle_count == 0`.
+     - If header key is provided, verifies `header_key == ShuffledMessage.metric_epoch_key`.
+   - **Behavior**: If the partition `ShuffledMessage.metric_epoch_key` is in `ThresholdReport.approved_partitions`, it is re-encrypted under key index 0 (`kReencryptionKeyIndex`) and emitted with `MetricEpochKey` as the clear key. If the partition is not approved, the message is discarded.
 
 ---
 
-### Outputs
+## 4. Outputs
 
-- **Emission Primitive**: `context.EmitEncrypted(kReencryptionKeyIndex, kv)` using destination key index `0` (`kReencryptionKeyIndex`).
-- **Key**: `MetricEpochKey` identifying the partition (plaintext to untrusted orchestrator for routing).
-- **Data**: Serialized `ShuffledMessage` encrypted under key 0 (opaque to untrusted orchestrator; readable only by downstream shuffling stages).
+- **Emission Primitive**:
+  - `context.EmitEncrypted(kReencryptionKeyIndex, kv)` using destination key index `0` (`kReencryptionKeyIndex`) for approved messages.
+  - `context.EmitUnencrypted(kv)` for `IntegrityFault` records upon invariant violations.
+- **Key**: `MetricEpochKey` identifying the partition (plaintext to untrusted orchestrator for routing), or `IntegrityFault` for integrity faults.
+- **Data**: Serialized `ShuffledMessage` encrypted under key 0 (opaque to untrusted orchestrator; readable only by downstream shuffling stages), or serialized `IntegrityFault` in plaintext.
 - **Partitions below threshold**: Dropped completely. No output records or metadata are emitted.
-- **Privacy Boundary Rule**: `EmitUnencrypted` is **never** invoked for message payloads.
+- **Privacy Boundary Rule**: `EmitUnencrypted` is **never** invoked for message payloads; only non-sensitive `IntegrityFault` control records are permitted via `EmitUnencrypted` upon integrity violations.
 
 ---
 
