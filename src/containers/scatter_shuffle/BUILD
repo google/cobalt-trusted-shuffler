@@ -40,6 +40,7 @@ cc_library(
     hdrs = ["scatter_shuffle_fn.h"],
     deps = [
         "//src/batching:batch_calculator",
+        "//src/containers/base:counter_names",
         "//src/containers/base:first_record_config_do_fn",
         "//src/crypto:shuffle",
         "//src/crypto:verify_ingestion_verification_payload",
@@ -77,6 +78,7 @@ cc_test(
     srcs = ["scatter_shuffle_fn_test.cc"],
     deps = [
         ":scatter_shuffle_fn",
+        "//src/containers/base:counter_names",
         "//src/crypto:release_encrypter",
         "//src/proto:common_cc_proto",
         "//src/proto:fingerprint_cc_proto",

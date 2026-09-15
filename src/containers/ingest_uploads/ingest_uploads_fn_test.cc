@@ -28,6 +28,7 @@
 #include "fcp/protos/confidentialcompute/blob_data.pb.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/fingerprint.pb.h"
@@ -85,6 +86,7 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
   EXPECT_TRUE(fn.HasConfig());
   ASSERT_TRUE(fn.Config().has_value());
   EXPECT_THAT(fn.GetRunContext().run_id(), Eq(kTestRunId));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
 
   // Record 1: Valid message upload checkpoint
   TrustedShufflerUpload upload;
@@ -95,6 +97,8 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
   std::string checkpoint_data =
       CreateTestFcCheckpoint({upload}, {"1970-01-01T00:00:00Z"}, std::string(kTestPrivacyId));
   ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), do_context), IsOk());
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
 
   // Verify message emitted encrypted with key index 0 (reencryption_key 2)
   auto encrypted_messages = context.Encrypted();
@@ -107,15 +111,15 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
   EXPECT_TRUE(header.has_metric_epoch_key());
   EXPECT_THAT(header.metric_epoch_key().project_id(), Eq(1));
   EXPECT_THAT(header.metric_epoch_key().metric_id(), Eq(100));
+  EXPECT_THAT(header.metric_epoch_key().epoch_index(), Eq(0));
 
   ShuffledMessage shuffled_msg;
   ASSERT_TRUE(shuffled_msg.ParseFromString(emitted.second.data));
-  EXPECT_THAT(shuffled_msg.metric_epoch_key().project_id(), Eq(1));
-  EXPECT_THAT(shuffled_msg.metric_epoch_key().metric_id(), Eq(100));
   EXPECT_THAT(shuffled_msg.customer_message(), Eq("sample_payload_data"));
 
   // Finalize replica
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context), IsOk());
+  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(2));
 
   // Verify partial report emitted encrypted with key index 1 (reencryption_key 3)
   auto all_encrypted = context.Encrypted();
@@ -171,6 +175,8 @@ TEST(IngestUploadsFnTest, ProcessesEncodedClientPayloadInput) {
   ShuffledMessage shuffled_msg;
   ASSERT_TRUE(shuffled_msg.ParseFromString(encrypted_messages[0].second.data));
   EXPECT_THAT(shuffled_msg.customer_message(), Eq("encoded_client_payload_data"));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
 }
 
 TEST(IngestUploadsFnTest, DropsUnallowedMetrics) {
@@ -205,6 +211,9 @@ TEST(IngestUploadsFnTest, DropsUnallowedMetrics) {
   PartialIngestionReport report;
   ASSERT_TRUE(report.ParseFromString(all_encrypted[0].second.data));
   EXPECT_THAT(report.metric_epoch_sketches(), SizeIs(0));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
 }
 
 TEST(IngestUploadsFnTest, DropsInvalidCheckpointAndEmitsError) {
@@ -230,6 +239,9 @@ TEST(IngestUploadsFnTest, DropsInvalidCheckpointAndEmitsError) {
 
   // Checkpoint is dropped.
   EXPECT_THAT(context.Encrypted(), SizeIs(0));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
 }
 
 TEST(IngestUploadsFnTest, FailsOnMissingRunConfig) {
@@ -247,6 +259,7 @@ TEST(IngestUploadsFnTest, FailsOnMissingRunConfig) {
 
   EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
 TEST(IngestUploadsFnTest, FailsOnEmptyMetricIdentifiers) {
@@ -268,6 +281,7 @@ TEST(IngestUploadsFnTest, FailsOnEmptyMetricIdentifiers) {
 
   EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
 TEST(IngestUploadsFnTest, FailsOnEmptySignature) {
@@ -282,6 +296,7 @@ TEST(IngestUploadsFnTest, FailsOnEmptySignature) {
 
   EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
 TEST(IngestUploadsFnTest, AllowsOnlyEpochZeroWhenMinAndMaxEpochAreZero) {
@@ -310,6 +325,7 @@ TEST(IngestUploadsFnTest, AllowsOnlyEpochZeroWhenMinAndMaxEpochAreZero) {
       CreateTestFcCheckpoint({upload}, {"1970-01-02T00:00:00Z"}, std::string(kTestPrivacyId));
   ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_epoch_1), do_context), IsOk());
   EXPECT_THAT(context.Encrypted(), SizeIs(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
 }
 
 TEST(IngestUploadsFnTest, FailsOnEmptyFirstRecordAndRejectsSubsequentRecords) {
@@ -405,6 +421,8 @@ TEST(IngestUploadsFnTest, DropsCheckpointMissingPrivacyId) {
   ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), do_context), IsOk());
 
   EXPECT_THAT(context.Encrypted(), SizeIs(0));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
 }
 
 TEST(IngestUploadsFnTest, FailsOnCorruptedConfigProtoAndRejectsSubsequentRecords) {

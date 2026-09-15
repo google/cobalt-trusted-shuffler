@@ -75,8 +75,6 @@ class IngestUploadsFn
   absl::flat_hash_set<std::pair<int32_t, int32_t>> allowed_metric_identifiers_;
   std::optional<MultisetFingerprint> multiset_fingerprint_;
   std::map<MetricEpochTuple, HllSketch> sketches_;
-  uint64_t messages_received_ = 0;
-  uint64_t messages_dropped_ = 0;
 };
 
 }  // namespace cobalt::trusted_shuffler

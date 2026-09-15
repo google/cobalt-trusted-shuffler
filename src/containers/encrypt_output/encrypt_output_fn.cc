@@ -27,6 +27,7 @@
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
+#include "src/containers/base/counter_names.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/fingerprint.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -37,6 +38,7 @@ namespace cobalt::trusted_shuffler {
 
 absl::Status EncryptOutputFn::OnConfig(
     const IngestionVerificationPayload& ingestion_verification_payload, DoContext& context) {
+  context.IncrementCounter(kInputConfigCount);
   absl::StatusOr<VerifiedIngestionVerificationResult> verified_payload =
       VerifyIngestionVerificationPayload(ingestion_verification_payload);
   if (!verified_payload.ok()) {
@@ -58,6 +60,7 @@ absl::Status EncryptOutputFn::OnConfig(
 }
 
 absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, DoContext& context) {
+  context.IncrementCounter(kInputRecordCount);
   if (has_integrity_fault_) {
     return SignalIntegrityFault(context);
   }
@@ -103,6 +106,7 @@ absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, DoContext
   google::protobuf::Any key;
   key.PackFrom(header);
 
+  context.IncrementCounter(kUnencryptedOutputRecordCount);
   context.EmitUnencrypted(KV(std::move(key), output.SerializeAsString()));
   return absl::OkStatus();
 }
@@ -125,6 +129,7 @@ absl::Status EncryptOutputFn::EmitIntegrityFault(absl::string_view message, FnCo
   key.PackFrom(header);
 
   IntegrityFault fault;
+  context.IncrementCounter(kUnencryptedOutputRecordCount);
   context.EmitUnencrypted(KV(std::move(key), fault.SerializeAsString()));
 
   return absl::FailedPreconditionError(message);
@@ -158,6 +163,7 @@ absl::Status EncryptOutputFn::FinalizeReplica(google::protobuf::Any config, FnCo
   google::protobuf::Any key;
   key.PackFrom(header);
 
+  context.IncrementCounter(kEncryptedOutputRecordCount);
   context.EmitEncrypted(kReencryptionKeyIndex,
                         KV(std::move(key), partial_report.SerializeAsString()));
   return absl::OkStatus();

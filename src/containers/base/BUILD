@@ -17,6 +17,14 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "counter_names",
+    hdrs = ["counter_names.h"],
+    deps = [
+        "@abseil-cpp//absl/strings",
+    ],
+)
+
+cc_library(
     name = "first_record_config_do_fn",
     hdrs = ["first_record_config_do_fn.h"],
     deps = [

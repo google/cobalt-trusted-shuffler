@@ -38,6 +38,7 @@ cc_library(
     srcs = ["threshold_filter_fn.cc"],
     hdrs = ["threshold_filter_fn.h"],
     deps = [
+        "//src/containers/base:counter_names",
         "//src/containers/base:first_record_config_do_fn",
         "//src/crypto:verify_ingestion_verification_payload",
         "//src/proto:common_cc_proto",
@@ -72,6 +73,7 @@ cc_test(
     srcs = ["threshold_filter_fn_test.cc"],
     deps = [
         ":threshold_filter_fn",
+        "//src/containers/base:counter_names",
         "//src/proto:common_cc_proto",
         "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",

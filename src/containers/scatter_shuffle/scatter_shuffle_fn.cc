@@ -25,6 +25,7 @@
 #include "absl/strings/string_view.h"
 #include "google/protobuf/any.pb.h"
 #include "src/batching/batch_calculator.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/shuffle.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
@@ -37,9 +38,11 @@ namespace cobalt::trusted_shuffler {
 
 absl::Status ScatterShuffleFn::OnConfig(
     const IngestionVerificationPayload& ingestion_verification_payload, DoContext& context) {
+  context.IncrementCounter(kInputConfigCount);
   absl::StatusOr<VerifiedIngestionVerificationResult> verified_result =
       VerifyIngestionVerificationPayload(ingestion_verification_payload);
   if (!verified_result.ok()) {
+    context.IncrementCounter(kInputConfigInvalid);
     fault_reason_ = verified_result.status().message();
     return SignalIntegrityFault(context);
   }
@@ -49,6 +52,7 @@ absl::Status ScatterShuffleFn::OnConfig(
 }
 
 absl::Status ScatterShuffleFn::OnRecord(const ShuffledMessage& message, DoContext& context) {
+  context.IncrementCounter(kInputRecordCount);
   if (fault_reason_.has_value()) {
     return SignalIntegrityFault(context);
   }
@@ -119,6 +123,7 @@ absl::Status ScatterShuffleFn::SignalIntegrityFault(FnContext& context) {
     key.PackFrom(header);
 
     IntegrityFault fault;
+    context.IncrementCounter(kUnencryptedOutputRecordCount);
     context.EmitUnencrypted(KV(std::move(key), fault.SerializeAsString()));
   }
 
@@ -170,6 +175,7 @@ absl::Status ScatterShuffleFn::FinalizeReplica(google::protobuf::Any config, FnC
 
     // Note: kReencryptionKeyIndex (0) is the container's local output node index
     // for the downstream gather shuffle stage.
+    context.IncrementCounter(kEncryptedOutputRecordCount);
     context.EmitEncrypted(kReencryptionKeyIndex, KV(std::move(key), message.SerializeAsString()));
   }
 

@@ -38,6 +38,7 @@ cc_library(
     srcs = ["releaser_fn.cc"],
     hdrs = ["releaser_fn.h"],
     deps = [
+        "//src/containers/base:counter_names",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",
         "@confidential-federated-compute//containers/fns:fns",
@@ -60,6 +61,7 @@ cc_test(
     srcs = ["releaser_fn_test.cc"],
     deps = [
         ":releaser_fn",
+        "//src/containers/base:counter_names",
         "//src/testing:fake_context",
         "@abseil-cpp//absl/status:status",
         "@abseil-cpp//absl/status:status_matchers",

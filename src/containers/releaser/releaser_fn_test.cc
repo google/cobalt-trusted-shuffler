@@ -14,11 +14,13 @@
 
 #include "src/containers/releaser/releaser_fn.h"
 
+#include <string>
 #include <vector>
 
 #include "absl/status/status_matchers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/counter_names.h"
 #include "src/testing/fake_context.h"
 
 namespace cobalt::trusted_shuffler {
@@ -52,6 +54,8 @@ TEST(ReleaserFnTest, DoEmitsUnencrypted) {
   ASSERT_THAT(unencrypted_list, SizeIs(1));
 
   EXPECT_THAT(unencrypted_list[0].data, Eq(message));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kUnencryptedOutputRecordCount)), Eq(1));
 }
 
 TEST(ReleaserFnTest, CommitReturnsOk) {

@@ -28,6 +28,7 @@
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/fingerprint.pb.h"
@@ -232,6 +233,10 @@ TEST(ScatterShuffleFnTest, SuccessfulScatterShuffleAndGroupAssignment) {
   // Balanced modulo group distribution.
   EXPECT_EQ(group_counts[0], 3);
   EXPECT_EQ(group_counts[1], 3);
+
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(6));
+  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(6));
 }
 
 TEST(ScatterShuffleFnTest, BatchParametersEstablishedOnFirstDataRecord) {
@@ -276,6 +281,7 @@ TEST(ScatterShuffleFnTest, RejectsRecordWithUnapprovedPartition) {
                        "IntegrityFault: Failed to compute batch parameters for partition."));
 
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kUnencryptedOutputRecordCount)), Eq(1));
   ScatterShuffleHeader header;
   ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
   EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
@@ -563,6 +569,7 @@ TEST(ScatterShuffleFnTest, RejectsIntegrityFaultInPayload) {
                        "Ingestion verification failed with integrity fault."));
 
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
   ScatterShuffleHeader header;
   ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
   EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
@@ -577,6 +584,7 @@ TEST(ScatterShuffleFnTest, RejectsEmptyRunIdInRunContext) {
   EXPECT_THAT(
       fn.Do(CreateConfigRecord(verification_payload), context),
       StatusIs(absl::StatusCode::kFailedPrecondition, "Failed to verify SignedRunContext."));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
 TEST(ScatterShuffleFnTest, RejectsMissingSignedRunContext) {
@@ -588,6 +596,7 @@ TEST(ScatterShuffleFnTest, RejectsMissingSignedRunContext) {
   EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
               StatusIs(absl::StatusCode::kFailedPrecondition,
                        "IngestionVerificationResult missing signed_run_context."));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
 TEST(ScatterShuffleFnTest, RejectsMissingThresholdReport) {
@@ -599,6 +608,7 @@ TEST(ScatterShuffleFnTest, RejectsMissingThresholdReport) {
   EXPECT_THAT(fn.Do(CreateConfigRecord(verification_payload), context),
               StatusIs(absl::StatusCode::kFailedPrecondition,
                        "IngestionVerificationResult missing threshold_report."));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
 TEST(ScatterShuffleFnTest, RejectsMismatchedThresholdReportRunId) {

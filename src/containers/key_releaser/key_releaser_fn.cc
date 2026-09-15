@@ -22,6 +22,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "google/protobuf/any.pb.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
@@ -77,16 +78,20 @@ absl::Status ValidatePartialReleaseFingerprint(
 
 absl::Status KeyReleaserFn::OnConfig(const IngestionVerificationPayload& config,
                                      DoContext& context) {
+  context.IncrementCounter(kInputConfigCount);
   if (is_finalized_) {
+    context.IncrementCounter(kInputConfigInvalid);
     return absl::FailedPreconditionError("Replica is already finalized.");
   }
   absl::StatusOr<VerifiedIngestionVerificationResult> verified =
       VerifyIngestionVerificationPayload(config);
   if (!verified.ok()) {
+    context.IncrementCounter(kInputConfigInvalid);
     return EmitIntegrityFault(verified.status().message(), context);
   }
 
   if (verified->run_context.release_key().empty()) {
+    context.IncrementCounter(kInputConfigInvalid);
     return EmitIntegrityFault("RunContext missing release_key.", context);
   }
 
@@ -95,6 +100,7 @@ absl::Status KeyReleaserFn::OnConfig(const IngestionVerificationPayload& config,
     seen_fingerprint_partitions.insert(entry.metric_epoch_key());
   }
   if (seen_fingerprint_partitions != verified->approved_partitions) {
+    context.IncrementCounter(kInputConfigInvalid);
     return EmitIntegrityFault("canonical_fingerprint partitions do not match approved_partitions.",
                               context);
   }
@@ -108,6 +114,7 @@ absl::Status KeyReleaserFn::OnConfig(const IngestionVerificationPayload& config,
 }
 
 absl::Status KeyReleaserFn::OnRecord(const PartialReleaseReport& report, DoContext& context) {
+  context.IncrementCounter(kInputRecordCount);
   if (is_finalized_) {
     return absl::FailedPreconditionError("Replica is already finalized.");
   }
@@ -142,9 +149,9 @@ absl::Status KeyReleaserFn::EmitIntegrityFault(absl::string_view reason, FnConte
     DecryptionKeyRelease release_msg;
     release_msg.mutable_integrity_fault();
 
+    context.IncrementCounter(kUnencryptedOutputRecordCount);
     context.EmitUnencrypted(KV(std::move(header_any), release_msg.SerializeAsString()));
   }
-  // TODO(b/557303917): Add a counter once CFC metrics are available.
   return absl::FailedPreconditionError(reason);
 }
 
@@ -174,6 +181,7 @@ absl::Status KeyReleaserFn::FinalizeReplica(google::protobuf::Any config, FnCont
   DecryptionKeyRelease release_msg;
   release_msg.mutable_released_key_report()->set_release_key(run_context_->release_key());
 
+  context.IncrementCounter(kUnencryptedOutputRecordCount);
   context.EmitUnencrypted(KV(std::move(header_any), release_msg.SerializeAsString()));
   return absl::OkStatus();
 }
