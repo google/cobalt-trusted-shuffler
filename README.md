@@ -66,3 +66,6 @@ where you can't wait ~15 minutes for the presubmit bot to trigger
 and run, if the presubmit service itself is broken, or if you need
 to temporarily break the build on purpose.
 
+## Security
+
+Eligibility for the [Google Open Source Software Vulnerability Rewards Program](https://bughunters.google.com/open-source-security) is determined by the [Google Open Source Software Vulnerability Reward Program Rules](https://bughunters.google.com/about/rules/open-source/google-open-source-software-vulnerability-reward-program-rules).
