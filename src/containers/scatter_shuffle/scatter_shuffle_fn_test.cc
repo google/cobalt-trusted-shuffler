@@ -321,25 +321,6 @@ TEST(ScatterShuffleFnTest, RejectsRecordWithZeroMessageCountInFingerprint) {
   EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
 }
 
-TEST(ScatterShuffleFnTest, RejectsRecordWithNonMetricEpochKeyHeader) {
-  testing::FakeContext context;
-  ScatterShuffleFn fn;
-
-  const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
-
-  const ShuffledMessage message = CreateMessage({.payload = "m1"});
-  // Provide empty Any as key rather than MetricEpochKey.
-  ScatterShuffleFn::KV kv(google::protobuf::Any(), message.SerializeAsString());
-  EXPECT_THAT(fn.Do(std::move(kv), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition,
-                       "IntegrityFault: Record key is not of expected type MetricEpochKey."));
-
-  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
-  ScatterShuffleHeader header;
-  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
-  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
-}
 
 TEST(ScatterShuffleFnTest, RejectsEmptyBatchWithIntegrityFault) {
   testing::FakeContext context;
@@ -507,38 +488,6 @@ TEST(ScatterShuffleFnTest, RejectsMessageWithMismatchedMetricEpochKeyInBatch) {
   EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
 }
 
-TEST(ScatterShuffleFnTest, RejectsHeaderKeyMismatchedFromPayloadMetricEpochKey) {
-  testing::FakeContext context;
-  ScatterShuffleFn fn;
-
-  const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({});
-  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
-
-  // Payload key has mismatched epoch_index (999) while header key matches the approved partition.
-  const ShuffledMessage message = CreateMessage({
-      .payload = "m1",
-      .project_id = kDefaultProjectId,
-      .metric_id = kDefaultMetricId,
-      .epoch_index = 999,
-  });
-  MetricEpochKey approved_header_key;
-  approved_header_key.set_project_id(kDefaultProjectId);
-  approved_header_key.set_metric_id(kDefaultMetricId);
-  approved_header_key.set_epoch_index(kDefaultEpochIndex);
-  google::protobuf::Any header_any;
-  header_any.PackFrom(approved_header_key);
-
-  ScatterShuffleFn::KV kv(std::move(header_any), message.SerializeAsString());
-  EXPECT_THAT(
-      fn.Do(std::move(kv), context),
-      StatusIs(absl::StatusCode::kFailedPrecondition,
-               "IntegrityFault: Header MetricEpochKey does not match payload MetricEpochKey."));
-
-  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
-  ScatterShuffleHeader header;
-  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
-  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
-}
 
 TEST(ScatterShuffleFnTest, RejectsCorruptedShuffledMessagePayload) {
   testing::FakeContext context;
@@ -555,14 +504,7 @@ TEST(ScatterShuffleFnTest, RejectsCorruptedShuffledMessagePayload) {
   header_any.PackFrom(header_key);
 
   ScatterShuffleFn::KV kv(std::move(header_any), "corrupted_payload_bytes");
-  EXPECT_THAT(fn.Do(std::move(kv), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition,
-                       "IntegrityFault: Failed to parse input data as ShuffledMessage proto."));
-
-  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
-  ScatterShuffleHeader header;
-  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
-  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+  EXPECT_THAT(fn.Do(std::move(kv), context), StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(ScatterShuffleFnTest, RejectsMessageMissingMetricEpochKey) {

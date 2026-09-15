@@ -48,7 +48,7 @@ absl::Status ScatterShuffleFn::OnConfig(
   return absl::OkStatus();
 }
 
-absl::Status ScatterShuffleFn::OnRecord(KV record, Context& context) {
+absl::Status ScatterShuffleFn::OnRecord(const ShuffledMessage& message, Context& context) {
   if (fault_reason_.has_value()) {
     return SignalIntegrityFault(context);
   }
@@ -60,41 +60,29 @@ absl::Status ScatterShuffleFn::OnRecord(KV record, Context& context) {
     return SignalIntegrityFault(context);
   }
 
-  // Verify and unpack the record's header key (visible to orchestrator).
-  if (!record.key.Is<MetricEpochKey>()) {
-    fault_reason_ = "IntegrityFault: Record key is not of expected type MetricEpochKey.";
+  if (!message.has_metric_epoch_key()) {
+    fault_reason_ = "IntegrityFault: Message missing required MetricEpochKey.";
     return SignalIntegrityFault(context);
   }
 
-  MetricEpochKey header_key;
-  if (!record.key.UnpackTo(&header_key)) {
-    fault_reason_ = "IntegrityFault: Failed to unpack record key as MetricEpochKey.";
-    return SignalIntegrityFault(context);
-  }
+  const MetricEpochKey& metric_epoch_key = message.metric_epoch_key();
 
   // On first message record: compute batching parameters for this partition.
   if (!expected_metric_epoch_key_.has_value()) {
     absl::StatusOr<BatchParameters> batch_parameters =
-        ComputeBatchParametersForPartition(*verified_result_, header_key);
+        ComputeBatchParametersForPartition(*verified_result_, metric_epoch_key);
     if (!batch_parameters.ok()) {
       fault_reason_ = "IntegrityFault: Failed to compute batch parameters for partition.";
       return SignalIntegrityFault(context);
     }
-    expected_metric_epoch_key_ = header_key;
+    expected_metric_epoch_key_ = metric_epoch_key;
     batch_parameters_ = *std::move(batch_parameters);
   } else {
-    // Validate header key against expected_metric_epoch_key_.
-    if (header_key != *expected_metric_epoch_key_) {
+    // Validate key against expected_metric_epoch_key_.
+    if (metric_epoch_key != *expected_metric_epoch_key_) {
       fault_reason_ = "IntegrityFault: MetricEpochKey mismatch in batch.";
       return SignalIntegrityFault(context);
     }
-  }
-
-  // Parse and validate the encrypted payload (ShuffledMessage).
-  ShuffledMessage message;
-  if (!message.ParseFromString(record.data)) {
-    fault_reason_ = "IntegrityFault: Failed to parse input data as ShuffledMessage proto.";
-    return SignalIntegrityFault(context);
   }
 
   if (message.run_id() != verified_result_->run_context.run_id()) {
@@ -107,24 +95,13 @@ absl::Status ScatterShuffleFn::OnRecord(KV record, Context& context) {
     return SignalIntegrityFault(context);
   }
 
-  if (!message.has_metric_epoch_key()) {
-    fault_reason_ = "IntegrityFault: Message missing required MetricEpochKey.";
-    return SignalIntegrityFault(context);
-  }
-
-  // Verify that the payload MetricEpochKey matches the header key.
-  if (message.metric_epoch_key() != header_key) {
-    fault_reason_ = "IntegrityFault: Header MetricEpochKey does not match payload MetricEpochKey.";
-    return SignalIntegrityFault(context);
-  }
-
   // Enforce batch size bound.
   if (messages_.size() >= static_cast<size_t>(batch_parameters_->target_batch_size)) {
     fault_reason_ = "IntegrityFault: Received more messages than expected batch size.";
     return SignalIntegrityFault(context);
   }
 
-  messages_.push_back(std::move(message));
+  messages_.push_back(message);
   return absl::OkStatus();
 }
 

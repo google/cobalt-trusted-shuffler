@@ -54,7 +54,8 @@ inline constexpr int kReencryptionKeyIndex = 0;
 //    - Increments shuffle_count to 1.
 //    - Re-encrypts payloads under local output node index kReencryptionKeyIndex (0)
 //      and emits with visible unencrypted ScatterShuffleHeader (group_id).
-class ScatterShuffleFn : public FirstRecordConfigDoFn<IngestionVerificationPayload> {
+class ScatterShuffleFn
+    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage> {
  public:
   ScatterShuffleFn() = default;
   ~ScatterShuffleFn() override = default;
@@ -73,7 +74,7 @@ class ScatterShuffleFn : public FirstRecordConfigDoFn<IngestionVerificationPaylo
 
   // Ingests incoming batch messages (records 1..N), validating invariants and establishing batch
   // parameters.
-  absl::Status OnRecord(KV record, Context& context) override;
+  absl::Status OnRecord(const ShuffledMessage& message, Context& context) override;
 
  private:
   // Signals an integrity violation by emitting an unencrypted IntegrityFault record,

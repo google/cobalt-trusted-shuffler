@@ -57,17 +57,12 @@ absl::Status EncryptOutputFn::OnConfig(
   return absl::OkStatus();
 }
 
-absl::Status EncryptOutputFn::OnRecord(KV record, Context& context) {
+absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, Context& context) {
   if (has_integrity_fault_) {
     return SignalIntegrityFault(context);
   }
   if (is_finalized_) {
     return absl::FailedPreconditionError("Replica is already finalized.");
-  }
-
-  ShuffledMessage message;
-  if (!message.ParseFromString(record.data)) {
-    return SignalIntegrityFault("Failed to parse input data as ShuffledMessage.", context);
   }
 
   if (message.shuffle_count() != 2) {

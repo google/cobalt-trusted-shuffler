@@ -32,10 +32,12 @@ cc_test(
     srcs = ["first_record_config_do_fn_test.cc"],
     deps = [
         ":first_record_config_do_fn",
+        "//src/proto:common_cc_proto",
         "//src/proto:run_context_cc_proto",
         "//src/testing:fake_context",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
         "@googletest//:gtest_main",
+        "@protobuf//:protobuf",
     ],
 )

@@ -69,15 +69,9 @@ absl::Status IngestionVerificationFn::OnConfig(
   return absl::OkStatus();
 }
 
-absl::Status IngestionVerificationFn::OnRecord(KV record, Context& context) {
+absl::Status IngestionVerificationFn::OnRecord(const PartialIngestionReport& report,
+                                               Context& context) {
   if (has_integrity_fault_) {
-    return absl::OkStatus();
-  }
-
-  PartialIngestionReport report;
-  if (!report.ParseFromString(record.data)) {
-    LOG(ERROR) << "Failed to parse PartialIngestionReport from record data.";
-    has_integrity_fault_ = true;
     return absl::OkStatus();
   }
 

@@ -499,10 +499,8 @@ TEST_F(EncryptOutputFnTest, ProcessRecordWithMalformedShuffledMessagePayloadTrig
 
   EXPECT_THAT(
       fn.Do(EncryptOutputFn::KV(google::protobuf::Any(), "not-a-valid-shuffled-message"), context),
-      StatusIs(absl::StatusCode::kFailedPrecondition,
-               "IntegrityFault: Failed to parse input data as ShuffledMessage."));
-  ExpectIntegrityFaultEmitted(context,
-                              "IntegrityFault: Failed to parse input data as ShuffledMessage.");
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               "Failed to parse record as record proto: corrupted or invalid payload."));
 }
 
 TEST_F(EncryptOutputFnTest, ProcessMessageWithInvalidShuffleCountTriggersFault) {

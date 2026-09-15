@@ -70,7 +70,8 @@ absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& con
   return absl::OkStatus();
 }
 
-absl::Status ThresholdFilterFn::OnRecord(KV record, Context& context) {
+absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message,
+                                         Context& context) {
   if (has_integrity_fault_) {
     EmitIntegrityFault(context);
     return absl::FailedPreconditionError("ThresholdFilterFn::OnRecord: Integrity fault occurred.");
@@ -79,12 +80,6 @@ absl::Status ThresholdFilterFn::OnRecord(KV record, Context& context) {
   if (!run_context_.has_value()) {
     return absl::FailedPreconditionError(
         "ThresholdFilterFn::OnRecord: configuration not established.");
-  }
-
-  ShuffledMessage shuffled_message;
-  if (!shuffled_message.ParseFromString(record.data)) {
-    return absl::InvalidArgumentError(
-        "ThresholdFilterFn::OnRecord: record.data cannot be parsed as ShuffledMessage.");
   }
 
   if (!shuffled_message.has_metric_epoch_key()) {
@@ -107,7 +102,8 @@ absl::Status ThresholdFilterFn::OnRecord(KV record, Context& context) {
   if (approved_partitions_.contains(shuffled_message.metric_epoch_key())) {
     google::protobuf::Any key;
     key.PackFrom(shuffled_message.metric_epoch_key());
-    context.EmitEncrypted(kReencryptionKeyIndex, KV(std::move(key), std::move(record.data)));
+    context.EmitEncrypted(kReencryptionKeyIndex,
+                          KV(std::move(key), shuffled_message.SerializeAsString()));
   }
   // If not approved, message is discarded per specification.
   return absl::OkStatus();

@@ -54,7 +54,8 @@ namespace cobalt::trusted_shuffler {
 //   EncryptedMessageOutput records.
 // - Finalize: Emits PartialReleaseReport encrypted for the downstream key
 //   release verification stage.
-class EncryptOutputFn : public FirstRecordConfigDoFn<IngestionVerificationPayload> {
+class EncryptOutputFn
+    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage> {
  public:
   // Index of the downstream output encryption key (in Context::EmitEncrypted)
   // used to encrypt PartialReleaseReport records for the key release
@@ -74,7 +75,7 @@ class EncryptOutputFn : public FirstRecordConfigDoFn<IngestionVerificationPayloa
                         Context& context) override;
 
   // Hook invoked for all subsequent records (records 1..N).
-  absl::Status OnRecord(KV record, Context& context) override;
+  absl::Status OnRecord(const ShuffledMessage& message, Context& context) override;
 
  private:
   absl::Status SignalIntegrityFault(Context& context);

@@ -50,7 +50,8 @@ namespace cobalt::trusted_shuffler {
 //   for the orchestrator, and encrypted IngestionVerificationPayload (with
 //   ThresholdReport, canonical RunFingerprint, and SignedRunContext, or
 //   IntegrityFault) for ThresholdFilter.
-class IngestionVerificationFn : public FirstRecordConfigDoFn<SignedRunContext> {
+class IngestionVerificationFn
+    : public FirstRecordConfigDoFn<SignedRunContext, PartialIngestionReport> {
  public:
   inline static constexpr int kReencryptionKeyIndex = 0;
 
@@ -75,7 +76,7 @@ class IngestionVerificationFn : public FirstRecordConfigDoFn<SignedRunContext> {
                         Context& context) override;
 
   // Ingests incoming PartialIngestionReport records from IngestUploads workers.
-  absl::Status OnRecord(KV record, Context& context) override;
+  absl::Status OnRecord(const PartialIngestionReport& report, Context& context) override;
 
  private:
   using MetricKey = std::pair<int32_t, int32_t>;

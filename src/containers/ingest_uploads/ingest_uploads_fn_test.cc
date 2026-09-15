@@ -25,6 +25,7 @@
 #include "absl/status/status_matchers.h"
 #include "absl/strings/cord.h"
 #include "fcp/confidentialcompute/client_payload.h"
+#include "fcp/protos/confidentialcompute/blob_data.pb.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "src/crypto/verify_signed_run_context.h"
@@ -56,6 +57,12 @@ constexpr uint32_t kReportKeyIndex = 1;
 const std::string kTestRunId(kRunIdByteLength, 'a');
 constexpr absl::string_view kTestPrivacyId = "test_privacy_id";
 
+IngestUploadsFn::KV CreateBlobRecord(absl::string_view checkpoint_data) {
+  fcp::confidentialcompute::BlobData blob_data;
+  blob_data.set_data(std::string(checkpoint_data));
+  return IngestUploadsFn::KV(blob_data.SerializeAsString());
+}
+
 TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads) {
   testing::FakeContext context;
   IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
@@ -81,7 +88,7 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
 
   std::string checkpoint_data =
       CreateTestFcCheckpoint({upload}, {"1970-01-01T00:00:00Z"}, std::string(kTestPrivacyId));
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint_data), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), context), IsOk());
 
   // Verify message emitted encrypted with key index 0 (reencryption_key 2)
   auto encrypted_messages = context.Encrypted();
@@ -148,7 +155,7 @@ TEST(IngestUploadsFnTest, ProcessesEncodedClientPayloadInput) {
   std::string encoded_input =
       fcp::confidential_compute::EncodeClientPayload(header, checkpoint_data);
 
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(encoded_input), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(encoded_input), context), IsOk());
 
   auto encrypted_messages = context.Encrypted();
   ASSERT_THAT(encrypted_messages, SizeIs(1));
@@ -175,7 +182,7 @@ TEST(IngestUploadsFnTest, DropsUnallowedMetrics) {
 
   std::string checkpoint_data =
       CreateTestFcCheckpoint({upload}, {"1970-01-01T00:00:00Z"}, std::string(kTestPrivacyId));
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint_data), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), context), IsOk());
 
   // Nothing emitted for dropped message
   EXPECT_THAT(context.Encrypted(), SizeIs(0));
@@ -206,7 +213,7 @@ TEST(IngestUploadsFnTest, DropsInvalidCheckpointAndEmitsError) {
   // Checkpoint without event times is invalid.
   std::string checkpoint_data =
       CreateTestFcCheckpoint({upload}, /*event_times=*/{}, std::string(kTestPrivacyId));
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint_data), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), context), IsOk());
 
   // Checkpoint is dropped and recorded as an error on context.
   EXPECT_THAT(context.Encrypted(), SizeIs(0));
@@ -280,13 +287,13 @@ TEST(IngestUploadsFnTest, AllowsOnlyEpochZeroWhenMinAndMaxEpochAreZero) {
   // Epoch 0 (1970-01-01) is allowed.
   std::string checkpoint_epoch_0 =
       CreateTestFcCheckpoint({upload}, {"1970-01-01T00:00:00Z"}, std::string(kTestPrivacyId));
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint_epoch_0), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_epoch_0), context), IsOk());
   EXPECT_THAT(context.Encrypted(), SizeIs(1));
 
   // Epoch 1 (1970-01-02) is not allowed.
   std::string checkpoint_epoch_1 =
       CreateTestFcCheckpoint({upload}, {"1970-01-02T00:00:00Z"}, std::string(kTestPrivacyId));
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint_epoch_1), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_epoch_1), context), IsOk());
   EXPECT_THAT(context.Encrypted(), SizeIs(1));
 }
 
@@ -299,7 +306,7 @@ TEST(IngestUploadsFnTest, FailsOnEmptyFirstRecordAndRejectsSubsequentRecords) {
   EXPECT_FALSE(fn.HasConfig());
 
   // One-shot semantics: subsequent records are rejected.
-  EXPECT_THAT(fn.Do(IngestUploadsFn::KV("checkpoint_data"), context),
+  EXPECT_THAT(fn.Do(CreateBlobRecord("checkpoint_data"), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
@@ -336,9 +343,9 @@ TEST(IngestUploadsFnTest, EstimatesDeviceCardinalityUsingPrivacyId) {
   const std::string checkpoint3 =
       CreateTestFcCheckpoint({upload3}, {"1970-01-01T00:00:03Z"}, std::string("device_2"));
 
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint1), context), IsOk());
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint2), context), IsOk());
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint3), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint1), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint2), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint3), context), IsOk());
 
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
@@ -374,7 +381,7 @@ TEST(IngestUploadsFnTest, DropsCheckpointMissingPrivacyIdAndEmitsError) {
 
   const std::string checkpoint_data =
       CreateTestFcCheckpoint({upload}, {"1970-01-01T00:00:00Z"}, /*privacy_id=*/std::nullopt);
-  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(checkpoint_data), context), IsOk());
+  ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_data), context), IsOk());
 
   EXPECT_THAT(context.Encrypted(), SizeIs(0));
   ASSERT_THAT(context.Errors(), SizeIs(1));
@@ -391,8 +398,22 @@ TEST(IngestUploadsFnTest, FailsOnCorruptedConfigProtoAndRejectsSubsequentRecords
   EXPECT_FALSE(fn.HasConfig());
 
   // One-shot semantics: subsequent records are rejected.
-  EXPECT_THAT(fn.Do(IngestUploadsFn::KV("checkpoint_data"), context),
+  EXPECT_THAT(fn.Do(CreateBlobRecord("checkpoint_data"), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(IngestUploadsFnTest, RejectsCorruptedRecordPayload) {
+  testing::FakeContext context;
+  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+
+  const SignedRunContext signed_run_context = CreateValidSignedRunContext(
+      /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
+      /*max_epoch_index=*/10);
+  ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), context), IsOk());
+
+  // Invalid proto wire data for RecordProto (BlobData)
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV("corrupted_record_payload"), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 }  // namespace

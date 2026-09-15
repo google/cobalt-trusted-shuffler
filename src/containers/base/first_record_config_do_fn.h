@@ -38,13 +38,15 @@ namespace cobalt::trusted_shuffler {
 // - Record 0: Parses ConfigProto from input.data, invokes OnConfig(), and transitions
 //   to the configured state upon success. If configuration fails, the failure is
 //   recorded under one-shot semantics.
-// - Records 1..N: Enforces that configuration was successfully established and routes
-//   records to OnRecord(). If configuration failed on record 0, subsequent records
-//   are rejected with kFailedPrecondition.
-template <typename ConfigProto>
+// - Records 1..N: Enforces that configuration was successfully established, parses
+//   RecordProto from input.data, and routes records to OnRecord(). If configuration
+//   failed on record 0, subsequent records are rejected with kFailedPrecondition.
+template <typename ConfigProto, typename RecordProto>
 class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
   static_assert(std::is_base_of_v<google::protobuf::Message, ConfigProto>,
                 "ConfigProto must inherit from google::protobuf::Message.");
+  static_assert(std::is_base_of_v<google::protobuf::Message, RecordProto>,
+                "RecordProto must inherit from google::protobuf::Message.");
 
  public:
   using KV = confidential_federated_compute::Session::KV;
@@ -84,7 +86,13 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
       return absl::OkStatus();
     }
 
-    return OnRecord(std::move(input), context);
+    RecordProto record;
+    if (!record.ParseFromString(input.data)) {
+      return absl::InvalidArgumentError(
+          "Failed to parse record as record proto: corrupted or invalid payload.");
+    }
+
+    return OnRecord(record, context);
   }
 
   // Returns true if configuration was successfully received, parsed, and validated.
@@ -100,7 +108,7 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
 
   // Hook invoked for all subsequent records (records 1..N) after configuration
   // has succeeded.
-  virtual absl::Status OnRecord(KV record, Context& context) = 0;
+  virtual absl::Status OnRecord(const RecordProto& record, Context& context) = 0;
 
  private:
   std::optional<ConfigProto> config_;

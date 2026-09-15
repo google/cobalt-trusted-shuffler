@@ -173,8 +173,20 @@ TEST(IngestionVerificationFnTest, SuccessfulConfigUnpackFollowedByDataRecords) {
   EXPECT_THAT(fn.Config()->signature(), Eq("valid_signature_bytes"));
 
   // Records 1..N: Ingests client data records
-  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV("client-record-1"), context), IsOk());
-  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV("client-record-2"), context), IsOk());
+  const PartitionSpec partition_specs[] = {
+      {.project_id = 1001,
+       .metric_id = 2,
+       .epoch_index = 50,
+       .message_count = 1,
+       .device_ids = GenerateDeviceIds("worker1", 1),
+       .sketch_precision = 14},
+  };
+  const PartialIngestionReport report1 =
+      CreatePartialIngestionReport(std::string(kTestRunId), partition_specs);
+  const PartialIngestionReport report2 =
+      CreatePartialIngestionReport(std::string(kTestRunId), partition_specs);
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report1.SerializeAsString()), context), IsOk());
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report2.SerializeAsString()), context), IsOk());
 }
 
 TEST(IngestionVerificationFnTest, CorruptedOrInvalidSignedRunContextPayloadReturnsError) {
@@ -257,7 +269,7 @@ TEST(IngestionVerificationFnTest, FinalizeReplicaWithoutConfigEmitsIntegrityFaul
   EXPECT_TRUE(payload.has_integrity_fault());
 }
 
-TEST(IngestionVerificationFnTest, FinalizeReplicaWithCorruptedRecordEmitsIntegrityFault) {
+TEST(IngestionVerificationFnTest, RejectsCorruptedRecordPayload) {
   const MetricThresholdSpec specs[] = {
       {.project_id = 1001, .metric_id = 2, .threshold = 50},
   };
@@ -271,17 +283,8 @@ TEST(IngestionVerificationFnTest, FinalizeReplicaWithCorruptedRecordEmitsIntegri
               IsOk());
 
   // Record 1 is corrupted bytes
-  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV("corrupted_record_payload"), context), IsOk());
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
-
-  ASSERT_EQ(context.Encrypted().size(), 1);
-  IngestionVerificationHeader header;
-  ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_TRUE(header.has_integrity_fault());
-
-  IngestionVerificationPayload payload;
-  ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
-  EXPECT_TRUE(payload.has_integrity_fault());
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV("corrupted_record_payload"), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(IngestionVerificationFnTest, FinalizeReplicaWithRunIdMismatchEmitsIntegrityFault) {
@@ -879,8 +882,19 @@ TEST(IngestionVerificationFnTest, SubsequentRecordProcessingAfterFaultPreservesI
   ASSERT_THAT(fn.Do(IngestionVerificationFn::KV(signed_context.SerializeAsString()), context),
               IsOk());
 
-  // Record 1: Corrupted payload triggers integrity fault
-  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV("corrupted_record_payload"), context), IsOk());
+  // Record 1: Report with mismatched run_id triggers integrity fault
+  const PartitionSpec fault_specs[] = {
+      {.project_id = 1001,
+       .metric_id = 2,
+       .epoch_index = 100,
+       .message_count = 1,
+       .device_ids = GenerateDeviceIds("fault_dev", 1),
+       .sketch_precision = 14},
+  };
+  const PartialIngestionReport fault_report =
+      CreatePartialIngestionReport("mismatched_run_id", fault_specs);
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(fault_report.SerializeAsString()), context),
+              IsOk());
 
   // Record 2: Valid PartialIngestionReport exceeding threshold
   const PartitionSpec partition_specs[] = {

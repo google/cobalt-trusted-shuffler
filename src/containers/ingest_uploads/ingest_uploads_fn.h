@@ -24,7 +24,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
-#include "absl/status/status.h"
+#include "fcp/protos/confidentialcompute/blob_data.pb.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
 #include "src/crypto/multiset_fingerprint.h"
@@ -36,12 +36,14 @@ namespace cobalt::trusted_shuffler {
 
 // A DoFn class for ingesting client device uploads.
 //
-// Inherits Do(KV input, Context& context) from FirstRecordConfigDoFn<SignedRunContext>:
+// Inherits Do(KV input, Context& context) from
+// FirstRecordConfigDoFn<SignedRunContext, fcp::confidentialcompute::BlobData>:
 // - Record 0: Ingests SignedRunContext via OnConfig(), parses the inner RunContext,
 //   and initializes multiset fingerprinting for the run.
 // - Records 1..N: Ingests client log upload checkpoints via OnRecord(), validates metric/epoch,
 //   updates HLL sketches and multiset fingerprint, and emits encrypted ShuffledMessage records.
-class IngestUploadsFn : public FirstRecordConfigDoFn<SignedRunContext> {
+class IngestUploadsFn
+    : public FirstRecordConfigDoFn<SignedRunContext, fcp::confidentialcompute::BlobData> {
  public:
   using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
 
@@ -61,7 +63,8 @@ class IngestUploadsFn : public FirstRecordConfigDoFn<SignedRunContext> {
   absl::Status OnConfig(const SignedRunContext& signed_run_context, Context& context) override;
 
   // Ingests incoming client log records on records 1..N.
-  absl::Status OnRecord(KV record, Context& context) override;
+  absl::Status OnRecord(const fcp::confidentialcompute::BlobData& blob_data,
+                        Context& context) override;
 
  private:
   uint32_t message_key_index_;

@@ -14,6 +14,7 @@
 
 #include "src/containers/base/first_record_config_do_fn.h"
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -22,6 +23,7 @@
 #include "absl/status/status_matchers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/proto/common.pb.h"
 #include "src/proto/run_context.pb.h"
 #include "src/testing/fake_context.h"
 
@@ -32,30 +34,35 @@ using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
 using ::cobalt::trusted_shuffler::testing::FakeContext;
 using ::testing::Eq;
+using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
-// Test implementation of FirstRecordConfigDoFn using RunConfig as config proto.
-class TestFirstRecordDoFn : public FirstRecordConfigDoFn<RunConfig> {
+// Test implementation of FirstRecordConfigDoFn using RunConfig as config proto
+// and ShuffledMessage as record proto.
+class TestFirstRecordDoFn : public FirstRecordConfigDoFn<RunConfig, ShuffledMessage> {
  public:
   TestFirstRecordDoFn() = default;
 
-  const std::vector<std::string>& ReceivedRecords() const { return received_records_; }
+  const std::vector<ShuffledMessage>& ReceivedRecords() const { return received_records_; }
 
  protected:
   absl::Status OnConfig(const RunConfig& config, Context& context) override {
-    if (config.target_batch_size() < 0) {
+    if (config.target_batch_size() <= 0) {
       return absl::InvalidArgumentError("Invalid target_batch_size");
     }
     return absl::OkStatus();
   }
 
-  absl::Status OnRecord(KV record, Context& context) override {
-    received_records_.push_back(std::move(record.data));
+  absl::Status OnRecord(const ShuffledMessage& record, Context& context) override {
+    if (record.shuffle_count() < 0) {
+      return absl::InvalidArgumentError("Invalid shuffle_count");
+    }
+    received_records_.push_back(record);
     return absl::OkStatus();
   }
 
  private:
-  std::vector<std::string> received_records_;
+  std::vector<ShuffledMessage> received_records_;
 };
 
 RunConfig CreateValidConfig(int32_t project_id, int32_t metric_id, int32_t batch_size) {
@@ -65,6 +72,16 @@ RunConfig CreateValidConfig(int32_t project_id, int32_t metric_id, int32_t batch
   metric->set_project_id(project_id);
   metric->set_metric_id(metric_id);
   return config;
+}
+
+ShuffledMessage CreateMessage(const std::string& run_id, int32_t group_id, int32_t shuffle_count,
+                              const std::string& payload) {
+  ShuffledMessage message;
+  message.set_run_id(run_id);
+  message.set_group_id(group_id);
+  message.set_shuffle_count(shuffle_count);
+  message.set_customer_message(payload);
+  return message;
 }
 
 TEST(FirstRecordConfigDoFnTest, IngestsConfigOnRecordZeroAndRoutesSubsequentRecords) {
@@ -80,10 +97,18 @@ TEST(FirstRecordConfigDoFnTest, IngestsConfigOnRecordZeroAndRoutesSubsequentReco
   ASSERT_TRUE(fn.Config().has_value());
   EXPECT_THAT(fn.Config()->target_batch_size(), Eq(50));
 
-  // Records 1..N routed to OnRecord
-  EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV("data-record-1"), context), IsOk());
-  EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV("data-record-2"), context), IsOk());
-  EXPECT_THAT(fn.ReceivedRecords(), SizeIs(2));
+  // Records 1..N parsed as ShuffledMessage and routed to OnRecord
+  ShuffledMessage msg1 = CreateMessage("run1", 1, 1, "payload1");
+  ShuffledMessage msg2 = CreateMessage("run1", 2, 2, "payload2");
+
+  EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV(msg1.SerializeAsString()), context), IsOk());
+  EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV(msg2.SerializeAsString()), context), IsOk());
+
+  ASSERT_THAT(fn.ReceivedRecords(), SizeIs(2));
+  EXPECT_THAT(fn.ReceivedRecords()[0].customer_message(), Eq("payload1"));
+  EXPECT_THAT(fn.ReceivedRecords()[0].group_id(), Eq(1));
+  EXPECT_THAT(fn.ReceivedRecords()[1].customer_message(), Eq("payload2"));
+  EXPECT_THAT(fn.ReceivedRecords()[1].group_id(), Eq(2));
 }
 
 TEST(FirstRecordConfigDoFnTest, FailsOnEmptyFirstRecordAndRejectsSubsequentRecords) {
@@ -95,7 +120,8 @@ TEST(FirstRecordConfigDoFnTest, FailsOnEmptyFirstRecordAndRejectsSubsequentRecor
   EXPECT_FALSE(fn.HasConfig());
 
   // One-shot semantics: subsequent records are rejected.
-  EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV("data"), context),
+  ShuffledMessage msg = CreateMessage("run1", 1, 1, "payload");
+  EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV(msg.SerializeAsString()), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
@@ -109,7 +135,8 @@ TEST(FirstRecordConfigDoFnTest, FailsOnCorruptedConfigProtoAndRejectsSubsequentR
   EXPECT_FALSE(fn.HasConfig());
 
   // One-shot semantics: subsequent records are rejected.
-  EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV("data"), context),
+  ShuffledMessage msg = CreateMessage("run1", 1, 1, "payload");
+  EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV(msg.SerializeAsString()), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
@@ -126,7 +153,38 @@ TEST(FirstRecordConfigDoFnTest, OnConfigFailureRejectsSubsequentRecords) {
   RunConfig valid_config = CreateValidConfig(101, 202, 50);
   EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV(valid_config.SerializeAsString()), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_THAT(fn.ReceivedRecords(), ::testing::IsEmpty());
+  EXPECT_THAT(fn.ReceivedRecords(), IsEmpty());
+}
+
+TEST(FirstRecordConfigDoFnTest, FailsOnCorruptedRecordProto) {
+  TestFirstRecordDoFn fn;
+  FakeContext context;
+
+  RunConfig config = CreateValidConfig(101, 202, 50);
+  ASSERT_THAT(fn.Do(TestFirstRecordDoFn::KV(config.SerializeAsString()), context), IsOk());
+
+  // Record with invalid proto wire data fails parsing
+  EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV("\xff\xff\xff\xff"), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+
+  // Valid record afterwards can still be processed
+  ShuffledMessage msg = CreateMessage("run1", 1, 1, "payload");
+  EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV(msg.SerializeAsString()), context), IsOk());
+  ASSERT_THAT(fn.ReceivedRecords(), SizeIs(1));
+  EXPECT_THAT(fn.ReceivedRecords()[0].customer_message(), Eq("payload"));
+}
+
+TEST(FirstRecordConfigDoFnTest, OnRecordFailureReturnsErrorStatus) {
+  TestFirstRecordDoFn fn;
+  FakeContext context;
+
+  RunConfig config = CreateValidConfig(101, 202, 50);
+  ASSERT_THAT(fn.Do(TestFirstRecordDoFn::KV(config.SerializeAsString()), context), IsOk());
+
+  // Record that triggers OnRecord error
+  ShuffledMessage invalid_msg = CreateMessage("run1", 1, -1, "payload");
+  EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV(invalid_msg.SerializeAsString()), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 }  // namespace
