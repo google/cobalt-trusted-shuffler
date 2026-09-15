@@ -96,6 +96,10 @@ if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/scatter_shuffle
   cp -Rp ./bazel-bin/src/containers/scatter_shuffle/* ${KOKORO_ARTIFACTS_DIR}/scatter_shuffle/.
 
+  log "Copying encrypt_output container output to kokoro artifacts dir."
+  mkdir -p ${KOKORO_ARTIFACTS_DIR}/encrypt_output
+  cp -Rp ./bazel-bin/src/containers/encrypt_output/* ${KOKORO_ARTIFACTS_DIR}/encrypt_output/.
+
   # Kokoro tooling uses the `bazel_invocation_ids` file, but add a .txt
   # extension to it before also uploading it as an output artifact so
   # that the MIME type in GCS  gets set to something easily openable in
