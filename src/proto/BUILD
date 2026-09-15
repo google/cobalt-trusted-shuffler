@@ -115,3 +115,17 @@ cc_proto_library(
     name = "scatter_shuffle_cc_proto",
     deps = [":scatter_shuffle_proto"],
 )
+
+cc_test(
+    name = "debug_redact_test",
+    srcs = ["debug_redact_test.cc"],
+    deps = [
+        ":common_cc_proto",
+        ":fingerprint_cc_proto",
+        ":ingestion_cc_proto",
+        ":release_cc_proto",
+        ":run_context_cc_proto",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)

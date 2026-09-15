@@ -38,17 +38,17 @@ message ShuffledMessage {
   MetricEpochKey metric_epoch_key = 1;
 
   // 32-byte run identifier for the processing execution context.
-  bytes run_id = 2;
+  bytes run_id = 2 [debug_redact = true];
 
   // Group messages are assigned to in the 2nd shuffling phase.
   int32 group_id = 3;
 
   // Whether a message from the first shuffling stage is padding.
-  bool is_padding = 4;
+  bool is_padding = 4 [debug_redact = true];
 
   // Number of times a message is processed by a shuffling stage.
   int32 shuffle_count = 5;
 
   // Customer message payload.
-  bytes customer_message = 7;
+  bytes customer_message = 7 [debug_redact = true];
 }
