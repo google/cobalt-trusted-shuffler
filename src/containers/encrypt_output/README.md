@@ -20,7 +20,7 @@ The `encrypt_output` container is the confidential data transformation stage res
 
 ## Overview
 
-This container implements the `DoFn` / `FnConfidentialTransform` API for output encryption and release fingerprinting per [b/557302528](https://b.corp.google.com/issues/557302528).
+This container implements the `DoFn` / `FnConfidentialTransform` API for output encryption and release fingerprinting per b/557302528.
 
 In the Trusted Shuffler pipeline, the `encrypt_output` container processes shuffled customer messages after two-pass shuffling. It validates that messages have completed both shuffling passes (`shuffle_count == 2`), match the active `run_id`, and belong to approved partitions specified in the ingestion verification threshold report. It generates a worker-specific release key (AES-256-GCM via Tink AEAD), encrypts customer message payloads for release ("encrypt-for-release"), accumulates message counts into a release multiset fingerprint (ignoring padding messages), and emits encrypted output records. During replica finalization, it packages the accumulated release fingerprint and worker release key into a `WorkerKeyAndFingerprint` proto emitted encrypted to the downstream key release verification stage.
 

@@ -289,7 +289,7 @@ When ready for production release, failing to update Kokoro will cause builds an
 270: ```bash
 271: /google/bin/releases/gemini-agents-gerrit/gerrit reviewers add \
 272:   --change=<change_id> \
-273:   --host=https://cobalt-internal-review.git.corp.google.com \
+273:   --host=<gerrit_host> \
 274:   --reviewer=pankhurst@google.com,stevefung@google.com \
 275:   --cc=aniviali@google.com
 276: ```
