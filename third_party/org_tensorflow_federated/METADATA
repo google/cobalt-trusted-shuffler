@@ -1,0 +1,25 @@
+name: "tensorflow-federated"
+description:
+    "Build patches for Google Parfait's tensorflow-federated fork "
+    "(aggregation protocol)."
+
+third_party {
+  url {
+    type: HOMEPAGE
+    value: "https://github.com/tensorflow/federated"
+  }
+  url {
+    type: GIT
+    value: "https://github.com/google-parfait/tensorflow-federated"
+  }
+  version: "590104cb7c358ee5c4efa8937e0ccf93a5925265"
+  last_upgrade_date {
+    year: 2026
+    month: 9
+    day: 9
+  }
+  license_type: NOTICE
+  local_modifications:
+      "Contains tff.patch for Bzlmod compatibility and lightweight "
+      "aggregation protocol build targets."
+}
