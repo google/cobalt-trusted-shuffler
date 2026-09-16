@@ -46,7 +46,7 @@ namespace cobalt::trusted_shuffler {
 //   per MetricEpochKey partition.
 // - FinalizeReplica: Evaluates unique device cardinality estimates against
 //   TrustedShufflerConfigConstraints thresholds. Emits unencrypted
-//   IngestionVerificationHeader (with IngestSummaryReport or IntegrityFault)
+//   IngestionVerificationHeader (with IngestionResult or IntegrityFault)
 //   for the orchestrator, and encrypted IngestionVerificationPayload (with
 //   ThresholdReport, canonical RunFingerprint, and SignedRunContext, or
 //   IntegrityFault) for ThresholdFilter.

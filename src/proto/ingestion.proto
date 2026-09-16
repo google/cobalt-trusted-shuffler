@@ -57,21 +57,6 @@ message PartialIngestionReport {
   repeated MetricEpochSketch metric_epoch_sketches = 2;
 }
 
-// Message count associated with a specific metric data partition.
-message PartitionMessageCount {
-  // Metric data partition key identifying project, metric, and epoch index.
-  MetricEpochKey metric_epoch_key = 1;
-
-  // Number of messages received for this partition.
-  int64 message_count = 2;
-}
-
-// Summary report containing message counts for each active partition.
-message IngestSummaryReport {
-  // List of message counts for each partition.
-  repeated PartitionMessageCount partition_counts = 1;
-}
-
 // Report containing the run ID and list of approved partitions that met the
 // privacy threshold.
 message ThresholdReport {
@@ -82,10 +67,14 @@ message ThresholdReport {
   repeated MetricEpochKey approved_partitions = 2;
 }
 
+// Indicates the encrypted payload contains a successful
+// IngestionVerificationResult.
+message IngestionResult {}
+
 // Unencrypted header emitted by the ingestion verification stage.
 message IngestionVerificationHeader {
   oneof result {
-    IngestSummaryReport summary_report = 1;
+    IngestionResult ingestion_result = 1;
     IntegrityFault integrity_fault = 2;
   }
 }
