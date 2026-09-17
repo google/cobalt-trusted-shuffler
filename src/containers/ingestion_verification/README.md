@@ -23,7 +23,7 @@ The `ingestion_verification` container is a confidential data transform in the T
 This container implements the `FnConfidentialTransform` / `DoFn` API to serve as the ingestion verification stage in the Trusted Shuffler confidential pipeline.
 
 It processes worker ingestion reports from `IngestUploads`, verifies integrity across the batch, determines which partitions met the minimum unique device privacy thresholds, and emits dual outputs for downstream consumption:
-1. An unencrypted header (`IngestionVerificationHeader`) containing `IngestSummaryReport` with partition message counts, visible to the untrusted Flume orchestrator for batch routing and padding calculations.
+1. An unencrypted header (`IngestionVerificationHeader`) visible to the untrusted Flume orchestrator (exposes `ingestion_result` on success, or `integrity_fault` on validation/merging failure).
 2. An encrypted payload (`IngestionVerificationPayload`) encrypted under key index 0 containing `ThresholdReport` (approved partitions), the canonical `RunFingerprint`, and `SignedRunContext`, readable only by downstream confidential TEE stages (`ThresholdFilter`).
 
 ---
@@ -61,8 +61,8 @@ Inherits from `FirstRecordConfigDoFn<SignedRunContext>`:
 Emitted exactly once during `FinalizeReplica` as `EncryptedKV<IngestionVerificationHeader, IngestionVerificationPayload, 0>`:
 
 #### 1. Header (`IngestionVerificationHeader`) — Unencrypted
-Packed in `KV.key` (`google::protobuf::Any`) and visible in plaintext to the untrusted Flume orchestrator:
-- `summary_report`: Contains `PartitionMessageCount` for each approved partition that met or exceeded reporting thresholds.
+Packed in `KV.key` (`google::protobuf::Any`) and visible in plaintext to the untrusted Flume orchestrator. The `result` oneof explicitly labels which payload variant follows, and carries no partition data itself:
+- `ingestion_result`: Empty marker indicating the payload contains an `IngestionVerificationResult` from successful verification.
 - `integrity_fault`: Emitted if configuration failed, reports could not be parsed, `run_id` mismatched, or fingerprint/sketch merging failed.
 
 #### 2. Payload (`IngestionVerificationPayload`) — Encrypted

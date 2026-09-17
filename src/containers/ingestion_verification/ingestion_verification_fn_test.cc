@@ -425,12 +425,7 @@ TEST(IngestionVerificationFnTest, SuccessfulIngestionVerificationSinglePartition
   // Verify unencrypted header
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_FALSE(header.has_integrity_fault());
-  ASSERT_TRUE(header.has_summary_report());
-  ASSERT_EQ(header.summary_report().partition_counts_size(), 1);
-  EXPECT_THAT(header.summary_report().partition_counts(0).metric_epoch_key(),
-              EquivToProto(CreateMetricEpochKey(1001, 2, 50)));
-  EXPECT_GE(header.summary_report().partition_counts(0).message_count(), 10);
+  EXPECT_TRUE(header.has_ingestion_result());
 
   // Verify encrypted payload
   IngestionVerificationPayload payload;
@@ -511,14 +506,10 @@ TEST(IngestionVerificationFnTest, MultipleWorkersAndPartitionsWithThresholdFilte
 
   ASSERT_EQ(context.Encrypted().size(), 1);
 
-  // Header contains only the approved partition
+  // Header explicitly labels the payload as an ingestion result
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_FALSE(header.has_integrity_fault());
-  ASSERT_TRUE(header.has_summary_report());
-  ASSERT_EQ(header.summary_report().partition_counts_size(), 1);
-  EXPECT_THAT(header.summary_report().partition_counts(0).metric_epoch_key(),
-              EquivToProto(CreateMetricEpochKey(1001, 2, 100)));
+  EXPECT_TRUE(header.has_ingestion_result());
 
   // Payload contains only the approved partition
   IngestionVerificationPayload payload;
@@ -568,9 +559,7 @@ TEST(IngestionVerificationFnTest, NoPartitionsMeetThresholdEmitsEmptySuccess) {
 
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_FALSE(header.has_integrity_fault());
-  ASSERT_TRUE(header.has_summary_report());
-  EXPECT_EQ(header.summary_report().partition_counts_size(), 0);
+  EXPECT_TRUE(header.has_ingestion_result());
 
   IngestionVerificationPayload payload;
   ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
@@ -619,15 +608,10 @@ TEST(IngestionVerificationFnTest, ThresholdBoundaryConditionsExactMatchAndOneBel
   ASSERT_EQ(context.Encrypted().size(), 1);
   EXPECT_EQ(context.Encrypted()[0].first, IngestionVerificationFn::kReencryptionKeyIndex);
 
-  // Unencrypted header summary report
+  // Unencrypted header
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_FALSE(header.has_integrity_fault());
-  ASSERT_TRUE(header.has_summary_report());
-  ASSERT_EQ(header.summary_report().partition_counts_size(), 1);
-  EXPECT_THAT(header.summary_report().partition_counts(0).metric_epoch_key(),
-              EquivToProto(CreateMetricEpochKey(1001, 2, 100)));
-  EXPECT_EQ(header.summary_report().partition_counts(0).message_count(), 10);
+  EXPECT_TRUE(header.has_ingestion_result());
 
   // Encrypted payload
   IngestionVerificationPayload payload;
@@ -695,9 +679,7 @@ TEST(IngestionVerificationFnTest, OverlappingDeviceIdsAcrossWorkersDeduplicatedB
 
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_FALSE(header.has_integrity_fault());
-  ASSERT_TRUE(header.has_summary_report());
-  EXPECT_EQ(header.summary_report().partition_counts_size(), 0);
+  EXPECT_TRUE(header.has_ingestion_result());
 
   IngestionVerificationPayload payload;
   ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
@@ -753,11 +735,7 @@ TEST(IngestionVerificationFnTest, UnregisteredPartitionsNotInConfigConstraintsAr
 
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_FALSE(header.has_integrity_fault());
-  ASSERT_TRUE(header.has_summary_report());
-  ASSERT_EQ(header.summary_report().partition_counts_size(), 1);
-  EXPECT_THAT(header.summary_report().partition_counts(0).metric_epoch_key(),
-              EquivToProto(CreateMetricEpochKey(1001, 2, 100)));
+  EXPECT_TRUE(header.has_ingestion_result());
 
   IngestionVerificationPayload payload;
   ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
@@ -796,9 +774,7 @@ TEST(IngestionVerificationFnTest, ZeroDataRecordsAfterConfigurationEmitsEmptySuc
 
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_FALSE(header.has_integrity_fault());
-  ASSERT_TRUE(header.has_summary_report());
-  EXPECT_EQ(header.summary_report().partition_counts_size(), 0);
+  EXPECT_TRUE(header.has_ingestion_result());
 
   IngestionVerificationPayload payload;
   ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));

@@ -241,8 +241,7 @@ TEST(IngestionVerificationTransformTest, FnFactoryCreatedFnExecutesLifecycleAndE
 
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
-  EXPECT_FALSE(header.has_integrity_fault());
-  ASSERT_EQ(header.summary_report().partition_counts_size(), 1);
+  EXPECT_TRUE(header.has_ingestion_result());
 
   IngestionVerificationPayload payload;
   ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));

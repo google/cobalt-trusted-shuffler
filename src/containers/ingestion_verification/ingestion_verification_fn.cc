@@ -137,7 +137,6 @@ absl::Status IngestionVerificationFn::FinalizeReplica(google::protobuf::Any conf
   ThresholdReport threshold_report;
   threshold_report.set_run_id(run_id_);
 
-  IngestSummaryReport summary_report;
   absl::flat_hash_set<MetricEpochTuple> approved_partition_set;
 
   // Evaluate thresholds for all partitions that have sketches.
@@ -151,10 +150,6 @@ absl::Status IngestionVerificationFn::FinalizeReplica(google::protobuf::Any conf
       const MetricEpochKey& key = partition_keys_[tuple_key];
       *threshold_report.add_approved_partitions() = key;
       approved_partition_set.insert(tuple_key);
-
-      PartitionMessageCount* const count_entry = summary_report.add_partition_counts();
-      *count_entry->mutable_metric_epoch_key() = key;
-      count_entry->set_message_count(unique_device_count);
     }
   }
 
@@ -186,7 +181,7 @@ absl::Status IngestionVerificationFn::FinalizeReplica(google::protobuf::Any conf
   }
 
   IngestionVerificationHeader header;
-  *header.mutable_summary_report() = std::move(summary_report);
+  header.mutable_ingestion_result();
 
   IngestionVerificationPayload payload;
   IngestionVerificationResult* const result = payload.mutable_success();
