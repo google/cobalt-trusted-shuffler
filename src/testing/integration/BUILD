@@ -106,15 +106,46 @@ cc_test(
 )
 
 cc_library(
+    name = "ingestion_verification_router",
+    srcs = ["ingestion_verification_router.cc"],
+    hdrs = ["ingestion_verification_router.h"],
+    deps = [
+        ":records",
+        "//src/proto:fingerprint_cc_proto",
+        "//src/proto:ingestion_cc_proto",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/types:span",
+        "@confidential-federated-compute//containers:session",
+    ],
+)
+
+cc_test(
+    name = "ingestion_verification_router_test",
+    srcs = ["ingestion_verification_router_test.cc"],
+    deps = [
+        ":ingestion_verification_router",
+        ":records",
+        "//src/proto:ingestion_cc_proto",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "pipeline_runner",
     srcs = ["pipeline_runner.cc"],
     hdrs = ["pipeline_runner.h"],
     deps = [
         ":do_fn_runner",
         ":ingest_uploads_router",
+        ":ingestion_verification_router",
         ":records",
         "//src/containers/ingest_uploads:ingest_uploads_fn",
+        "//src/containers/ingestion_verification:ingestion_verification_fn",
         "//src/containers/run_context_initializer:run_context_initializer_fn",
+        "//src/proto:config_constraints_cc_proto",
+        "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",
         "@abseil-cpp//absl/functional:any_invocable",
         "@abseil-cpp//absl/status",
@@ -130,8 +161,11 @@ cc_test(
     srcs = ["shuffler_flow_integration_test.cc"],
     deps = [
         ":ingest_uploads_router",
+        ":ingestion_verification_router",
         ":pipeline_runner",
         ":records",
+        "//src/proto:config_constraints_cc_proto",
+        "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",
         "//src/proto:trusted_shuffler_upload_cc_proto",
         "//src/testing:test_utils",

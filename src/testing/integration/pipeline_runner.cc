@@ -24,7 +24,10 @@
 #include "absl/types/span.h"
 #include "cc/crypto/signing_key.h"
 #include "src/containers/ingest_uploads/ingest_uploads_fn.h"
+#include "src/containers/ingestion_verification/ingestion_verification_fn.h"
 #include "src/containers/run_context_initializer/run_context_initializer_fn.h"
+#include "src/proto/config_constraints.pb.h"
+#include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
 #include "src/testing/integration/do_fn_runner.h"
 #include "src/testing/integration/ingest_uploads_router.h"
@@ -41,7 +44,8 @@ constexpr int kIngestReportKeyIndex = 1;
 
 absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     const PipelineRouters& routers, oak::crypto::SigningKeyHandle& signing_key,
-    const RunConfig& run_config, absl::Span<const std::string> raw_checkpoints) {
+    const RunConfig& run_config, const TrustedShufflerConfigConstraints& constraints,
+    absl::Span<const std::string> raw_checkpoints) {
   PipelineExecutionResult result;
 
   // 1. RunContextInitializer
@@ -90,11 +94,53 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     result.ingest_uploads_output.Append(*std::move(ingest_out));
   }
 
-  // Validate that IngestUploads outputs can be split cleanly into partial reports and messages.
+  // Separate IngestUploads outputs into PartialIngestionReports and partition messages.
   absl::StatusOr<IngestUploadsOutputs> split_outputs =
       routers.ingest_uploads_output_splitter(result.ingest_uploads_output);
   if (!split_outputs.ok()) {
     return split_outputs.status();
+  }
+
+  // 3. IngestionVerification
+  // Replica requirement: Requires a single replica to process all partial
+  // reports. Must aggregate the complete set of PartialIngestionReports from
+  // every IngestUploads replica to evaluate global unique-device privacy
+  // thresholds and compute the total input multiset fingerprint.
+  // Output: key plus payload. IngestionVerificationFn packs the summary report
+  // or integrity fault into the key for the host to act on.
+  absl::StatusOr<KVCollection> iv_inputs =
+      routers.ingestion_verification_router(signed_run_context, split_outputs->partial_reports);
+  if (!iv_inputs.ok()) {
+    return iv_inputs.status();
+  }
+
+  IngestionVerificationFn iv_fn(/*constraints=*/constraints);
+  absl::StatusOr<KVBlobStageOutputs> iv_out =
+      DoFnRunner::RunReplicaWithKVBlobOutput(iv_fn, {.inputs = *iv_inputs});
+  if (!iv_out.ok()) {
+    return iv_out.status();
+  }
+  result.ingestion_verification_output = *std::move(iv_out);
+
+  if (result.ingestion_verification_output.encrypted.size() != 1) {
+    return absl::InternalError(
+        absl::StrCat("Expected IngestionVerificationFn to emit exactly 1 encrypted "
+                     "IngestionVerificationPayload, but got ",
+                     result.ingestion_verification_output.encrypted.size(), "."));
+  }
+
+  IngestionVerificationHeader iv_header;
+  if (!result.ingestion_verification_output.encrypted[0].key().UnpackTo(&iv_header)) {
+    return absl::InternalError(
+        "Failed to unpack IngestionVerificationHeader from IngestionVerification output key.");
+  }
+  if (iv_header.has_integrity_fault()) {
+    return absl::FailedPreconditionError(
+        "IngestionVerification reported an integrity fault in IngestionVerificationHeader.");
+  }
+  if (!iv_header.has_summary_report()) {
+    return absl::InternalError(
+        "IngestionVerificationHeader has neither summary_report nor integrity_fault.");
   }
 
   return result;

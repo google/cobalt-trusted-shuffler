@@ -22,8 +22,10 @@
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
 #include "cc/crypto/signing_key.h"
+#include "src/proto/config_constraints.pb.h"
 #include "src/proto/run_context.pb.h"
 #include "src/testing/integration/ingest_uploads_router.h"
+#include "src/testing/integration/ingestion_verification_router.h"
 #include "src/testing/integration/records.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
@@ -38,6 +40,7 @@ struct PipelineExecutionResult {
   // Encrypted partition messages and partial ingestion reports emitted across
   // all IngestUploads shards, each carrying its IngestMessagesHeader key.
   KVBlobStageOutputs ingest_uploads_output;
+  KVBlobStageOutputs ingestion_verification_output;
 };
 
 // Builds one input stream per IngestUploads shard from the SignedRunContext
@@ -50,6 +53,12 @@ using IngestUploadsRouterFn = absl::AnyInvocable<absl::StatusOr<std::vector<KVCo
 using IngestUploadsOutputSplitterFn = absl::AnyInvocable<absl::StatusOr<IngestUploadsOutputs>(
     const KVBlobStageOutputs& ingest_output) const>;
 
+// Builds the input stream for the IngestionVerification session from the
+// SignedRunContext and every partial report the pipeline produced.
+using IngestionVerificationRouterFn = absl::AnyInvocable<absl::StatusOr<KVCollection>(
+    const EncryptedBlob& signed_run_context, absl::Span<const EncryptedBlob> partial_reports)
+                                                             const>;
+
 // Holds routing and output-splitting functions used by ExecutePipeline to route
 // data between container stages. Defaults to the standard router implementations,
 // which tests can override to inject faults.
@@ -59,13 +68,15 @@ struct PipelineRouters {
 
   // Demultiplexes IngestUploads outputs into partial reports and partition messages.
   IngestUploadsOutputSplitterFn ingest_uploads_output_splitter = SplitIngestUploadsOutputs;
+  IngestionVerificationRouterFn ingestion_verification_router = RouteToIngestionVerification;
 };
 
 // Executes the implemented container stages end-to-end using the provided
 // routing functions.
 absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     const PipelineRouters& routers, oak::crypto::SigningKeyHandle& signing_key,
-    const RunConfig& run_config, absl::Span<const std::string> raw_checkpoints);
+    const RunConfig& run_config, const TrustedShufflerConfigConstraints& constraints,
+    absl::Span<const std::string> raw_checkpoints);
 
 }  // namespace cobalt::trusted_shuffler::testing::integration
 
