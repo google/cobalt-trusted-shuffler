@@ -33,9 +33,6 @@
 
 namespace cobalt::trusted_shuffler {
 
-using Context = confidential_federated_compute::Session::Context;
-using KV = confidential_federated_compute::Session::KV;
-
 // DoFn implementing fingerprint verification and decryption key release.
 //
 // Receives an encrypted IngestionVerificationPayload on Record 0 containing the

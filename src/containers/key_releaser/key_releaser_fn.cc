@@ -51,10 +51,10 @@ absl::Status ValidatePartialReleaseFingerprint(
       return absl::InvalidArgumentError("Invalid MetricEpochKey in partial_fingerprint.");
     }
     if (!approved_partitions.contains(key)) {
-      return absl::InvalidArgumentError("Unapproved partition in partial_fingerprint.");
+      return absl::NotFoundError("Unapproved partition in partial_fingerprint.");
     }
     if (!seen_partitions.insert(key).second) {
-      return absl::InvalidArgumentError("Duplicate partition in partial_fingerprint.");
+      return absl::AlreadyExistsError("Duplicate partition in partial_fingerprint.");
     }
     if (entry.message_count() < 0) {
       return absl::InvalidArgumentError("Negative message_count in partial_fingerprint.");
@@ -142,9 +142,8 @@ absl::Status KeyReleaserFn::EmitIntegrityFault(absl::string_view reason, Context
 
     context.EmitUnencrypted(KV(std::move(header_any), release_msg.SerializeAsString()));
   }
-  absl::Status error_status = absl::FailedPreconditionError(reason);
-  context.EmitError(error_status);
-  return error_status;
+  // TODO(b/557303917): Add a counter once CFC metrics are available.
+  return absl::FailedPreconditionError(reason);
 }
 
 absl::Status KeyReleaserFn::FinalizeReplica(google::protobuf::Any config, Context& context) {

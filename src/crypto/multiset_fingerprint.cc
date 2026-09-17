@@ -156,13 +156,7 @@ RunFingerprint MultisetFingerprint::Build() const {
 }
 
 bool IsZeroFingerprint(absl::string_view fp, std::size_t fingerprint_size) {
-  if (fp.empty()) {
-    return true;
-  }
-  if (fp.size() != fingerprint_size) {
-    return false;
-  }
-  return std::all_of(fp.begin(), fp.end(), [](char c) { return c == '\0'; });
+  return fp.empty() || fp == std::string(fingerprint_size, '\0');
 }
 
 bool MultisetFingerprint::VerifyComplete(const RunFingerprint& complete_fingerprint) const {
