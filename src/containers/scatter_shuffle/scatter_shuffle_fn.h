@@ -25,6 +25,7 @@
 #include "google/protobuf/any.pb.h"
 #include "src/batching/batch_calculator.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
@@ -38,14 +39,12 @@ inline constexpr int kReencryptionKeyIndex = 0;
 // DoFn implementation for the scatter_shuffle container.
 //
 // Performs scatter shuffle and group assignment (two-pass shuffling phase 1):
-// 1. First record (Record 0): Ingests IngestionVerificationResult and validates:
-//    - SignedRunContext is present, parses RunContext, and has positive target_batch_size.
-//    - ThresholdReport has approved partitions.
+// 1. First record (Record 0): Ingests IngestionVerificationPayload and validates it.
 // 2. Subsequent records (Records 1..N): Ingests encrypted KV records (MetricEpochKey header,
 //    ShuffledMessage payload, including real encrypted messages and dummy padding messages).
 //    - Validates that the record header key is an approved partition.
 //    - Calculates batching parameters (target_batch_size, batch_num, padding_count) from the
-//      IngestionVerificationResult using the batch calculator library.
+//      VerifiedIngestionVerificationResult using the batch calculator library.
 //    - Enforces that all records share identical MetricEpochKey, run_id, and shuffle_count (0).
 // 3. FinalizeReplica:
 //    - Verifies that the replica received exactly `target_batch_size` messages.
@@ -55,7 +54,7 @@ inline constexpr int kReencryptionKeyIndex = 0;
 //    - Increments shuffle_count to 1.
 //    - Re-encrypts payloads under local output node index kReencryptionKeyIndex (0)
 //      and emits with visible unencrypted ScatterShuffleHeader (group_id).
-class ScatterShuffleFn : public FirstRecordConfigDoFn<IngestionVerificationResult> {
+class ScatterShuffleFn : public FirstRecordConfigDoFn<IngestionVerificationPayload> {
  public:
   ScatterShuffleFn() = default;
   ~ScatterShuffleFn() override = default;
@@ -68,8 +67,8 @@ class ScatterShuffleFn : public FirstRecordConfigDoFn<IngestionVerificationResul
   const std::optional<BatchParameters>& CurrentBatchParameters() const { return batch_parameters_; }
 
  protected:
-  // Ingests IngestionVerificationResult on record 0 and validates run context and threshold report.
-  absl::Status OnConfig(const IngestionVerificationResult& ingestion_verification_result,
+  // Ingests IngestionVerificationPayload on record 0 and validates configuration.
+  absl::Status OnConfig(const IngestionVerificationPayload& ingestion_verification_payload,
                         Context& context) override;
 
   // Ingests incoming batch messages (records 1..N), validating invariants and establishing batch
@@ -81,8 +80,7 @@ class ScatterShuffleFn : public FirstRecordConfigDoFn<IngestionVerificationResul
   // logging an error on Context, and returning a FailedPreconditionError.
   absl::Status SignalIntegrityFault(Context& context);
 
-  std::optional<IngestionVerificationResult> ingestion_verification_result_;
-  std::optional<RunContext> run_context_;
+  std::optional<VerifiedIngestionVerificationResult> verified_result_;
   std::optional<BatchParameters> batch_parameters_;
   std::optional<MetricEpochKey> expected_metric_epoch_key_;
   std::vector<ShuffledMessage> messages_;

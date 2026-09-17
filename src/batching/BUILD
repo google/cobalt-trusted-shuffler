@@ -21,7 +21,7 @@ cc_library(
     srcs = ["batch_calculator.cc"],
     hdrs = ["batch_calculator.h"],
     deps = [
-        "//src/crypto:verify_signed_run_context",
+        "//src/crypto:verify_ingestion_verification_payload",
         "//src/proto:common_cc_proto",
         "//src/proto:fingerprint_cc_proto",
         "//src/proto:ingestion_cc_proto",

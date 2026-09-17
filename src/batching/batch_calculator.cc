@@ -20,7 +20,7 @@
 #include "absl/algorithm/container.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "src/crypto/verify_signed_run_context.h"
+#include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/fingerprint.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -29,20 +29,6 @@
 
 namespace cobalt::trusted_shuffler {
 namespace {
-
-absl::StatusOr<int32_t> ExtractTargetBatchSize(const IngestionVerificationResult& result) {
-  if (!result.has_signed_run_context()) {
-    return absl::InvalidArgumentError(
-        "IngestionVerificationResult missing required signed_run_context.");
-  }
-
-  absl::StatusOr<RunContext> run_context = VerifySignedRunContext(result.signed_run_context());
-  if (!run_context.ok()) {
-    return run_context.status();
-  }
-
-  return run_context->run_config().target_batch_size();
-}
 
 absl::StatusOr<BatchParameters> ComputeBatchParameters(int64_t message_count,
                                                        int32_t target_batch_size) {
@@ -74,27 +60,18 @@ absl::StatusOr<BatchParameters> ComputeBatchParameters(int64_t message_count,
 }  // namespace
 
 absl::StatusOr<BatchParameters> ComputeBatchParametersForPartition(
-    const IngestionVerificationResult& result, const MetricEpochKey& partition_key) {
-  absl::StatusOr<int32_t> target_batch_size = ExtractTargetBatchSize(result);
-  if (!target_batch_size.ok()) {
-    return target_batch_size.status();
-  }
-
+    const VerifiedIngestionVerificationResult& result, const MetricEpochKey& partition_key) {
   // The approved partitions here are the same MetricEpochKeys that met the k-anonymity
   // threshold during ingestion verification, as recorded in ThresholdReport.
   // Checking this here provides defense-in-depth across the untrusted orchestrator
   // boundary: canonical_fingerprint records counts for all ingested partitions (including
   // unapproved ones), so this ensures a misbehaving orchestrator cannot route an
   // unapproved partition into downstream TEE stages (such as scatter_shuffle).
-  const auto& approved_partitions = result.threshold_report().approved_partitions();
-  const bool is_approved = absl::c_any_of(
-      approved_partitions, [&](const MetricEpochKey& key) { return key == partition_key; });
-
-  if (!is_approved) {
+  if (!result.approved_partitions.contains(partition_key)) {
     return absl::FailedPreconditionError("Partition is not approved in ThresholdReport.");
   }
 
-  const auto& entries = result.canonical_fingerprint().entries();
+  const auto& entries = result.canonical_fingerprint.entries();
   const auto matching_entry = absl::c_find_if(entries, [&](const FingerprintEntry& entry) {
     return entry.metric_epoch_key() == partition_key;
   });
@@ -104,7 +81,8 @@ absl::StatusOr<BatchParameters> ComputeBatchParametersForPartition(
         "No matching entry found in canonical fingerprint for approved partition.");
   }
 
-  return ComputeBatchParameters(matching_entry->message_count(), *target_batch_size);
+  return ComputeBatchParameters(matching_entry->message_count(),
+                                result.run_context.run_config().target_batch_size());
 }
 
 }  // namespace cobalt::trusted_shuffler

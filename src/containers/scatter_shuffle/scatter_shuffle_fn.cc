@@ -26,7 +26,7 @@
 #include "google/protobuf/any.pb.h"
 #include "src/batching/batch_calculator.h"
 #include "src/crypto/shuffle.h"
-#include "src/crypto/verify_signed_run_context.h"
+#include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
@@ -36,20 +36,15 @@
 namespace cobalt::trusted_shuffler {
 
 absl::Status ScatterShuffleFn::OnConfig(
-    const IngestionVerificationResult& ingestion_verification_result, Context& context) {
-  if (!ingestion_verification_result.has_signed_run_context()) {
-    return absl::InvalidArgumentError(
-        "IngestionVerificationResult missing required SignedRunContext.");
+    const IngestionVerificationPayload& ingestion_verification_payload, Context& context) {
+  absl::StatusOr<VerifiedIngestionVerificationResult> verified_result =
+      VerifyIngestionVerificationPayload(ingestion_verification_payload);
+  if (!verified_result.ok()) {
+    fault_reason_ = verified_result.status().message();
+    return SignalIntegrityFault(context);
   }
 
-  absl::StatusOr<RunContext> run_context =
-      VerifySignedRunContext(ingestion_verification_result.signed_run_context());
-  if (!run_context.ok()) {
-    return run_context.status();
-  }
-
-  ingestion_verification_result_ = ingestion_verification_result;
-  run_context_ = *std::move(run_context);
+  verified_result_ = *std::move(verified_result);
   return absl::OkStatus();
 }
 
@@ -58,9 +53,9 @@ absl::Status ScatterShuffleFn::OnRecord(KV record, Context& context) {
     return SignalIntegrityFault(context);
   }
 
-  if (!ingestion_verification_result_.has_value() || !run_context_.has_value()) {
+  if (!verified_result_.has_value()) {
     fault_reason_ =
-        "IntegrityFault: IngestionVerificationResult configuration was not established before "
+        "IntegrityFault: IngestionVerificationPayload configuration was not established before "
         "processing record.";
     return SignalIntegrityFault(context);
   }
@@ -80,7 +75,7 @@ absl::Status ScatterShuffleFn::OnRecord(KV record, Context& context) {
   // On first message record: compute batching parameters for this partition.
   if (!expected_metric_epoch_key_.has_value()) {
     absl::StatusOr<BatchParameters> batch_parameters =
-        ComputeBatchParametersForPartition(*ingestion_verification_result_, header_key);
+        ComputeBatchParametersForPartition(*verified_result_, header_key);
     if (!batch_parameters.ok()) {
       fault_reason_ = "IntegrityFault: Failed to compute batch parameters for partition.";
       return SignalIntegrityFault(context);
@@ -102,7 +97,7 @@ absl::Status ScatterShuffleFn::OnRecord(KV record, Context& context) {
     return SignalIntegrityFault(context);
   }
 
-  if (message.run_id() != run_context_->run_id()) {
+  if (message.run_id() != verified_result_->run_context.run_id()) {
     fault_reason_ = "IntegrityFault: Message run_id mismatch.";
     return SignalIntegrityFault(context);
   }
@@ -159,7 +154,7 @@ absl::Status ScatterShuffleFn::SignalIntegrityFault(Context& context) {
 }
 
 absl::Status ScatterShuffleFn::FinalizeReplica(google::protobuf::Any config, Context& context) {
-  if (!HasConfig() || !run_context_.has_value()) {
+  if (!HasConfig() || !verified_result_.has_value()) {
     fault_reason_ = "IntegrityFault: Configuration was not established before FinalizeReplica.";
     return SignalIntegrityFault(context);
   }

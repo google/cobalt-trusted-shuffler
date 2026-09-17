@@ -23,7 +23,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "google/protobuf/any.pb.h"
-#include "src/crypto/verify_signed_run_context.h"
+#include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
@@ -55,34 +55,17 @@ absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& con
         "integrity_fault.");
   }
 
-  const IngestionVerificationResult& result = config.success();
-  if (!result.has_signed_run_context()) {
-    return absl::InvalidArgumentError(
-        "IngestionVerificationResult must contain signed_run_context.");
+  absl::StatusOr<VerifiedIngestionVerificationResult> verified_result =
+      VerifyIngestionVerificationResult(config.success());
+  if (!verified_result.ok()) {
+    return verified_result.status();
   }
 
-  absl::StatusOr<::cobalt::trusted_shuffler::RunContext> run_context =
-      VerifySignedRunContext(result.signed_run_context());
-  if (!run_context.ok()) {
-    return run_context.status();
-  }
-  run_context_ = std::move(*run_context);
-  signed_run_context_ = result.signed_run_context();
-  LOG(INFO) << "SignedRunContext received and validated in OnConfig.";
-
-  if (!result.has_threshold_report()) {
-    return absl::InvalidArgumentError("IngestionVerificationResult must contain threshold_report.");
-  }
-
-  const ThresholdReport& report = result.threshold_report();
-  if (report.run_id() != run_context_->run_id()) {
-    return absl::FailedPreconditionError("ThresholdReport run_id mismatch.");
-  }
-
-  for (const auto& partition : report.approved_partitions()) {
-    approved_partitions_.insert(partition);
-  }
+  run_context_ = std::move(verified_result->run_context);
+  signed_run_context_ = config.success().signed_run_context();
+  approved_partitions_ = std::move(verified_result->approved_partitions);
   has_verification_report_ = true;
+  LOG(INFO) << "SignedRunContext received and validated in OnConfig.";
 
   return absl::OkStatus();
 }

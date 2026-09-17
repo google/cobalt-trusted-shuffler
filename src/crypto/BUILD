@@ -143,7 +143,9 @@ cc_test(
 cc_library(
     name = "verify_ingestion_verification_payload",
     srcs = ["verify_ingestion_verification_payload.cc"],
-    hdrs = ["verify_ingestion_verification_payload.h"],
+    hdrs = [
+        "verify_ingestion_verification_payload.h",
+    ],
     deps = [
         ":verify_signed_run_context",
         "//src/proto:common_cc_proto",

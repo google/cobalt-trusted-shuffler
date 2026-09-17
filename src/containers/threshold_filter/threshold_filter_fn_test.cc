@@ -228,6 +228,21 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithRunIdMismatch) {
   EXPECT_FALSE(fn.HasConfig());
 }
 
+TEST(ThresholdFilterFnTest, ConfigFailsWithInvalidApprovedPartitionBounds) {
+  FakeContext context;
+  ThresholdFilterFn fn;
+
+  RunContext run_context = CreateValidRunContext({{10, 1}}, 100, 200, 50);
+  SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
+
+  auto report_payload = CreateThresholdReportPayload(
+      kTestRunId, {{.project_id = 0, .metric_id = 1, .epoch_index = 150}}, signed_context);
+
+  EXPECT_THAT(fn.Do(CreateVerificationKV(report_payload), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_FALSE(fn.HasConfig());
+}
+
 TEST(ThresholdFilterFnTest, FiltersMessagesForApprovedPartitions) {
   FakeContext context;
   ThresholdFilterFn fn;

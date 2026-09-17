@@ -43,71 +43,51 @@ MetricEpochKey CreateTestPartitionKey(int32_t project_id, int32_t metric_id, int
   return key;
 }
 
-SignedRunContext CreateTestSignedRunContext(int32_t target_batch_size) {
-  const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
-  ABSL_CHECK_OK(release_key.status());
-
-  RunConfig run_config;
-  run_config.set_target_batch_size(target_batch_size);
-  RunConfig::MetricIdentifier* const metric_identifier = run_config.add_metric_identifiers();
-  metric_identifier->set_project_id(1);
-  metric_identifier->set_metric_id(10);
-
-  RunContext run_context;
-  run_context.set_run_id(std::string(32, 'r'));
-  run_context.set_run_hash_key(std::string(32, 'k'));
-  run_context.set_release_key(*release_key);
-  *run_context.mutable_run_config() = run_config;
-
-  SignedRunContext signed_run_context;
-  signed_run_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_run_context.set_signature("valid_signature");
-  return signed_run_context;
-}
-
 struct PartitionCountSpec {
   MetricEpochKey key;
   int64_t message_count;
 };
 
-IngestionVerificationResult CreateTestIngestionVerificationResult(
+VerifiedIngestionVerificationResult CreateTestVerifiedResult(
     int32_t target_batch_size, absl::Span<const PartitionCountSpec> partition_specs) {
-  IngestionVerificationResult result;
-  *result.mutable_signed_run_context() = CreateTestSignedRunContext(target_batch_size);
+  const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
+  ABSL_CHECK_OK(release_key.status());
 
-  ThresholdReport* const threshold_report = result.mutable_threshold_report();
-  threshold_report->set_run_id(std::string(32, 'r'));
+  VerifiedIngestionVerificationResult verified;
+  verified.run_context.set_run_id(std::string(32, 'r'));
+  verified.run_context.set_run_hash_key(std::string(32, 'k'));
+  verified.run_context.set_release_key(*release_key);
+  verified.run_context.mutable_run_config()->set_target_batch_size(target_batch_size);
 
-  RunFingerprint* const fingerprint = result.mutable_canonical_fingerprint();
-  fingerprint->set_run_id(std::string(32, 'r'));
-  fingerprint->set_stage_id(Stage::STAGE_INGESTION);
-  fingerprint->set_is_partial(false);
+  verified.canonical_fingerprint.set_run_id(std::string(32, 'r'));
+  verified.canonical_fingerprint.set_stage_id(Stage::STAGE_INGESTION);
+  verified.canonical_fingerprint.set_is_partial(false);
 
   for (const auto& spec : partition_specs) {
-    *threshold_report->add_approved_partitions() = spec.key;
+    verified.approved_partitions.insert(spec.key);
 
-    FingerprintEntry* const entry = fingerprint->add_entries();
+    FingerprintEntry* const entry = verified.canonical_fingerprint.add_entries();
     *entry->mutable_metric_epoch_key() = spec.key;
     entry->set_message_count(spec.message_count);
     entry->set_fingerprint(std::string(32, 'f'));
   }
 
-  return result;
+  return verified;
 }
 
 absl::StatusOr<BatchParameters> ComputeForSinglePartition(int64_t message_count,
                                                           int32_t target_batch_size) {
   const MetricEpochKey key = CreateTestPartitionKey(1, 10, 100);
-  const IngestionVerificationResult result = CreateTestIngestionVerificationResult(
-      target_batch_size, {{.key = key, .message_count = message_count}});
+  const VerifiedIngestionVerificationResult result =
+      CreateTestVerifiedResult(target_batch_size, {{.key = key, .message_count = message_count}});
   return ComputeBatchParametersForPartition(result, key);
 }
 
 TEST(BatchCalculatorTest, ComputeBatchParametersRejectsNonPositiveTargetBatchSize) {
   EXPECT_THAT(ComputeForSinglePartition(/*message_count=*/100, /*target_batch_size=*/0),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kInvalidArgument, "target_batch_size must be positive."));
   EXPECT_THAT(ComputeForSinglePartition(/*message_count=*/100, /*target_batch_size=*/-10),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kInvalidArgument, "target_batch_size must be positive."));
 }
 
 TEST(BatchCalculatorTest, ComputeBatchParametersRejectsNonPositiveMessageCount) {
@@ -190,20 +170,11 @@ TEST(BatchCalculatorTest, ComputeBatchParametersMultipleBatchesWithRemainder) {
   EXPECT_THAT(*params, Eq(expected));
 }
 
-TEST(BatchCalculatorTest, ComputeBatchParametersForPartitionFailsWhenSignedRunContextMissing) {
-  IngestionVerificationResult result;
-  const MetricEpochKey key = CreateTestPartitionKey(1, 10, 100);
-
-  EXPECT_THAT(ComputeBatchParametersForPartition(result, key),
-              StatusIs(absl::StatusCode::kInvalidArgument,
-                       "IngestionVerificationResult missing required signed_run_context."));
-}
-
 TEST(BatchCalculatorTest, ComputeBatchParametersForPartitionFailsWhenNotApproved) {
   const MetricEpochKey approved_key = CreateTestPartitionKey(1, 10, 100);
   const MetricEpochKey unapproved_key = CreateTestPartitionKey(2, 20, 200);
 
-  const IngestionVerificationResult result = CreateTestIngestionVerificationResult(
+  const VerifiedIngestionVerificationResult result = CreateTestVerifiedResult(
       /*target_batch_size=*/100, {{.key = approved_key, .message_count = 150}});
 
   EXPECT_THAT(ComputeBatchParametersForPartition(result, unapproved_key),
@@ -214,9 +185,9 @@ TEST(BatchCalculatorTest, ComputeBatchParametersForPartitionFailsWhenNotApproved
 TEST(BatchCalculatorTest, ComputeBatchParametersForPartitionFailsWhenFingerprintEntryMissing) {
   const MetricEpochKey approved_key = CreateTestPartitionKey(1, 10, 100);
 
-  IngestionVerificationResult result;
-  *result.mutable_signed_run_context() = CreateTestSignedRunContext(100);
-  *result.mutable_threshold_report()->add_approved_partitions() = approved_key;
+  VerifiedIngestionVerificationResult result =
+      CreateTestVerifiedResult(/*target_batch_size=*/100, {});
+  result.approved_partitions.insert(approved_key);
   // Canonical fingerprint has no entries.
 
   EXPECT_THAT(ComputeBatchParametersForPartition(result, approved_key),
@@ -226,7 +197,7 @@ TEST(BatchCalculatorTest, ComputeBatchParametersForPartitionFailsWhenFingerprint
 
 TEST(BatchCalculatorTest, ComputeBatchParametersForPartitionSucceedsForApprovedPartition) {
   const MetricEpochKey key = CreateTestPartitionKey(1, 10, 100);
-  const IngestionVerificationResult result = CreateTestIngestionVerificationResult(
+  const VerifiedIngestionVerificationResult result = CreateTestVerifiedResult(
       /*target_batch_size=*/100, {{.key = key, .message_count = 151}});
 
   const auto params = ComputeBatchParametersForPartition(result, key);
