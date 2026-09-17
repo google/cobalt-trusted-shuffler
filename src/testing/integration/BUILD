@@ -133,6 +133,32 @@ cc_test(
 )
 
 cc_library(
+    name = "threshold_filter_router",
+    srcs = ["threshold_filter_router.cc"],
+    hdrs = ["threshold_filter_router.h"],
+    deps = [
+        ":records",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/types:span",
+        "@confidential-federated-compute//containers:session",
+    ],
+)
+
+cc_test(
+    name = "threshold_filter_router_test",
+    srcs = ["threshold_filter_router_test.cc"],
+    deps = [
+        ":records",
+        ":threshold_filter_router",
+        "//src/proto:common_cc_proto",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@googletest//:gtest_main",
+        "@protobuf//:protobuf",
+    ],
+)
+
+cc_library(
     name = "pipeline_runner",
     srcs = ["pipeline_runner.cc"],
     hdrs = ["pipeline_runner.h"],
@@ -141,9 +167,11 @@ cc_library(
         ":ingest_uploads_router",
         ":ingestion_verification_router",
         ":records",
+        ":threshold_filter_router",
         "//src/containers/ingest_uploads:ingest_uploads_fn",
         "//src/containers/ingestion_verification:ingestion_verification_fn",
         "//src/containers/run_context_initializer:run_context_initializer_fn",
+        "//src/containers/threshold_filter:threshold_filter_fn",
         "//src/proto:config_constraints_cc_proto",
         "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",
@@ -164,6 +192,7 @@ cc_test(
         ":ingestion_verification_router",
         ":pipeline_runner",
         ":records",
+        ":threshold_filter_router",
         "//src/proto:config_constraints_cc_proto",
         "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",

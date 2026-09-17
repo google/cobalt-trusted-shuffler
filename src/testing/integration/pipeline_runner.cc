@@ -26,6 +26,7 @@
 #include "src/containers/ingest_uploads/ingest_uploads_fn.h"
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
 #include "src/containers/run_context_initializer/run_context_initializer_fn.h"
+#include "src/containers/threshold_filter/threshold_filter_fn.h"
 #include "src/proto/config_constraints.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
@@ -142,6 +143,32 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     return absl::InternalError(
         "IngestionVerificationHeader has neither summary_report nor integrity_fault.");
   }
+
+  // The host has read the IngestionVerificationHeader and forwards only the
+  // payload to the stages that take it as a shared configuration record.
+  const EncryptedBlob verification_payload =
+      result.ingestion_verification_output.encrypted[0].DropKey();
+
+  // 4. ThresholdFilter
+  // Replica requirement: Can use any number of replicas. Each replica receives
+  // the shared IngestionVerificationPayload configuration record and independently
+  // filters its assigned subset of partition messages. Here we execute a single
+  // replica over all partition messages.
+  // Output: key plus payload. ThresholdFilterFn forwards each surviving record
+  // with its MetricEpochKey so the host can group by partition.
+  absl::StatusOr<KVCollection> tf_inputs =
+      routers.threshold_filter_router(verification_payload, split_outputs->partition_messages);
+  if (!tf_inputs.ok()) {
+    return tf_inputs.status();
+  }
+
+  ThresholdFilterFn tf_fn;
+  absl::StatusOr<KVBlobStageOutputs> tf_out =
+      DoFnRunner::RunReplicaWithKVBlobOutput(tf_fn, {.inputs = *tf_inputs});
+  if (!tf_out.ok()) {
+    return tf_out.status();
+  }
+  result.threshold_filter_output = *std::move(tf_out);
 
   return result;
 }

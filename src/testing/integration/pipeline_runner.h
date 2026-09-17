@@ -27,6 +27,7 @@
 #include "src/testing/integration/ingest_uploads_router.h"
 #include "src/testing/integration/ingestion_verification_router.h"
 #include "src/testing/integration/records.h"
+#include "src/testing/integration/threshold_filter_router.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
 
@@ -40,7 +41,13 @@ struct PipelineExecutionResult {
   // Encrypted partition messages and partial ingestion reports emitted across
   // all IngestUploads shards, each carrying its IngestMessagesHeader key.
   KVBlobStageOutputs ingest_uploads_output;
+
+  // Encrypted IngestionVerificationPayload emitted by IngestionVerification.
   KVBlobStageOutputs ingestion_verification_output;
+
+  // Encrypted ShuffledMessage records approved by ThresholdFilter, each keyed
+  // by MetricEpochKey.
+  KVBlobStageOutputs threshold_filter_output;
 };
 
 // Builds one input stream per IngestUploads shard from the SignedRunContext
@@ -59,6 +66,12 @@ using IngestionVerificationRouterFn = absl::AnyInvocable<absl::StatusOr<KVCollec
     const EncryptedBlob& signed_run_context, absl::Span<const EncryptedBlob> partial_reports)
                                                              const>;
 
+// Builds the input stream for a ThresholdFilter session from the
+// IngestionVerificationPayload and the partition messages assigned to it.
+using ThresholdFilterRouterFn = absl::AnyInvocable<absl::StatusOr<KVCollection>(
+    const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> partition_messages)
+                                                       const>;
+
 // Holds routing and output-splitting functions used by ExecutePipeline to route
 // data between container stages. Defaults to the standard router implementations,
 // which tests can override to inject faults.
@@ -68,11 +81,16 @@ struct PipelineRouters {
 
   // Demultiplexes IngestUploads outputs into partial reports and partition messages.
   IngestUploadsOutputSplitterFn ingest_uploads_output_splitter = SplitIngestUploadsOutputs;
+
+  // Routes SignedRunContext and partial reports into the IngestionVerification session.
   IngestionVerificationRouterFn ingestion_verification_router = RouteToIngestionVerification;
+
+  // Routes IngestionVerificationPayload and partition messages into the ThresholdFilter session.
+  ThresholdFilterRouterFn threshold_filter_router = RouteToThresholdFilter;
 };
 
-// Executes the implemented container stages end-to-end using the provided
-// routing functions.
+// Executes the 4 currently implemented container stages end-to-end using the
+// provided routing functions.
 absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     const PipelineRouters& routers, oak::crypto::SigningKeyHandle& signing_key,
     const RunConfig& run_config, const TrustedShufflerConfigConstraints& constraints,
