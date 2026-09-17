@@ -33,8 +33,7 @@ using confidential_federated_compute::fns::WriteConfigurationMap;
 }  // namespace
 
 absl::StatusOr<std::unique_ptr<Fn>> IngestUploadsFnFactory::CreateFn() const {
-  return std::make_unique<IngestUploadsFn>(/*message_key_index=*/0,
-                                           /*report_key_index=*/1);
+  return std::make_unique<IngestUploadsFn>();
 }
 
 std::unique_ptr<FnConfidentialTransform> CreateIngestUploadsTransform(

@@ -24,7 +24,7 @@ namespace cobalt::trusted_shuffler {
 absl::Status ReleaserFn::Do(KV input, DoContext& context) {
   context.IncrementCounter(kInputRecordCount);
   context.IncrementCounter(kUnencryptedOutputRecordCount);
-  context.EmitUnencrypted(std::move(input));
+  EmitUnencrypted(context, std::move(input)).IgnoreError();
   return absl::OkStatus();
 }
 

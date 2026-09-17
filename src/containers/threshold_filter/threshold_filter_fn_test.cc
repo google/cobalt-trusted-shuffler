@@ -291,7 +291,7 @@ TEST(ThresholdFilterFnTest, FiltersMessagesForApprovedPartitions) {
   // Verify: only the approved message was emitted, unencrypted output is strictly empty.
   EXPECT_THAT(context.Unencrypted(), IsEmpty());
   ASSERT_THAT(context.Encrypted(), SizeIs(1));
-  EXPECT_EQ(context.Encrypted().at(0).first, ThresholdFilterFn::kReencryptionKeyIndex);
+  EXPECT_EQ(context.Encrypted().at(0).first, 0);
 
   MetricEpochKey emitted_key;
   ASSERT_TRUE(context.Encrypted().at(0).second.key.UnpackTo(&emitted_key));

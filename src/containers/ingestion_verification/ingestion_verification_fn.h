@@ -51,10 +51,9 @@ namespace cobalt::trusted_shuffler {
 //   ThresholdReport, canonical RunFingerprint, and SignedRunContext, or
 //   IntegrityFault) for ThresholdFilter.
 class IngestionVerificationFn
-    : public FirstRecordConfigDoFn<SignedRunContext, PartialIngestionReport> {
+    : public FirstRecordConfigDoFn<SignedRunContext, PartialIngestionReport>::WithOutputs<
+          EncryptedKV<IngestionVerificationHeader, IngestionVerificationPayload, 0>> {
  public:
-  inline static constexpr int kReencryptionKeyIndex = 0;
-
   explicit IngestionVerificationFn(TrustedShufflerConfigConstraints config_constraints);
 
   ~IngestionVerificationFn() override = default;
@@ -81,10 +80,15 @@ class IngestionVerificationFn
  private:
   using FnContext = confidential_federated_compute::fns::Fn::FnContext;
   using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
-  using MetricKey = std::pair<int32_t, int32_t>;
-  using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
 
+  // Emits an IntegrityFault header and payload encrypted for downstream consumption.
   void EmitIntegrityFault(FnContext& context);
+
+  // Project ID and Metric ID pair identifying a metric configuration.
+  using MetricKey = std::pair<int32_t, int32_t>;
+
+  // Project ID, Metric ID, and Epoch Index tuple identifying a data partition.
+  using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
 
   TrustedShufflerConfigConstraints config_constraints_;
   absl::flat_hash_map<MetricKey, int32_t> threshold_map_;

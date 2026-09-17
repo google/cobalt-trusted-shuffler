@@ -38,10 +38,8 @@ using ::cobalt::trusted_shuffler::SignedRunContext;
 void ThresholdFilterFn::EmitIntegrityFault(FnContext& context) {
   has_integrity_fault_ = true;
   IntegrityFault fault;
-  google::protobuf::Any key;
-  key.PackFrom(fault);
   context.IncrementCounter(kUnencryptedOutputRecordCount);
-  context.EmitUnencrypted(KV(std::move(key), fault.SerializeAsString()));
+  EmitUnencrypted(context, fault, fault).IgnoreError();
 }
 
 absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& config,
@@ -109,11 +107,8 @@ absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message
   }
 
   if (approved_partitions_.contains(shuffled_message.metric_epoch_key())) {
-    google::protobuf::Any key;
-    key.PackFrom(shuffled_message.metric_epoch_key());
     context.IncrementCounter(kEncryptedOutputRecordCount);
-    context.EmitEncrypted(kReencryptionKeyIndex,
-                          KV(std::move(key), shuffled_message.SerializeAsString()));
+    EmitEncrypted(context, shuffled_message.metric_epoch_key(), shuffled_message).IgnoreError();
   } else {
     // TODO(b/555372765): Add separate counters for dropped due to thresholding vs invalid records.
     context.IncrementCounter(kInputRecordDropped);

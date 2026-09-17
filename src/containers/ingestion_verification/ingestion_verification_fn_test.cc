@@ -265,7 +265,7 @@ TEST(IngestionVerificationFnTest, FinalizeReplicaWithoutConfigEmitsIntegrityFaul
 
   ASSERT_EQ(context.Encrypted().size(), 1);
   EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
-  EXPECT_EQ(context.Encrypted()[0].first, IngestionVerificationFn::kReencryptionKeyIndex);
+  EXPECT_EQ(context.Encrypted()[0].first, 0);
 
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
@@ -427,7 +427,7 @@ TEST(IngestionVerificationFnTest, SuccessfulIngestionVerificationSinglePartition
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
   ASSERT_EQ(context.Encrypted().size(), 1);
-  EXPECT_EQ(context.Encrypted()[0].first, IngestionVerificationFn::kReencryptionKeyIndex);
+  EXPECT_EQ(context.Encrypted()[0].first, 0);
 
   // Verify unencrypted header
   IngestionVerificationHeader header;
@@ -614,7 +614,7 @@ TEST(IngestionVerificationFnTest, ThresholdBoundaryConditionsExactMatchAndOneBel
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
   ASSERT_EQ(context.Encrypted().size(), 1);
-  EXPECT_EQ(context.Encrypted()[0].first, IngestionVerificationFn::kReencryptionKeyIndex);
+  EXPECT_EQ(context.Encrypted()[0].first, 0);
 
   // Unencrypted header
   IngestionVerificationHeader header;
@@ -778,7 +778,7 @@ TEST(IngestionVerificationFnTest, ZeroDataRecordsAfterConfigurationEmitsEmptySuc
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
   ASSERT_EQ(context.Encrypted().size(), 1);
-  EXPECT_EQ(context.Encrypted()[0].first, IngestionVerificationFn::kReencryptionKeyIndex);
+  EXPECT_EQ(context.Encrypted()[0].first, 0);
 
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));

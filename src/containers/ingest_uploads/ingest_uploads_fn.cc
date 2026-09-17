@@ -127,13 +127,9 @@ absl::Status IngestUploadsFn::OnRecord(const fcp::confidentialcompute::BlobData&
     IngestMessagesHeader header;
     *header.mutable_metric_epoch_key() = metric_epoch_key;
 
-    google::protobuf::Any key;
-    key.PackFrom(header);
-
     // Emits encrypted message.
     context.IncrementCounter(kEncryptedOutputRecordCount);
-    context.EmitEncrypted(message_key_index_,
-                          KV(std::move(key), shuffled_message.SerializeAsString()));
+    EmitEncrypted(context, header, shuffled_message).IgnoreError();
   }
 
   return absl::OkStatus();
@@ -160,12 +156,9 @@ absl::Status IngestUploadsFn::FinalizeReplica(google::protobuf::Any config, FnCo
   IngestMessagesHeader report_header;
   report_header.mutable_partial_ingestion_report();
 
-  google::protobuf::Any key;
-  key.PackFrom(report_header);
-
   // Emits encrypted partial report.
   context.IncrementCounter(kEncryptedOutputRecordCount);
-  context.EmitEncrypted(report_key_index_, KV(std::move(key), report.SerializeAsString()));
+  EmitEncrypted(context, report_header, report).IgnoreError();
 
   return absl::OkStatus();
 }

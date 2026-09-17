@@ -198,7 +198,7 @@ TEST(ScatterShuffleFnTest, SuccessfulScatterShuffleAndGroupAssignment) {
   std::vector<std::string> emitted_padding_payloads;
 
   for (const auto& [key_idx, kv] : encrypted) {
-    EXPECT_EQ(key_idx, kReencryptionKeyIndex);
+    EXPECT_EQ(key_idx, 0);
 
     // Verify visible unencrypted header.
     ScatterShuffleHeader header;

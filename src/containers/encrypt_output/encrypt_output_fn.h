@@ -40,7 +40,7 @@ namespace cobalt::trusted_shuffler {
 // DoFn implementation for output encryption and release fingerprinting in the
 // Trusted Shuffler pipeline.
 //
-// Inherits from FirstRecordConfigDoFn<IngestionVerificationPayload>.
+// Inherits from FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>.
 // - Record 0: Ingests IngestionVerificationPayload containing
 //   IngestionVerificationResult (with SignedRunContext and ThresholdReport).
 //   Verifies SignedRunContext via VerifySignedRunContext, validates
@@ -55,13 +55,11 @@ namespace cobalt::trusted_shuffler {
 // - Finalize: Emits PartialReleaseReport encrypted for the downstream key
 //   release verification stage.
 class EncryptOutputFn
-    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage> {
+    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
+          UnencryptedKV<ReleaseOutputHeader, EncryptedMessageOutput>,
+          UnencryptedKV<ReleaseOutputHeader, IntegrityFault>,
+          EncryptedKV<ReleaseOutputHeader, PartialReleaseReport, 0>> {
  public:
-  // Index of the downstream output encryption key (in Context::EmitEncrypted)
-  // used to encrypt PartialReleaseReport records for the key release
-  // verification stage.
-  static constexpr int kReencryptionKeyIndex = 0;
-
   EncryptOutputFn() = default;
   ~EncryptOutputFn() override = default;
 

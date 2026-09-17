@@ -29,8 +29,6 @@
 namespace cobalt::trusted_shuffler {
 namespace {
 
-static constexpr int kKeyIndex = 5;
-
 using absl_testing::IsOk;
 using absl_testing::StatusIs;
 using ::cobalt::trusted_shuffler::testing::FakeDoContext;
@@ -41,7 +39,7 @@ using ::testing::SizeIs;
 
 TEST(CounterFnTest, InitializeReplicaFailsOnEmptyRequest) {
   testing::FakeContext context;
-  CounterFn fn(kKeyIndex);
+  CounterFn fn;
 
   EXPECT_THAT(fn.InitializeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
@@ -49,7 +47,7 @@ TEST(CounterFnTest, InitializeReplicaFailsOnEmptyRequest) {
 
 TEST(CounterFnTest, InitializeReplicaSucceedsWithCounterName) {
   testing::FakeContext context;
-  CounterFn fn(kKeyIndex);
+  CounterFn fn;
   const std::string counter_name = "the_counter_name";
 
   CounterConfig config;
@@ -63,7 +61,7 @@ TEST(CounterFnTest, InitializeReplicaSucceedsWithCounterName) {
 
 TEST(CounterFnTest, InitializeReplicaFailsOnMissingCounterName) {
   testing::FakeContext context;
-  CounterFn fn(kKeyIndex);
+  CounterFn fn;
 
   CounterConfig config;
   // counter_name is not set.
@@ -78,7 +76,7 @@ TEST(CounterFnTest, InitializeReplicaFailsOnMissingCounterName) {
 TEST(CounterFnTest, DoReturnsOk) {
   testing::FakeContext context;
   FakeDoContext do_context(context);
-  CounterFn fn(kKeyIndex);
+  CounterFn fn;
 
   EXPECT_THAT(fn.Do(CounterFn::KV(), do_context), IsOk());
   EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
@@ -86,7 +84,7 @@ TEST(CounterFnTest, DoReturnsOk) {
 }
 
 TEST(CounterFnTest, DoEmitsMessages) {
-  CounterFn fn(kKeyIndex);
+  CounterFn fn;
 
   testing::FakeContext context;
   FakeDoContext do_context(context);
@@ -98,7 +96,7 @@ TEST(CounterFnTest, DoEmitsMessages) {
 
   const std::pair<int, CounterFn::KV> encrypted = context.Encrypted()[0];
 
-  EXPECT_THAT(encrypted.first, Eq(kKeyIndex));
+  EXPECT_THAT(encrypted.first, Eq(0));
 
   EXPECT_THAT(encrypted.second.data, Eq(message));
 
@@ -115,13 +113,13 @@ TEST(CounterFnTest, DoEmitsMessages) {
 TEST(CounterFnTest, FinalizeReplicaReturnsOk) {
   testing::FakeContext context;
   FakeFnContext fn_context(context);
-  CounterFn fn(kKeyIndex);
+  CounterFn fn;
 
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context), IsOk());
 }
 
 TEST(CounterFnTest, FinalizeReplicaEmitsReport) {
-  CounterFn fn(kKeyIndex);
+  CounterFn fn;
 
   testing::FakeContext context;
   FakeDoContext do_context(context);

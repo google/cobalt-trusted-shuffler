@@ -33,9 +33,6 @@
 
 namespace cobalt::trusted_shuffler {
 
-// Local output node index for re-encryption for the downstream gather shuffle stage.
-inline constexpr int kReencryptionKeyIndex = 0;
-
 // DoFn implementation for the scatter_shuffle container.
 //
 // Performs scatter shuffle and group assignment (two-pass shuffling phase 1):
@@ -52,10 +49,12 @@ inline constexpr int kReencryptionKeyIndex = 0;
 //    - Cryptographically shuffles the batch using Fisher-Yates CSPRNG shuffling.
 //    - Assigns each message a group_id equal to (new_position % batch_num).
 //    - Increments shuffle_count to 1.
-//    - Re-encrypts payloads under local output node index kReencryptionKeyIndex (0)
+//    - Re-encrypts payloads under local output node index 0
 //      and emits with visible unencrypted ScatterShuffleHeader (group_id).
 class ScatterShuffleFn
-    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage> {
+    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
+          EncryptedKV<ScatterShuffleHeader, ShuffledMessage, 0>,
+          UnencryptedKV<ScatterShuffleHeader, IntegrityFault>> {
  public:
   ScatterShuffleFn() = default;
   ~ScatterShuffleFn() override = default;

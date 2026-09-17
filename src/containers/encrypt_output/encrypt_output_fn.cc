@@ -24,10 +24,10 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "google/protobuf/any.pb.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
-#include "src/containers/base/counter_names.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/fingerprint.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -103,11 +103,8 @@ absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, DoContext
 
   ReleaseOutputHeader header;
   header.set_type(ReleaseOutputHeader::TYPE_MESSAGE);
-  google::protobuf::Any key;
-  key.PackFrom(header);
-
   context.IncrementCounter(kUnencryptedOutputRecordCount);
-  context.EmitUnencrypted(KV(std::move(key), output.SerializeAsString()));
+  EmitUnencrypted(context, header, output).IgnoreError();
   return absl::OkStatus();
 }
 
@@ -125,12 +122,9 @@ absl::Status EncryptOutputFn::EmitIntegrityFault(absl::string_view message, FnCo
 
   ReleaseOutputHeader header;
   header.set_type(ReleaseOutputHeader::TYPE_INTEGRITY_FAULT);
-  google::protobuf::Any key;
-  key.PackFrom(header);
-
   IntegrityFault fault;
   context.IncrementCounter(kUnencryptedOutputRecordCount);
-  context.EmitUnencrypted(KV(std::move(key), fault.SerializeAsString()));
+  EmitUnencrypted(context, header, fault).IgnoreError();
 
   return absl::FailedPreconditionError(message);
 }
@@ -160,12 +154,10 @@ absl::Status EncryptOutputFn::FinalizeReplica(google::protobuf::Any config, FnCo
 
   ReleaseOutputHeader header;
   header.set_type(ReleaseOutputHeader::TYPE_REPORT);
-  google::protobuf::Any key;
-  key.PackFrom(header);
 
   context.IncrementCounter(kEncryptedOutputRecordCount);
-  context.EmitEncrypted(kReencryptionKeyIndex,
-                        KV(std::move(key), partial_report.SerializeAsString()));
+  EmitEncrypted(context, header, partial_report).IgnoreError();
+
   return absl::OkStatus();
 }
 

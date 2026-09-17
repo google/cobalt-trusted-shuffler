@@ -39,6 +39,7 @@ cc_library(
     hdrs = ["counter_fn.h"],
     deps = [
         "//src/containers/base:counter_names",
+        "//src/containers/base:with_outputs",
         "//src/proto/message_counter:count_report_cc_proto",
         "//src/proto/message_counter:counter_config_cc_proto",
         "//src/proto/message_counter:output_key_cc_proto",

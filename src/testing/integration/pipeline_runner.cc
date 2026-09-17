@@ -35,13 +35,6 @@
 
 namespace cobalt::trusted_shuffler::testing::integration {
 
-namespace {
-
-constexpr int kIngestMessageKeyIndex = 0;
-constexpr int kIngestReportKeyIndex = 1;
-
-}  // namespace
-
 absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     const PipelineRouters& routers, oak::crypto::SigningKeyHandle& signing_key,
     const RunConfig& run_config, const TrustedShufflerConfigConstraints& constraints,
@@ -84,8 +77,7 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
   }
 
   for (const KVCollection& shard_inputs : *ingest_shards) {
-    IngestUploadsFn ingest_fn(/*message_key_index=*/kIngestMessageKeyIndex,
-                              /*report_key_index=*/kIngestReportKeyIndex);
+    IngestUploadsFn ingest_fn;
     absl::StatusOr<KVBlobStageOutputs> ingest_out =
         DoFnRunner::RunReplicaWithKVBlobOutput(ingest_fn, {.inputs = shard_inputs});
     if (!ingest_out.ok()) {
@@ -106,8 +98,8 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
   // reports. Must aggregate the complete set of PartialIngestionReports from
   // every IngestUploads replica to evaluate global unique-device privacy
   // thresholds and compute the total input multiset fingerprint.
-  // Output: key plus payload. IngestionVerificationFn packs the summary report
-  // or integrity fault into the key for the host to act on.
+  // Output: key plus payload. IngestionVerificationFn packs the ingestion
+  // result marker or integrity fault into the key for the host to act on.
   absl::StatusOr<KVCollection> iv_inputs =
       routers.ingestion_verification_router(signed_run_context, split_outputs->partial_reports);
   if (!iv_inputs.ok()) {

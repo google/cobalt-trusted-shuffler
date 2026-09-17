@@ -28,6 +28,8 @@
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
 #include "src/crypto/multiset_fingerprint.h"
+#include "src/proto/common.pb.h"
+#include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
 #include "src/sketch/hll_sketch.h"
 #include "src/util/time_utils.h"
@@ -43,10 +45,14 @@ namespace cobalt::trusted_shuffler {
 // - Records 1..N: Ingests client log upload checkpoints via OnRecord(), validates metric/epoch,
 //   updates HLL sketches and multiset fingerprint, and emits encrypted ShuffledMessage records.
 class IngestUploadsFn
-    : public FirstRecordConfigDoFn<SignedRunContext, fcp::confidentialcompute::BlobData> {
+    : public FirstRecordConfigDoFn<SignedRunContext, fcp::confidentialcompute::BlobData>::
+          WithOutputs<EncryptedKV<IngestMessagesHeader, ShuffledMessage, 0>,
+                      EncryptedKV<IngestMessagesHeader, PartialIngestionReport, 1>> {
  public:
-  explicit IngestUploadsFn(const uint32_t message_key_index, const uint32_t report_key_index)
-      : message_key_index_(message_key_index), report_key_index_(report_key_index) {}
+  // Project ID, Metric ID, and Epoch Index tuple identifying a data partition.
+  using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
+
+  IngestUploadsFn() = default;
 
   // Finalizes this Fn replica, building and emitting the PartialIngestionReport.
   absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
@@ -67,10 +73,7 @@ class IngestUploadsFn
  private:
   using FnContext = confidential_federated_compute::fns::Fn::FnContext;
   using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
-  using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
 
-  uint32_t message_key_index_;
-  uint32_t report_key_index_;
   RunContext run_context_;
   absl::flat_hash_set<std::pair<int32_t, int32_t>> allowed_metric_identifiers_;
   std::optional<MultisetFingerprint> multiset_fingerprint_;

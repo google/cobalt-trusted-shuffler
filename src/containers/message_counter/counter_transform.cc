@@ -30,14 +30,10 @@ using confidential_federated_compute::fns::FnConfidentialTransform;
 using confidential_federated_compute::fns::FnFactory;
 using confidential_federated_compute::fns::WriteConfigurationMap;
 
-// Index of the key in the list of destination nodes. Only one destination node
-// is expected for this transform.
-constexpr int kKeyIndex = 0;
-
 }  // namespace
 
 absl::StatusOr<std::unique_ptr<Fn>> CounterFnFactory::CreateFn() const {
-  return std::make_unique<CounterFn>(kKeyIndex);
+  return std::make_unique<CounterFn>();
 }
 
 std::unique_ptr<FnConfidentialTransform> CreateCounterTransform(

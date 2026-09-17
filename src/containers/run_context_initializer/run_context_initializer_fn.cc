@@ -29,8 +29,6 @@
 
 namespace cobalt::trusted_shuffler {
 
-inline constexpr int kReencryptionKeyIndex = 0;
-
 absl::Status RunContextInitializerFn::InitializeReplica(google::protobuf::Any config,
                                                         Context& context) {
   RunConfig run_config;
@@ -96,8 +94,7 @@ absl::Status RunContextInitializerFn::FinalizeReplica(google::protobuf::Any conf
   signed_run_context.set_signature(signature->signature());
 
   context.IncrementCounter(kEncryptedOutputRecordCount);
-  context.EmitEncrypted(kReencryptionKeyIndex,
-                        KV(std::move(config), signed_run_context.SerializeAsString()));
+  EmitEncrypted(context, std::move(config), signed_run_context).IgnoreError();
 
   return absl::OkStatus();
 }

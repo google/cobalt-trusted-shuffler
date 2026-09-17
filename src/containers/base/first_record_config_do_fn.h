@@ -24,14 +24,15 @@
 #include "absl/strings/str_cat.h"
 #include "containers/fns/do_fn.h"
 #include "google/protobuf/message.h"
+#include "src/containers/base/with_outputs.h"
 
 namespace cobalt::trusted_shuffler {
 
 // Reusable DoFn base class implementing the First-Record Configuration streaming
 // pattern.
 //
-// In confidential streaming pipelines using the side-input configuration pattern,
-// runtime configuration is written as the initial record (record 0) of the
+// In confidential streaming pipelines where runtime configuration is passed in-band,
+// the configuration proto is written as the initial record (record 0) of the
 // session stream.
 //
 // This base class encapsulates the state machine:
@@ -49,7 +50,13 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
                 "RecordProto must inherit from google::protobuf::Message.");
 
  public:
+  // Base class combining FirstRecordConfigDoFn<ConfigProto, RecordProto> with
+  // strongly typed output declarations.
+  template <typename... OutputStreams>
+  class WithOutputs;
+
   FirstRecordConfigDoFn() = default;
+
   ~FirstRecordConfigDoFn() override = default;
 
   // Intercepts input records and executes the configuration state machine.
@@ -110,6 +117,16 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
  private:
   std::optional<ConfigProto> config_;
   std::optional<std::string> config_failure_;
+};
+
+template <typename ConfigProto, typename RecordProto>
+template <typename... OutputStreams>
+class FirstRecordConfigDoFn<ConfigProto, RecordProto>::WithOutputs
+    : public FirstRecordConfigDoFn<ConfigProto, RecordProto>,
+      public ::cobalt::trusted_shuffler::WithOutputs<OutputStreams...> {
+ public:
+  using FirstRecordConfigDoFn<ConfigProto, RecordProto>::FirstRecordConfigDoFn;
+  ~WithOutputs() override = default;
 };
 
 }  // namespace cobalt::trusted_shuffler

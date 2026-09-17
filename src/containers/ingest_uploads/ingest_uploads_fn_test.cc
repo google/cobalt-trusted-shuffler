@@ -71,7 +71,7 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
   FakeContext context;
   FakeDoContext do_context(context);
   FakeFnContext fn_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   EXPECT_FALSE(fn.HasConfig());
 
@@ -143,7 +143,7 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
 TEST(IngestUploadsFnTest, ProcessesEncodedClientPayloadInput) {
   FakeContext context;
   FakeDoContext do_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
@@ -183,7 +183,7 @@ TEST(IngestUploadsFnTest, DropsUnallowedMetrics) {
   FakeContext context;
   FakeDoContext do_context(context);
   FakeFnContext fn_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
@@ -219,7 +219,7 @@ TEST(IngestUploadsFnTest, DropsUnallowedMetrics) {
 TEST(IngestUploadsFnTest, DropsInvalidCheckpointAndEmitsError) {
   FakeContext context;
   FakeDoContext do_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
@@ -247,7 +247,7 @@ TEST(IngestUploadsFnTest, DropsInvalidCheckpointAndEmitsError) {
 TEST(IngestUploadsFnTest, FailsOnMissingRunConfig) {
   testing::FakeContext context;
   testing::FakeDoContext do_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   RunContext run_context;
   run_context.set_run_id(std::string(kTestRunId));
@@ -265,7 +265,7 @@ TEST(IngestUploadsFnTest, FailsOnMissingRunConfig) {
 TEST(IngestUploadsFnTest, FailsOnEmptyMetricIdentifiers) {
   testing::FakeContext context;
   testing::FakeDoContext do_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   RunContext run_context;
   run_context.set_run_id(std::string(kTestRunId));
@@ -287,7 +287,7 @@ TEST(IngestUploadsFnTest, FailsOnEmptyMetricIdentifiers) {
 TEST(IngestUploadsFnTest, FailsOnEmptySignature) {
   testing::FakeContext context;
   testing::FakeDoContext do_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   SignedRunContext signed_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
@@ -302,7 +302,7 @@ TEST(IngestUploadsFnTest, FailsOnEmptySignature) {
 TEST(IngestUploadsFnTest, AllowsOnlyEpochZeroWhenMinAndMaxEpochAreZero) {
   testing::FakeContext context;
   testing::FakeDoContext do_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   SignedRunContext signed_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
@@ -331,7 +331,7 @@ TEST(IngestUploadsFnTest, AllowsOnlyEpochZeroWhenMinAndMaxEpochAreZero) {
 TEST(IngestUploadsFnTest, FailsOnEmptyFirstRecordAndRejectsSubsequentRecords) {
   testing::FakeContext context;
   testing::FakeDoContext do_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   EXPECT_THAT(fn.Do(IngestUploadsFn::KV(""), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
@@ -346,7 +346,7 @@ TEST(IngestUploadsFnTest, EstimatesDeviceCardinalityUsingPrivacyId) {
   testing::FakeContext context;
   testing::FakeDoContext do_context(context);
   testing::FakeFnContext fn_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   const SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
@@ -403,7 +403,7 @@ TEST(IngestUploadsFnTest, EstimatesDeviceCardinalityUsingPrivacyId) {
 TEST(IngestUploadsFnTest, DropsCheckpointMissingPrivacyId) {
   testing::FakeContext context;
   testing::FakeDoContext do_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   const SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
@@ -428,7 +428,7 @@ TEST(IngestUploadsFnTest, DropsCheckpointMissingPrivacyId) {
 TEST(IngestUploadsFnTest, FailsOnCorruptedConfigProtoAndRejectsSubsequentRecords) {
   testing::FakeContext context;
   testing::FakeDoContext do_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   // Invalid proto wire data
   EXPECT_THAT(fn.Do(IngestUploadsFn::KV("\xff\xff\xff\xff"), do_context),
@@ -443,7 +443,7 @@ TEST(IngestUploadsFnTest, FailsOnCorruptedConfigProtoAndRejectsSubsequentRecords
 TEST(IngestUploadsFnTest, RejectsCorruptedRecordPayload) {
   testing::FakeContext context;
   testing::FakeDoContext do_context(context);
-  IngestUploadsFn fn(kMessageKeyIndex, kReportKeyIndex);
+  IngestUploadsFn fn;
 
   const SignedRunContext signed_run_context = CreateValidSignedRunContext(
       /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,

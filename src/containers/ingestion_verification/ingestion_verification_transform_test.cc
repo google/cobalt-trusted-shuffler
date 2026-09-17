@@ -238,7 +238,7 @@ TEST(IngestionVerificationTransformTest, FnFactoryCreatedFnExecutesLifecycleAndE
   ASSERT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
   ASSERT_EQ(context.Encrypted().size(), 1);
-  EXPECT_EQ(context.Encrypted()[0].first, IngestionVerificationFn::kReencryptionKeyIndex);
+  EXPECT_EQ(context.Encrypted()[0].first, 0);
 
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));
@@ -266,7 +266,7 @@ TEST(IngestionVerificationTransformTest,
   ASSERT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
   ASSERT_EQ(context.Encrypted().size(), 1);
-  EXPECT_EQ(context.Encrypted()[0].first, IngestionVerificationFn::kReencryptionKeyIndex);
+  EXPECT_EQ(context.Encrypted()[0].first, 0);
 
   IngestionVerificationHeader header;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&header));

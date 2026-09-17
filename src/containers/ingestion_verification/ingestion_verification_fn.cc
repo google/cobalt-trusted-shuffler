@@ -124,12 +124,8 @@ void IngestionVerificationFn::EmitIntegrityFault(FnContext& context) {
   IngestionVerificationPayload payload;
   payload.mutable_integrity_fault();
 
-  google::protobuf::Any header_any;
-  header_any.PackFrom(header);
-
   context.IncrementCounter(kEncryptedOutputRecordCount);
-  context.EmitEncrypted(kReencryptionKeyIndex,
-                        KV(std::move(header_any), payload.SerializeAsString()));
+  EmitEncrypted(context, header, payload).IgnoreError();
 }
 
 absl::Status IngestionVerificationFn::FinalizeReplica(google::protobuf::Any config,
@@ -194,12 +190,8 @@ absl::Status IngestionVerificationFn::FinalizeReplica(google::protobuf::Any conf
   *result->mutable_canonical_fingerprint() = std::move(canonical_fingerprint);
   *result->mutable_signed_run_context() = *Config();
 
-  google::protobuf::Any header_any;
-  header_any.PackFrom(header);
-
   context.IncrementCounter(kEncryptedOutputRecordCount);
-  context.EmitEncrypted(kReencryptionKeyIndex,
-                        KV(std::move(header_any), payload.SerializeAsString()));
+  EmitEncrypted(context, header, payload).IgnoreError();
 
   return absl::OkStatus();
 }

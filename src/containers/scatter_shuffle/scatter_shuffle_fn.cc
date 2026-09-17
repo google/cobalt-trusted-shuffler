@@ -119,12 +119,10 @@ absl::Status ScatterShuffleFn::SignalIntegrityFault(FnContext& context) {
 
     ScatterShuffleHeader header;
     header.mutable_integrity_fault();
-    google::protobuf::Any key;
-    key.PackFrom(header);
 
     IntegrityFault fault;
     context.IncrementCounter(kUnencryptedOutputRecordCount);
-    context.EmitUnencrypted(KV(std::move(key), fault.SerializeAsString()));
+    EmitUnencrypted(context, header, fault).IgnoreError();
   }
 
   return absl::FailedPreconditionError(reason);
@@ -170,13 +168,11 @@ absl::Status ScatterShuffleFn::FinalizeReplica(google::protobuf::Any config, FnC
 
     ScatterShuffleHeader header;
     header.set_group_id(group_id);
-    google::protobuf::Any key;
-    key.PackFrom(header);
 
     // Note: kReencryptionKeyIndex (0) is the container's local output node index
     // for the downstream gather shuffle stage.
     context.IncrementCounter(kEncryptedOutputRecordCount);
-    context.EmitEncrypted(kReencryptionKeyIndex, KV(std::move(key), message.SerializeAsString()));
+    EmitEncrypted(context, header, message).IgnoreError();
   }
 
   messages_.clear();

@@ -25,13 +25,41 @@ cc_library(
 )
 
 cc_library(
+    name = "with_outputs",
+    hdrs = ["with_outputs.h"],
+    deps = [
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/strings",
+        "@confidential-federated-compute//containers:session",
+        "@confidential-federated-compute//containers/fns:fns",
+        "@protobuf//:protobuf",
+    ],
+)
+
+cc_library(
     name = "first_record_config_do_fn",
     hdrs = ["first_record_config_do_fn.h"],
     deps = [
+        ":with_outputs",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",
         "@confidential-federated-compute//containers/fns:fns",
         "@protobuf//:protobuf",
+    ],
+)
+
+cc_test(
+    name = "with_outputs_test",
+    srcs = ["with_outputs_test.cc"],
+    deps = [
+        ":with_outputs",
+        "//src/proto:common_cc_proto",
+        "//src/proto:ingestion_cc_proto",
+        "//src/proto:run_context_cc_proto",
+        "//src/testing:fake_context",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@googletest//:gtest_main",
     ],
 )
 

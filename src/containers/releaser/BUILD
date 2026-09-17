@@ -39,6 +39,7 @@ cc_library(
     hdrs = ["releaser_fn.h"],
     deps = [
         "//src/containers/base:counter_names",
+        "//src/containers/base:with_outputs",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",
         "@confidential-federated-compute//containers/fns:fns",

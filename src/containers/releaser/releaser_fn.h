@@ -18,13 +18,14 @@
 #include <string>
 
 #include "absl/status/status.h"
-#include "containers/fns/do_fn.h"
+#include "src/containers/base/with_outputs.h"
 
 namespace cobalt::trusted_shuffler {
 
 // A DoFn class for decrypting messages. It unconditionally decrypts all
 // messages it receives.
-class ReleaserFn : public confidential_federated_compute::fns::DoFn {
+class ReleaserFn
+    : public TrustedDoFn::WithOutputs<Unencrypted<confidential_federated_compute::Session::KV>> {
  public:
   ReleaserFn() {}
 

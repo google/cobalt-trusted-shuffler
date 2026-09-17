@@ -42,13 +42,13 @@ namespace cobalt::trusted_shuffler {
 // - Records 1..N: Ingests ShuffledMessages from partition grouping via OnRecord().
 //   Validates that the message run_id matches RunContext and shuffle_count is 0.
 //   Forwards ShuffledMessages matching approved partitions encrypted under key index 0
-//   (kReencryptionKeyIndex) with unencrypted MetricEpochKey headers. Messages for
-//   unapproved partitions are discarded.
+//   with unencrypted MetricEpochKey headers. Messages for unapproved partitions are
+//   discarded.
 class ThresholdFilterFn
-    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage> {
+    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
+          EncryptedKV<MetricEpochKey, ShuffledMessage, 0>,
+          UnencryptedKV<IntegrityFault, IntegrityFault>> {
  public:
-  inline static constexpr int kReencryptionKeyIndex = 0;
-
   ThresholdFilterFn() = default;
 
   ~ThresholdFilterFn() override = default;

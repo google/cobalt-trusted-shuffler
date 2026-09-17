@@ -21,14 +21,18 @@
 
 #include "absl/status/status.h"
 #include "cc/crypto/signing_key.h"
-#include "containers/fns/do_fn.h"
 #include "google/protobuf/any.pb.h"
+#include "src/containers/base/with_outputs.h"
 #include "src/proto/run_context.pb.h"
 
 namespace cobalt::trusted_shuffler {
 
 // A DoFn class for generating a SignedRunContext from a RunConfig.
-class RunContextInitializerFn : public confidential_federated_compute::fns::DoFn {
+//
+// The FinalizeReplica config Any is forwarded unchanged as the routing key of
+// the emitted record.
+class RunContextInitializerFn
+    : public TrustedDoFn::WithOutputs<EncryptedKV<google::protobuf::Any, SignedRunContext, 0>> {
  public:
   explicit RunContextInitializerFn(oak::crypto::SigningKeyHandle* signing_key_handle)
       : signing_key_handle_(signing_key_handle) {}

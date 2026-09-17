@@ -44,11 +44,8 @@ absl::Status CounterFn::Do(KV input, DoContext& context) {
   OutputKey output_key;
   output_key.set_type(OutputKey::MESSAGE);
 
-  google::protobuf::Any key;
-  key.PackFrom(output_key);
-
   context.IncrementCounter(kEncryptedOutputRecordCount);
-  context.EmitEncrypted(key_index_, KV(std::move(key), std::move(input.data)));
+  EmitEncrypted(context, output_key, std::move(input.data)).IgnoreError();
   return absl::OkStatus();
 }
 
@@ -60,12 +57,8 @@ absl::Status CounterFn::FinalizeReplica(google::protobuf::Any config, FnContext&
   OutputKey report_key;
   report_key.set_type(OutputKey::REPORT);
 
-  google::protobuf::Any key;
-  key.PackFrom(report_key);
-
   context.IncrementCounter(kUnencryptedOutputRecordCount);
-  context.EmitUnencrypted(KV(std::move(key), report.SerializeAsString()));
-
+  EmitUnencrypted(context, report_key, report).IgnoreError();
   return absl::OkStatus();
 }
 
