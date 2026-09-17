@@ -71,17 +71,56 @@ cc_test(
 )
 
 cc_library(
+    name = "ingest_uploads_router",
+    srcs = ["ingest_uploads_router.cc"],
+    hdrs = ["ingest_uploads_router.h"],
+    deps = [
+        ":records",
+        "//src/proto:ingestion_cc_proto",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings:string_view",
+        "@abseil-cpp//absl/types:span",
+        "@confidential-federated-compute//containers:session",
+        "@federated-compute//fcp/protos/confidentialcompute:blob_data_cc_proto",
+        "@protobuf//:protobuf",
+    ],
+)
+
+cc_test(
+    name = "ingest_uploads_router_test",
+    srcs = ["ingest_uploads_router_test.cc"],
+    deps = [
+        ":ingest_uploads_router",
+        ":records",
+        "//src/proto:common_cc_proto",
+        "//src/proto:ingestion_cc_proto",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@confidential-federated-compute//containers:session",
+        "@federated-compute//fcp/protos/confidentialcompute:blob_data_cc_proto",
+        "@googletest//:gtest_main",
+        "@protobuf//:protobuf",
+    ],
+)
+
+cc_library(
     name = "pipeline_runner",
     srcs = ["pipeline_runner.cc"],
     hdrs = ["pipeline_runner.h"],
     deps = [
         ":do_fn_runner",
+        ":ingest_uploads_router",
         ":records",
+        "//src/containers/ingest_uploads:ingest_uploads_fn",
         "//src/containers/run_context_initializer:run_context_initializer_fn",
         "//src/proto:run_context_cc_proto",
+        "@abseil-cpp//absl/functional:any_invocable",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/types:span",
         "@oak//cc/crypto:signing_key",
     ],
 )
@@ -90,15 +129,18 @@ cc_test(
     name = "shuffler_flow_integration_test",
     srcs = ["shuffler_flow_integration_test.cc"],
     deps = [
+        ":ingest_uploads_router",
         ":pipeline_runner",
         ":records",
-        "//src/crypto:verify_signed_run_context",
         "//src/proto:run_context_cc_proto",
+        "//src/proto:trusted_shuffler_upload_cc_proto",
         "//src/testing:test_utils",
+        "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/status:statusor",
-        "@abseil-cpp//absl/strings:string_view",
+        "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/types:span",
+        "@confidential-federated-compute//containers:session",
         "@googletest//:gtest_main",
         "@oak//cc/crypto:signing_key",
     ],
