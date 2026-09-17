@@ -1,0 +1,105 @@
+# Copyright 2026 Google LLC.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "records",
+    hdrs = ["records.h"],
+    deps = [
+        "@confidential-federated-compute//containers:session",
+        "@protobuf//:protobuf",
+    ],
+)
+
+cc_library(
+    name = "simulated_context",
+    srcs = ["simulated_context.cc"],
+    hdrs = ["simulated_context.h"],
+    deps = [
+        ":records",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/strings:string_view",
+        "@confidential-federated-compute//containers:session",
+        "@federated-compute//fcp/protos/confidentialcompute:confidential_transform_cc_proto",
+    ],
+)
+
+cc_library(
+    name = "do_fn_runner",
+    srcs = ["do_fn_runner.cc"],
+    hdrs = ["do_fn_runner.h"],
+    deps = [
+        ":simulated_context",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/types:span",
+        "@confidential-federated-compute//containers:session",
+        "@confidential-federated-compute//containers/fns",
+        "@protobuf//:protobuf",
+    ],
+)
+
+cc_test(
+    name = "do_fn_runner_test",
+    srcs = ["do_fn_runner_test.cc"],
+    deps = [
+        ":do_fn_runner",
+        ":records",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@confidential-federated-compute//containers:session",
+        "@confidential-federated-compute//containers/fns",
+        "@googletest//:gtest_main",
+        "@protobuf//:protobuf",
+    ],
+)
+
+cc_library(
+    name = "pipeline_runner",
+    srcs = ["pipeline_runner.cc"],
+    hdrs = ["pipeline_runner.h"],
+    deps = [
+        ":do_fn_runner",
+        ":records",
+        "//src/containers/run_context_initializer:run_context_initializer_fn",
+        "//src/proto:run_context_cc_proto",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@oak//cc/crypto:signing_key",
+    ],
+)
+
+cc_test(
+    name = "shuffler_flow_integration_test",
+    srcs = ["shuffler_flow_integration_test.cc"],
+    deps = [
+        ":pipeline_runner",
+        ":records",
+        "//src/crypto:verify_signed_run_context",
+        "//src/proto:run_context_cc_proto",
+        "//src/testing:test_utils",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings:string_view",
+        "@abseil-cpp//absl/types:span",
+        "@googletest//:gtest_main",
+        "@oak//cc/crypto:signing_key",
+    ],
+)
