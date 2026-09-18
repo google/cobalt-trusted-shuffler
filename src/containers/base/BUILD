@@ -25,9 +25,15 @@ cc_library(
 )
 
 cc_library(
+    name = "pipeline_nodes",
+    hdrs = ["pipeline_nodes.h"],
+)
+
+cc_library(
     name = "with_outputs",
     hdrs = ["with_outputs.h"],
     deps = [
+        ":pipeline_nodes",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",
         "@confidential-federated-compute//containers:session",
@@ -52,6 +58,7 @@ cc_test(
     name = "with_outputs_test",
     srcs = ["with_outputs_test.cc"],
     deps = [
+        ":pipeline_nodes",
         ":with_outputs",
         "//src/proto:common_cc_proto",
         "//src/proto:ingestion_cc_proto",

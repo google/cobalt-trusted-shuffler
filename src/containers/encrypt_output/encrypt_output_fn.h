@@ -26,6 +26,7 @@
 #include "containers/fns/do_fn.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/proto/common.pb.h"
@@ -56,9 +57,10 @@ namespace cobalt::trusted_shuffler {
 //   release verification stage.
 class EncryptOutputFn
     : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
+          EncryptsTo<Node::kPartialReleaseReports>,
           UnencryptedKV<ReleaseOutputHeader, EncryptedMessageOutput>,
           UnencryptedKV<ReleaseOutputHeader, IntegrityFault>,
-          EncryptedKV<ReleaseOutputHeader, PartialReleaseReport, 0>> {
+          EncryptedKV<ReleaseOutputHeader, PartialReleaseReport, Node::kPartialReleaseReports>> {
  public:
   EncryptOutputFn() = default;
   ~EncryptOutputFn() override = default;

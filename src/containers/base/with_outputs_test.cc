@@ -22,6 +22,7 @@
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
@@ -36,6 +37,92 @@ using ::testing::Eq;
 using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
+// A misdeclared container is rejected when it is compiled, which no runtime
+// test can reach. Each rejection reads one of the predicates asserted here, and
+// both polarities of each are pinned: widening a predicate fails an assertion
+// here instead of silently admitting a container that emits to the wrong data
+// node.
+namespace compile_time_contract {
+
+// The first template argument of WithOutputs is the list of data nodes the
+// container encrypts to.
+static_assert(internal::kIsEncryptsTo<EncryptsTo<>>);
+static_assert(internal::kIsEncryptsTo<EncryptsTo<Node::kRunContext>>);
+static_assert(!internal::kIsEncryptsTo<Encrypted<SignedRunContext, Node::kRunContext>>);
+
+// The remaining template arguments are output streams.
+static_assert(internal::kIsOutputStream<Encrypted<SignedRunContext, Node::kRunContext>>);
+static_assert(internal::kIsOutputStream<UnencryptedKV<MetricEpochKey, IntegrityFault>>);
+static_assert(!internal::kIsOutputStream<EncryptsTo<Node::kRunContext>>);
+
+// Node::kNone is not a data node and cannot be encrypted to.
+static_assert(internal::kAreDataNodes<Node::kRunContext>);
+static_assert(!internal::kAreDataNodes<Node::kNone>);
+static_assert(!internal::kAreDataNodes<Node::kRunContext, Node::kNone>);
+
+// Data nodes are listed once each and in ascending order.
+static_assert(internal::kAreAscending<>);
+static_assert(internal::kAreAscending<Node::kPartialIngestionReports>);
+static_assert(internal::kAreAscending<Node::kIngestedMessages, Node::kPartialIngestionReports>);
+static_assert(!internal::kAreAscending<Node::kPartialIngestionReports, Node::kIngestedMessages>);
+static_assert(!internal::kAreAscending<Node::kIngestedMessages, Node::kIngestedMessages>);
+
+// An encrypted stream names the data node it is encrypted to; an unencrypted
+// one names none.
+static_assert(internal::kDestinationMatchesVisibility<Visibility::kEncrypted, Node::kRunContext>);
+static_assert(internal::kDestinationMatchesVisibility<Visibility::kUnencrypted, Node::kNone>);
+static_assert(!internal::kDestinationMatchesVisibility<Visibility::kEncrypted, Node::kNone>);
+static_assert(
+    !internal::kDestinationMatchesVisibility<Visibility::kUnencrypted, Node::kRunContext>);
+
+// Every data node a stream is encrypted to is one the container declared.
+static_assert(internal::kStreamDestinationIsDeclared<
+              EncryptsTo<Node::kRunContext>, Encrypted<SignedRunContext, Node::kRunContext>>);
+static_assert(internal::kStreamDestinationIsDeclared<
+              EncryptsTo<>, UnencryptedKV<MetricEpochKey, IntegrityFault>>);
+static_assert(!internal::kStreamDestinationIsDeclared<
+              EncryptsTo<Node::kRunContext>, Encrypted<SignedRunContext, Node::kIngestedMessages>>);
+
+// A data node's position in the declared list is its re-encryption key index.
+static_assert(EncryptsTo<Node::kIngestedMessages,
+                         Node::kPartialIngestionReports>::IndexOf<Node::kIngestedMessages>() == 0);
+static_assert(EncryptsTo<Node::kIngestedMessages, Node::kPartialIngestionReports>::IndexOf<
+                  Node::kPartialIngestionReports>() == 1);
+static_assert(EncryptsTo<Node::kIngestedMessages,
+                         Node::kPartialIngestionReports>::IndexOf<Node::kRunContext>() ==
+              kNotADestination);
+static_assert(EncryptsTo<>::IndexOf<Node::kRunContext>() == kNotADestination);
+
+// Streams are selected on visibility and value type together, so the same value
+// type on an encrypted and an unencrypted stream resolves to two declarations.
+static_assert(internal::FindOutputStream<Visibility::kUnencrypted, IntegrityFault,
+                                         Encrypted<IntegrityFault, Node::kRunContext>,
+                                         Unencrypted<IntegrityFault>>() == 1);
+static_assert(internal::FindOutputStream<Visibility::kEncrypted, IntegrityFault,
+                                         Encrypted<IntegrityFault, Node::kRunContext>,
+                                         Unencrypted<IntegrityFault>>() == 0);
+
+// A value type with no declared stream of that visibility does not resolve.
+static_assert(internal::FindOutputStream<Visibility::kUnencrypted, ShuffledMessage,
+                                         Encrypted<ShuffledMessage, Node::kRunContext>>() ==
+              internal::kNoMatchingStream);
+
+// Two streams sharing a (visibility, value type) pair are ambiguous and are
+// rejected rather than silently resolving to the first one.
+static_assert(internal::FindOutputStream<Visibility::kEncrypted, ShuffledMessage,
+                                         Encrypted<ShuffledMessage, Node::kRunContext>,
+                                         Encrypted<ShuffledMessage, Node::kIngestedMessages>>() ==
+              internal::kNoMatchingStream);
+static_assert(internal::kStreamHasUniqueVisibilityAndValue<
+              Encrypted<ShuffledMessage, Node::kRunContext>,
+              Encrypted<ShuffledMessage, Node::kRunContext>, Unencrypted<ShuffledMessage>>);
+static_assert(!internal::kStreamHasUniqueVisibilityAndValue<
+              Encrypted<ShuffledMessage, Node::kRunContext>,
+              Encrypted<ShuffledMessage, Node::kRunContext>,
+              Encrypted<ShuffledMessage, Node::kIngestedMessages>>);
+
+}  // namespace compile_time_contract
+
 class FailingContext : public testing::FakeContext {
  public:
   bool EmitEncrypted(int reencryption_key_index,
@@ -46,7 +133,9 @@ class FailingContext : public testing::FakeContext {
   bool EmitUnencrypted(confidential_federated_compute::Session::KV kv) override { return false; }
 };
 
-class SingleEncryptedDoFn : public TrustedDoFn::WithOutputs<Encrypted<SignedRunContext, 0>> {
+class SingleEncryptedDoFn
+    : public TrustedDoFn::WithOutputs<EncryptsTo<Node::kRunContext>,
+                                      Encrypted<SignedRunContext, Node::kRunContext>> {
  public:
   absl::Status Do(KV input, DoContext& context) override {
     SignedRunContext msg;
@@ -55,10 +144,14 @@ class SingleEncryptedDoFn : public TrustedDoFn::WithOutputs<Encrypted<SignedRunC
   }
 };
 
+// Declares its two destination nodes in the order the access policy lists them,
+// so kIngestedMessages is key index 0 and kPartialIngestionReports is 1.
 class MultiOutputDoFn
-    : public TrustedDoFn::WithOutputs<EncryptedKV<MetricEpochKey, ShuffledMessage, 0>,
-                                      EncryptedKV<MetricEpochKey, PartialIngestionReport, 1>,
-                                      UnencryptedKV<MetricEpochKey, IntegrityFault>> {
+    : public TrustedDoFn::WithOutputs<
+          EncryptsTo<Node::kIngestedMessages, Node::kPartialIngestionReports>,
+          EncryptedKV<MetricEpochKey, ShuffledMessage, Node::kIngestedMessages>,
+          EncryptedKV<MetricEpochKey, PartialIngestionReport, Node::kPartialIngestionReports>,
+          UnencryptedKV<MetricEpochKey, IntegrityFault>> {
  public:
   absl::Status Do(KV input, DoContext& context) override { return absl::OkStatus(); }
 
@@ -78,9 +171,51 @@ class MultiOutputDoFn
   }
 };
 
-// Declares an Any routing key, which is forwarded to KV.key unchanged.
+// Encrypts to a node that is not the first one it was given a key for, so its
+// only encrypted stream emits under key index 1. Its first node is one it never
+// emits to, which still occupies key index 0.
+class SecondDestinationDoFn
+    : public TrustedDoFn::WithOutputs<
+          EncryptsTo<Node::kIngestedMessages, Node::kPartialIngestionReports>,
+          Encrypted<PartialIngestionReport, Node::kPartialIngestionReports>> {
+ public:
+  absl::Status Do(KV input, DoContext& context) override {
+    PartialIngestionReport report;
+    report.mutable_partial_fingerprint()->set_run_id("run_1");
+    return EmitEncrypted(context, report);
+  }
+};
+
+// Sends two value types to a single data node, which they share a re-encryption
+// key for.
+class SharedDestinationDoFn
+    : public TrustedDoFn::WithOutputs<EncryptsTo<Node::kIngestedMessages>,
+                                      Encrypted<ShuffledMessage, Node::kIngestedMessages>,
+                                      Encrypted<PartialIngestionReport, Node::kIngestedMessages>> {
+ public:
+  absl::Status Do(KV input, DoContext& context) override {
+    if (absl::Status status = EmitEncrypted(context, ShuffledMessage()); !status.ok()) {
+      return status;
+    }
+    return EmitEncrypted(context, PartialIngestionReport());
+  }
+};
+
+// Emits no encrypted data, so it is given no re-encryption keys.
+class NoEncryptedOutputDoFn
+    : public TrustedDoFn::WithOutputs<EncryptsTo<>, UnencryptedKV<MetricEpochKey, IntegrityFault>> {
+ public:
+  absl::Status Do(KV input, DoContext& context) override {
+    return EmitUnencrypted(context, MetricEpochKey(), IntegrityFault());
+  }
+};
+
+// Declares an Any routing key, which is forwarded to KV.key unchanged, and
+// encrypts to the second of the two nodes it holds keys for.
 class AnyKeyDoFn
-    : public TrustedDoFn::WithOutputs<EncryptedKV<google::protobuf::Any, SignedRunContext, 3>> {
+    : public TrustedDoFn::WithOutputs<
+          EncryptsTo<Node::kRunContext, Node::kIngestedMessages>,
+          EncryptedKV<google::protobuf::Any, SignedRunContext, Node::kIngestedMessages>> {
  public:
   absl::Status Do(KV input, DoContext& context) override {
     SignedRunContext msg;
@@ -91,7 +226,8 @@ class AnyKeyDoFn
 
 // Forwards whole KV pairs rather than a declared message type.
 class KvPassthroughDoFn
-    : public TrustedDoFn::WithOutputs<Unencrypted<confidential_federated_compute::Session::KV>> {
+    : public TrustedDoFn::WithOutputs<EncryptsTo<>,
+                                      Unencrypted<confidential_federated_compute::Session::KV>> {
  public:
   absl::Status Do(KV input, DoContext& context) override {
     return EmitUnencrypted(context, std::move(input));
@@ -99,10 +235,13 @@ class KvPassthroughDoFn
 };
 
 // Exercises the keyless streams, whose emit overloads take a value alone and
-// leave KV.key empty. The encrypted stream uses a non-zero key index so that
-// the index is shown to come from the declaration.
+// leave KV.key empty. The encrypted stream uses the third destination node so
+// that the key index (2) is shown to come from the declaration.
 class KeylessOutputsDoFn
-    : public TrustedDoFn::WithOutputs<Encrypted<SignedRunContext, 2>, Unencrypted<MetricEpochKey>> {
+    : public TrustedDoFn::WithOutputs<
+          EncryptsTo<Node::kRunContext, Node::kIngestedMessages, Node::kPartialIngestionReports>,
+          Encrypted<SignedRunContext, Node::kPartialIngestionReports>,
+          Unencrypted<MetricEpochKey>> {
  public:
   absl::Status Do(KV input, DoContext& context) override { return absl::OkStatus(); }
 
@@ -115,42 +254,14 @@ class KeylessOutputsDoFn
   }
 };
 
-// Stream resolution is a compile-time function, so its contract is pinned with
-// static_asserts rather than runtime expectations. The ambiguous and unmatched
-// lists below are never used to instantiate WithOutputs, which would reject
-// them outright.
-namespace resolution {
-
-using ::cobalt::trusted_shuffler::internal::FindOutputStream;
-using ::cobalt::trusted_shuffler::internal::kNoMatchingStream;
-
-// Visibility participates in selection: the same value type on an encrypted and
-// an unencrypted stream resolves to two different declarations.
-static_assert(FindOutputStream<Visibility::kUnencrypted, IntegrityFault,
-                               Encrypted<IntegrityFault, 2>, Unencrypted<IntegrityFault>>() == 1);
-static_assert(FindOutputStream<Visibility::kEncrypted, IntegrityFault, Encrypted<IntegrityFault, 2>,
-                               Unencrypted<IntegrityFault>>() == 0);
-
-// A value type with no declared stream of that visibility does not resolve.
-static_assert(
-    FindOutputStream<Visibility::kUnencrypted, ShuffledMessage, Encrypted<ShuffledMessage, 0>>() ==
-    kNoMatchingStream);
-
-// Two streams sharing a (visibility, value type) pair are ambiguous and are
-// rejected rather than silently resolving to the first one.
-static_assert(FindOutputStream<Visibility::kEncrypted, ShuffledMessage,
-                               Encrypted<ShuffledMessage, 0>, Encrypted<ShuffledMessage, 1>>() ==
-              kNoMatchingStream);
-
-}  // namespace resolution
-
-TEST(WithOutputsTest, EmitsEncryptedValueWithCorrectKeyIndex) {
+TEST(WithOutputsTest, EmitsKeylessEncryptedValueWithEmptyKey) {
   testing::FakeCombinedContext context;
   SingleEncryptedDoFn fn;
 
   EXPECT_THAT(fn.Do(SingleEncryptedDoFn::KV("data"), context), IsOk());
   ASSERT_THAT(context.Encrypted(), SizeIs(1));
-  EXPECT_THAT(context.Encrypted()[0].first, Eq(0));
+  EXPECT_THAT(context.Encrypted()[0].second.key.type_url(), IsEmpty());
+  EXPECT_THAT(context.Encrypted()[0].second.key.value(), IsEmpty());
 
   SignedRunContext parsed;
   ASSERT_TRUE(parsed.ParseFromString(context.Encrypted()[0].second.data));
@@ -197,6 +308,38 @@ TEST(WithOutputsTest, PropagatesInternalErrorWhenContextEmitFails) {
               StatusIs(absl::StatusCode::kInternal));
 }
 
+TEST(WithOutputsTest, EncryptsToLaterDestinationUnderItsKeyIndex) {
+  testing::FakeCombinedContext context;
+  SecondDestinationDoFn fn;
+
+  EXPECT_THAT(fn.Do(SecondDestinationDoFn::KV("data"), context), IsOk());
+  ASSERT_THAT(context.Encrypted(), SizeIs(1));
+  EXPECT_THAT(context.Encrypted()[0].first, Eq(1));
+
+  PartialIngestionReport parsed;
+  ASSERT_TRUE(parsed.ParseFromString(context.Encrypted()[0].second.data));
+  EXPECT_THAT(parsed.partial_fingerprint().run_id(), Eq("run_1"));
+}
+
+TEST(WithOutputsTest, EncryptsStreamsSharingADestinationUnderOneKeyIndex) {
+  testing::FakeCombinedContext context;
+  SharedDestinationDoFn fn;
+
+  EXPECT_THAT(fn.Do(SharedDestinationDoFn::KV("data"), context), IsOk());
+  ASSERT_THAT(context.Encrypted(), SizeIs(2));
+  EXPECT_THAT(context.Encrypted()[0].first, Eq(0));
+  EXPECT_THAT(context.Encrypted()[1].first, Eq(0));
+}
+
+TEST(WithOutputsTest, EmitsUnencryptedWithoutAnyDestinations) {
+  testing::FakeCombinedContext context;
+  NoEncryptedOutputDoFn fn;
+
+  EXPECT_THAT(fn.Do(NoEncryptedOutputDoFn::KV("data"), context), IsOk());
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
+}
+
 TEST(WithOutputsTest, ForwardsAnyKeyWithoutNestingIt) {
   testing::FakeCombinedContext context;
   AnyKeyDoFn fn;
@@ -208,7 +351,7 @@ TEST(WithOutputsTest, ForwardsAnyKeyWithoutNestingIt) {
 
   EXPECT_THAT(fn.Do(AnyKeyDoFn::KV(key_any, "data"), context), IsOk());
   ASSERT_THAT(context.Encrypted(), SizeIs(1));
-  EXPECT_THAT(context.Encrypted()[0].first, Eq(3));
+  EXPECT_THAT(context.Encrypted()[0].first, Eq(1));
 
   // The declared Any key is emitted as-is, not packed into a second Any.
   MetricEpochKey emitted_key;
@@ -225,6 +368,7 @@ TEST(WithOutputsTest, ForwardsSessionKvPassthroughUnchanged) {
 
   EXPECT_THAT(fn.Do(KvPassthroughDoFn::KV(key_any, "opaque_bytes", "blob-7"), context), IsOk());
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  EXPECT_THAT(context.Unencrypted()[0].key.type_url(), Eq(key_any.type_url()));
   EXPECT_THAT(context.Unencrypted()[0].data, Eq("opaque_bytes"));
   EXPECT_THAT(context.Unencrypted()[0].blob_id, Eq("blob-7"));
 }

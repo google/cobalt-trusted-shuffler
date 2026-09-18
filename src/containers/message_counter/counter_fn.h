@@ -19,6 +19,7 @@
 
 #include "absl/status/status.h"
 #include "google/protobuf/any.pb.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/containers/base/with_outputs.h"
 #include "src/proto/message_counter/count_report.pb.h"
 #include "src/proto/message_counter/output_key.pb.h"
@@ -27,8 +28,10 @@ namespace cobalt::trusted_shuffler {
 
 // A DoFn class for counting messages. It keeps track of the number of
 // messages it receives and outputs the total count in the finalize step.
-class CounterFn : public TrustedDoFn::WithOutputs<EncryptedKV<OutputKey, std::string, 0>,
-                                                  UnencryptedKV<OutputKey, CountReport>> {
+class CounterFn
+    : public TrustedDoFn::WithOutputs<EncryptsTo<Node::kCountedMessages>,
+                                      EncryptedKV<OutputKey, std::string, Node::kCountedMessages>,
+                                      UnencryptedKV<OutputKey, CountReport>> {
  public:
   CounterFn() : count_(0L) {}
 

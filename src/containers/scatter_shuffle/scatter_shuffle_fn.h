@@ -25,6 +25,7 @@
 #include "google/protobuf/any.pb.h"
 #include "src/batching/batch_calculator.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -53,7 +54,8 @@ namespace cobalt::trusted_shuffler {
 //      and emits with visible unencrypted ScatterShuffleHeader (group_id).
 class ScatterShuffleFn
     : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
-          EncryptedKV<ScatterShuffleHeader, ShuffledMessage, 0>,
+          EncryptsTo<Node::kScatteredMessages>,
+          EncryptedKV<ScatterShuffleHeader, ShuffledMessage, Node::kScatteredMessages>,
           UnencryptedKV<ScatterShuffleHeader, IntegrityFault>> {
  public:
   ScatterShuffleFn() = default;

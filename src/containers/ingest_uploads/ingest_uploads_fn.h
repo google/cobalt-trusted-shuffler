@@ -26,6 +26,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -43,9 +44,12 @@ namespace cobalt::trusted_shuffler {
 //   and initializes multiset fingerprinting for the run.
 // - Records 1..N: Ingests client log upload checkpoints via OnRecord(), validates metric/epoch,
 //   updates HLL sketches and multiset fingerprint, and emits encrypted ShuffledMessage records.
-class IngestUploadsFn : public FirstRecordConfigDoFn<SignedRunContext, std::string>::WithOutputs<
-                            EncryptedKV<IngestMessagesHeader, ShuffledMessage, 0>,
-                            EncryptedKV<IngestMessagesHeader, PartialIngestionReport, 1>> {
+class IngestUploadsFn
+    : public FirstRecordConfigDoFn<SignedRunContext, std::string>::WithOutputs<
+          EncryptsTo<Node::kIngestedMessages, Node::kPartialIngestionReports>,
+          EncryptedKV<IngestMessagesHeader, ShuffledMessage, Node::kIngestedMessages>,
+          EncryptedKV<IngestMessagesHeader, PartialIngestionReport,
+                      Node::kPartialIngestionReports>> {
  public:
   // Project ID, Metric ID, and Epoch Index tuple identifying a data partition.
   using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;

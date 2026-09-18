@@ -40,6 +40,7 @@ cc_library(
     hdrs = ["run_context_initializer_fn.h"],
     deps = [
         "//src/containers/base:counter_names",
+        "//src/containers/base:pipeline_nodes",
         "//src/containers/base:with_outputs",
         "//src/crypto:release_encrypter",
         "//src/crypto:secure_random",

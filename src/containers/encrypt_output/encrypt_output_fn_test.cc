@@ -770,7 +770,7 @@ TEST_F(EncryptOutputFnTest, FinalizeReplicaEmitsPartialReleaseReportEncryptedUnd
 
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
-  // Verify EmitEncrypted at key index 0.
+  // The partial report is encrypted to Node::kPartialReleaseReports, key index 0.
   ASSERT_THAT(context.Encrypted(), SizeIs(1));
   EXPECT_EQ(context.Encrypted()[0].first, 0);
 

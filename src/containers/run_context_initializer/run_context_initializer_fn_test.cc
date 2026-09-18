@@ -43,7 +43,7 @@ using ::testing::Ne;
 using ::testing::Not;
 using ::testing::SizeIs;
 
-inline constexpr int kReencryptionKeyIndex = 0;
+inline constexpr int kRunContextKeyIndex = 0;
 
 class TestSigningKey : public oak::crypto::SigningKeyHandle {
  public:
@@ -291,7 +291,7 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaEmitsSignedRunContextWithKeyInd
   EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
 
   const auto& [key_index, output_kv] = encrypted_items[0];
-  EXPECT_THAT(key_index, Eq(kReencryptionKeyIndex));
+  EXPECT_THAT(key_index, Eq(kRunContextKeyIndex));
 
   SignedRunContext signed_run_context;
   ASSERT_TRUE(signed_run_context.ParseFromString(output_kv.data));

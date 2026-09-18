@@ -81,7 +81,7 @@ The orchestrator integrates this stage into its overall workflow as follows:
 
 #### Encrypted `SignedRunContext`
 
--   **Key Index**: 0 (`kReencryptionKeyIndex`)
+-   **Data Node**: `Node::kRunContext`
 -   **Value**: A serialized `SignedRunContext` protocol buffer, containing:
     -   `serialized_run_context`: A serialized `RunContext` message containing:
     -   `run_id`: A 32-byte cryptographically secure random run ID.

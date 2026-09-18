@@ -27,6 +27,7 @@
 #include "containers/session.h"
 #include "google/protobuf/any.pb.h"
 #include "google/protobuf/message.h"
+#include "src/containers/base/pipeline_nodes.h"
 
 namespace cobalt::trusted_shuffler {
 
@@ -35,7 +36,7 @@ struct NoKey {};
 
 // Whether an output stream's payload is readable by the untrusted orchestrator.
 enum class Visibility {
-  // KV.data is encrypted under the stream's key index and is opaque to the
+  // KV.data is encrypted to the stream's data node and is opaque to the
   // untrusted orchestrator. Only a downstream TEE stage holding the matching
   // re-encryption key can read it.
   kEncrypted,
@@ -44,20 +45,95 @@ enum class Visibility {
   kUnencrypted,
 };
 
-// Key index of an unencrypted stream, whose payload is never re-encrypted.
-inline constexpr int kNoKeyIndex = -1;
+// Position returned by EncryptsTo::IndexOf() for a node the container does not
+// encrypt to.
+inline constexpr int kNotADestination = -1;
+
+namespace internal {
+
+// Whether every node of a destination list is a data node.
+template <Node... Destinations>
+inline constexpr bool kAreDataNodes = ((Destinations != Node::kNone) && ...);
+
+// Whether a destination list is in ascending order, which also rejects the same
+// node being listed twice.
+template <Node... Destinations>
+inline constexpr bool kAreAscending = [] {
+  if constexpr (sizeof...(Destinations) < 2) {
+    return true;
+  } else {
+    const Node nodes[] = {Destinations...};
+    for (size_t i = 1; i < sizeof...(Destinations); ++i) {
+      if (nodes[i - 1] >= nodes[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+}();
+
+// Whether a stream's visibility and destination agree: an encrypted stream
+// names the data node it is encrypted to, an unencrypted one names none.
+template <Visibility StreamVisibility, Node Destination>
+inline constexpr bool kDestinationMatchesVisibility =
+    (StreamVisibility == Visibility::kUnencrypted) == (Destination == Node::kNone);
+
+}  // namespace internal
+
+// The data nodes a container encrypts output to.
+//
+// A node's position in this list is the re-encryption key index KMS gave the
+// container for it, which is what the session context expects. KMS returns one
+// key per node the access policy says the container writes, in the order the
+// policy lists them, so this list must be in that same order.
+//
+// The nodes here must be listed in ascending order, so that there is one way to
+// write the list and it can be checked against the policy by eye. The access
+// policy is required to list a container's output nodes in ascending order too;
+// listing them in another order there would silently send records to the wrong
+// stage.
+//
+// A container that emits no encrypted data declares EncryptsTo<>. A container
+// may also list a node it never emits to; the node still occupies its key
+// index.
+template <Node... Destinations>
+struct EncryptsTo {
+  // Returns the re-encryption key index of `Destination`, or kNotADestination
+  // if this container does not encrypt to it.
+  template <Node Destination>
+  static constexpr int IndexOf() {
+    if constexpr (sizeof...(Destinations) == 0) {
+      return kNotADestination;
+    } else {
+      const Node nodes[] = {Destinations...};
+      for (size_t i = 0; i < sizeof...(Destinations); ++i) {
+        if (nodes[i] == Destination) {
+          return static_cast<int>(i);
+        }
+      }
+      return kNotADestination;
+    }
+  }
+
+  static_assert(internal::kAreDataNodes<Destinations...>,
+                "Node::kNone is not a data node and cannot be encrypted to.");
+  static_assert(internal::kAreAscending<Destinations...>,
+                "The data nodes a container encrypts to must be listed once each and in "
+                "ascending order, matching the order the access policy lists the container's "
+                "output nodes.");
+};
 
 // A single output stream that a container is allowed to emit on.
 //
 // Containers declare their streams using the Encrypted, EncryptedKV,
 // Unencrypted, and UnencryptedKV aliases below rather than naming OutputStream
 // directly. The declared list drives Emit*() dispatch: the (visibility, value
-// type) pair selects the stream, and the stream supplies the destination
-// re-encryption key index.
+// type) pair selects the stream, and the stream supplies the data node its
+// value is encrypted to.
 //
 // KV.key is always plaintext and visible to the untrusted orchestrator, on both
 // encrypted and unencrypted streams.
-template <Visibility StreamVisibility, typename KeyType, typename ValueType, int KeyIndex>
+template <Visibility StreamVisibility, typename KeyType, typename ValueType, Node Destination>
 struct OutputStream {
   static_assert(std::is_same_v<KeyType, NoKey> ||
                     std::is_base_of_v<google::protobuf::Message, KeyType>,
@@ -70,16 +146,16 @@ struct OutputStream {
                      std::is_same_v<KeyType, NoKey> &&
                      std::is_same_v<ValueType, confidential_federated_compute::Session::KV>),
                 "An output stream's value must be a Protobuf message.");
-  static_assert(StreamVisibility == Visibility::kUnencrypted ? KeyIndex == kNoKeyIndex
-                                                             : KeyIndex >= 0,
-                "An encrypted output stream needs a non-negative re-encryption key index, and "
-                "an unencrypted one must not declare an index.");
+  static_assert(internal::kDestinationMatchesVisibility<StreamVisibility, Destination>,
+                "An encrypted output stream must name the data node it is encrypted to, and an "
+                "unencrypted one must not name any.");
 
   // Whether the payload is encrypted for a downstream TEE stage.
   inline static constexpr Visibility kVisibility = StreamVisibility;
 
-  // The destination re-encryption key index, or kNoKeyIndex when unencrypted.
-  inline static constexpr int kKeyIndex = KeyIndex;
+  // The data node the payload is encrypted to, or Node::kNone when the payload
+  // is plaintext.
+  inline static constexpr Node kDestination = Destination;
 
   // The plaintext routing header packed into KV.key, or NoKey to leave it
   // empty. A key of google::protobuf::Any is forwarded to KV.key unchanged
@@ -90,25 +166,52 @@ struct OutputStream {
   using Value = ValueType;
 };
 
-// Declares an encrypted value stream emitted under KeyIndex with an empty key.
-template <typename ValueType, int KeyIndex>
-using Encrypted = OutputStream<Visibility::kEncrypted, NoKey, ValueType, KeyIndex>;
+// Declares an encrypted value stream emitted to Destination with an empty key.
+template <typename ValueType, Node Destination>
+using Encrypted = OutputStream<Visibility::kEncrypted, NoKey, ValueType, Destination>;
 
 // Declares an encrypted key-value stream where KeyType is packed into KV.key in
-// plaintext for orchestrator routing and ValueType is encrypted under KeyIndex.
-template <typename KeyType, typename ValueType, int KeyIndex>
-using EncryptedKV = OutputStream<Visibility::kEncrypted, KeyType, ValueType, KeyIndex>;
+// plaintext for orchestrator routing and ValueType is encrypted to Destination.
+template <typename KeyType, typename ValueType, Node Destination>
+using EncryptedKV = OutputStream<Visibility::kEncrypted, KeyType, ValueType, Destination>;
 
 // Declares a plaintext value stream emitted with an empty key.
 template <typename ValueType>
-using Unencrypted = OutputStream<Visibility::kUnencrypted, NoKey, ValueType, kNoKeyIndex>;
+using Unencrypted = OutputStream<Visibility::kUnencrypted, NoKey, ValueType, Node::kNone>;
 
 // Declares a plaintext key-value stream where both KeyType and ValueType are
 // visible to the untrusted orchestrator.
 template <typename KeyType, typename ValueType>
-using UnencryptedKV = OutputStream<Visibility::kUnencrypted, KeyType, ValueType, kNoKeyIndex>;
+using UnencryptedKV = OutputStream<Visibility::kUnencrypted, KeyType, ValueType, Node::kNone>;
 
 namespace internal {
+
+// Whether `T` is an EncryptsTo<...> list.
+template <typename T>
+inline constexpr bool kIsEncryptsTo = false;
+template <Node... Destinations>
+inline constexpr bool kIsEncryptsTo<EncryptsTo<Destinations...>> = true;
+
+// Whether `T` is an output stream declaration.
+template <typename T>
+inline constexpr bool kIsOutputStream = false;
+template <Visibility StreamVisibility, typename KeyType, typename ValueType, Node Destination>
+inline constexpr bool
+    kIsOutputStream<OutputStream<StreamVisibility, KeyType, ValueType, Destination>> = true;
+
+// Whether `Stream` is encrypted to a data node that `Destinations` declares. An
+// unencrypted stream has no destination and always satisfies this. A malformed
+// `Destinations` or `Stream` also satisfies this, so that it is reported by the
+// assertion for that argument alone.
+template <typename Destinations, typename Stream>
+inline constexpr bool kStreamDestinationIsDeclared = [] {
+  if constexpr (!kIsEncryptsTo<Destinations> || !kIsOutputStream<Stream>) {
+    return true;
+  } else {
+    return Stream::kDestination == Node::kNone ||
+           Destinations::template IndexOf<Stream::kDestination>() != kNotADestination;
+  }
+}();
 
 // Sentinel position returned by FindOutputStream() when zero or multiple
 // declared streams match.
@@ -142,6 +245,18 @@ constexpr int FindOutputStream() {
   return found;
 }
 
+// Whether `Stream` has a unique (visibility, value type) pair among `Streams`.
+// A malformed `Streams` entry also satisfies this, so that it is reported by
+// the assertion for that argument alone.
+template <typename Stream, typename... Streams>
+inline constexpr bool kStreamHasUniqueVisibilityAndValue = [] {
+  if constexpr ((!kIsOutputStream<Streams> || ...)) {
+    return true;
+  } else {
+    return FindOutputStream<Stream::kVisibility, typename Stream::Value, Streams...>() >= 0;
+  }
+}();
+
 // The stream at `Position`, clamped so that a failed FindOutputStream() lookup
 // reports only its own static_assert instead of also failing to index the list.
 template <int Position, typename... Streams>
@@ -172,35 +287,43 @@ std::string SerializePayload(ValueArg&& value) {
 
 }  // namespace internal
 
-// Mixin that declares the output streams a container is allowed to emit on and
-// provides the strongly typed emit methods for them.
+// Mixin that declares the data nodes a container encrypts output to and the
+// output streams it is allowed to emit on, and provides the strongly typed emit
+// methods for them.
 //
 // Each Emit*() call is matched against the declared streams at compile time, so
-// a container can only emit value types it has declared, and the destination
-// key index comes from the declaration rather than the call site.
-template <typename... OutputStreams>
+// a container can only emit value types it has declared, and the re-encryption
+// key index comes from the position of the stream's data node in `Destinations`
+// rather than from the call site.
+template <typename Destinations, typename... OutputStreams>
 class WithOutputs {
+  static_assert(internal::kIsEncryptsTo<Destinations>,
+                "A container must declare the data nodes it encrypts output to as an "
+                "EncryptsTo<...> first template argument, or EncryptsTo<> if it emits no "
+                "encrypted data.");
   static_assert(sizeof...(OutputStreams) > 0,
                 "A container must declare at least one output stream.");
-  // Accessing kVisibility and Value instantiates each OutputStream (checking
-  // its key, value, and key index static_asserts even for streams never emitted
-  // on) and verifies that no two streams share a (visibility, value type) pair.
-  static_assert(((internal::FindOutputStream<OutputStreams::kVisibility,
-                                             typename OutputStreams::Value, OutputStreams...>() >=
-                  0) &&
+  static_assert((internal::kIsOutputStream<OutputStreams> && ...),
+                "A container must declare each of its output streams with Encrypted, "
+                "EncryptedKV, Unencrypted, or UnencryptedKV.");
+  static_assert((internal::kStreamDestinationIsDeclared<Destinations, OutputStreams> && ...),
+                "An encrypted output stream names a data node that is missing from this "
+                "container's EncryptsTo<...> list.");
+  static_assert((internal::kStreamHasUniqueVisibilityAndValue<OutputStreams, OutputStreams...> &&
                  ...),
                 "Each declared output stream must have a unique (visibility, value type) pair.");
 
  protected:
-  // Emits an encrypted value with an empty key under the declared key index.
+  // Emits a value with an empty key, encrypted to the data node declared for
+  // its stream.
   template <typename ValueArg>
   absl::Status EmitEncrypted(confidential_federated_compute::fns::Fn::FnContext& context,
                              ValueArg&& value) const {
     return Emit<Visibility::kEncrypted>(context, NoKey(), std::forward<ValueArg>(value));
   }
 
-  // Emits a plaintext key packed into KV.key and an encrypted value serialized
-  // into KV.data under the declared key index.
+  // Emits a plaintext key packed into KV.key and a value serialized into
+  // KV.data and encrypted to the data node declared for its stream.
   template <typename KeyArg, typename ValueArg>
   absl::Status EmitEncrypted(confidential_federated_compute::fns::Fn::FnContext& context,
                              KeyArg&& key, ValueArg&& value) const {
@@ -266,7 +389,8 @@ class WithOutputs {
         internal::SerializePayload(std::forward<ValueArg>(value)));
 
     if constexpr (StreamVisibility == Visibility::kEncrypted) {
-      if (!context.EmitEncrypted(Stream::kKeyIndex, std::move(kv))) {
+      constexpr int kKeyIndex = Destinations::template IndexOf<Stream::kDestination>();
+      if (!context.EmitEncrypted(kKeyIndex, std::move(kv))) {
         return absl::InternalError("Failed to emit encrypted value to session context.");
       }
     } else {
@@ -282,9 +406,10 @@ class WithOutputs {
 // inherit directly from confidential_federated_compute::fns::DoFn.
 struct TrustedDoFn {
   // Base class combining DoFn with strongly typed output declarations.
-  template <typename... OutputStreams>
-  class WithOutputs : public confidential_federated_compute::fns::DoFn,
-                      public ::cobalt::trusted_shuffler::WithOutputs<OutputStreams...> {
+  template <typename Destinations, typename... OutputStreams>
+  class WithOutputs
+      : public confidential_federated_compute::fns::DoFn,
+        public ::cobalt::trusted_shuffler::WithOutputs<Destinations, OutputStreams...> {
    public:
     ~WithOutputs() override = default;
   };

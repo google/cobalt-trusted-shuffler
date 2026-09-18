@@ -39,7 +39,7 @@ In the two-pass shuffling architecture, the scatter shuffle container processes 
 
 ### Outputs
 - **Streaming Output**: A stream of encrypted KV records (`ScatterShuffleHeader` with `group_id`, encrypted `ShuffledMessage`) emitted via `EmitEncrypted`:
-  - Note: `kReencryptionKeyIndex = 0` is the container's local output node index passed to `EmitEncrypted` for the downstream gather shuffle stage.
+  - Note: `Node::kScatteredMessages` is the data node the payload is encrypted to, which the downstream gather shuffle stage reads.
   - **Header**: Visible unencrypted `ScatterShuffleHeader` with `group_id` (`new_position % batch_num`), inspected by the untrusted orchestrator to group messages for subsequent shuffle stages.
   - **Payload**: Re-encrypted `ShuffledMessage` ciphertext with `shuffle_count = 1`.
 - **Integrity Violation Output**: Emitted via `EmitUnencrypted` only when an integrity violation occurs:
@@ -50,8 +50,8 @@ In the two-pass shuffling architecture, the scatter shuffle container processes 
 
 ## Data Visibility & Privacy Boundary
 
-- **`EmitEncrypted(reencryption_key_index, kv)`**:
-  - The `reencryption_key_index` argument (`0`) is the container's local output node index for the downstream gather shuffle stage.
+- **`EmitEncrypted(kv)`**:
+  - The payload is encrypted to the `kScatteredMessages` data node, which the downstream gather shuffle stage reads.
   - The `group_id` header in `kv.key` is unencrypted and visible to the untrusted orchestrator for routing.
   - The `ShuffledMessage` payload in `kv.value` is encrypted with the session's re-encryption key and is **completely opaque** to the untrusted orchestrator. Only downstream confidential TEE stages holding the corresponding key can decrypt it.
 - **`EmitUnencrypted(kv)`**:

@@ -25,6 +25,7 @@
 #include "absl/status/status.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
@@ -41,12 +42,13 @@ namespace cobalt::trusted_shuffler {
 //   populates approved partitions that met the device threshold.
 // - Records 1..N: Ingests ShuffledMessages from partition grouping via OnRecord().
 //   Validates that the message run_id matches RunContext and shuffle_count is 0.
-//   Forwards ShuffledMessages matching approved partitions encrypted under key index 0
-//   with unencrypted MetricEpochKey headers. Messages for unapproved partitions are
+//   Forwards ShuffledMessages matching approved partitions encrypted to the kFilteredMessages
+//   data node with unencrypted MetricEpochKey headers. Messages for unapproved partitions are
 //   discarded.
 class ThresholdFilterFn
     : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
-          EncryptedKV<MetricEpochKey, ShuffledMessage, 0>,
+          EncryptsTo<Node::kFilteredMessages>,
+          EncryptedKV<MetricEpochKey, ShuffledMessage, Node::kFilteredMessages>,
           UnencryptedKV<IntegrityFault, IntegrityFault>> {
  public:
   ThresholdFilterFn() = default;

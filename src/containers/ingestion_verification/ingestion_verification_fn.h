@@ -26,6 +26,7 @@
 #include "absl/status/status.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/config_constraints.pb.h"
@@ -52,7 +53,9 @@ namespace cobalt::trusted_shuffler {
 //   IntegrityFault) for ThresholdFilter.
 class IngestionVerificationFn
     : public FirstRecordConfigDoFn<SignedRunContext, PartialIngestionReport>::WithOutputs<
-          EncryptedKV<IngestionVerificationHeader, IngestionVerificationPayload, 0>> {
+          EncryptsTo<Node::kVerifiedIngestion>,
+          EncryptedKV<IngestionVerificationHeader, IngestionVerificationPayload,
+                      Node::kVerifiedIngestion>> {
  public:
   explicit IngestionVerificationFn(TrustedShufflerConfigConstraints config_constraints);
 

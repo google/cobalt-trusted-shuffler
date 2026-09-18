@@ -169,8 +169,6 @@ absl::Status ScatterShuffleFn::FinalizeReplica(google::protobuf::Any config, FnC
     ScatterShuffleHeader header;
     header.set_group_id(group_id);
 
-    // Note: kReencryptionKeyIndex (0) is the container's local output node index
-    // for the downstream gather shuffle stage.
     context.IncrementCounter(kEncryptedOutputRecordCount);
     EmitEncrypted(context, header, message).IgnoreError();
   }

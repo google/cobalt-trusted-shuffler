@@ -53,8 +53,8 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
 
  public:
   // Base class combining FirstRecordConfigDoFn<ConfigProto, RecordType> with
-  // strongly typed output declarations.
-  template <typename... OutputStreams>
+  // the data nodes the container encrypts to and its output declarations.
+  template <typename Destinations, typename... OutputStreams>
   class WithOutputs;
 
   FirstRecordConfigDoFn() = default;
@@ -125,10 +125,10 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
 };
 
 template <typename ConfigProto, typename RecordType>
-template <typename... OutputStreams>
+template <typename Destinations, typename... OutputStreams>
 class FirstRecordConfigDoFn<ConfigProto, RecordType>::WithOutputs
     : public FirstRecordConfigDoFn<ConfigProto, RecordType>,
-      public ::cobalt::trusted_shuffler::WithOutputs<OutputStreams...> {
+      public ::cobalt::trusted_shuffler::WithOutputs<Destinations, OutputStreams...> {
  public:
   using FirstRecordConfigDoFn<ConfigProto, RecordType>::FirstRecordConfigDoFn;
   ~WithOutputs() override = default;

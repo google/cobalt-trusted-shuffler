@@ -28,5 +28,5 @@ It parses client device uploads (`TrustedShufflerUpload` as well as `ClientPaylo
 
 ## Configuration & Key Indices
 
-- **Key Index 0** (`reencryption_key 2`): Used for emitted encrypted messages.
-- **Key Index 1** (`reencryption_key 3`): Used for emitted partial ingestion reports.
+- **`Node::kIngestedMessages`** (access policy node 2): Used for emitted encrypted messages.
+- **`Node::kPartialIngestionReports`** (access policy node 3): Used for emitted partial ingestion reports.

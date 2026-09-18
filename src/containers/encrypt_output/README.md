@@ -34,7 +34,7 @@ In the Trusted Shuffler pipeline, the `encrypt_output` container processes shuff
 
 ### Outputs
 - **Streaming Messages (`EmitUnencrypted`)**: `EncryptedMessageOutput` containing `MetricEpochKey` and customer payloads encrypted for release using `ReleaseEncrypter` with `RunContext.release_key`. Opaque to the untrusted orchestrator until the release key is released.
-- **Finalize Emission (`EmitEncrypted`)**: `PartialReleaseReport` containing the accumulated `partial_fingerprint` emitted encrypted under key index 0 (`kReencryptionKeyIndex`) to the downstream release verification stage.
+- **Finalize Emission (`EmitEncrypted`)**: `PartialReleaseReport` containing the accumulated `partial_fingerprint` emitted encrypted to the `kPartialReleaseReports` data node for the downstream release verification stage.
 
 ---
 
@@ -44,6 +44,6 @@ In the Trusted Shuffler pipeline, the `encrypt_output` container processes shuff
 - **Input Decryption**: Inputs are decrypted by the framework using the container's private encryption key handle.
 - **Output Encryption**:
   - Customer message payloads are encrypted for release using `ReleaseEncrypter` (Tink AES-256-GCM AEAD with `RunContext.release_key`) and emitted via `EmitUnencrypted`.
-  - Finalization payload `PartialReleaseReport` is emitted via `EmitEncrypted` with key index 0 (`kReencryptionKeyIndex`) for downstream release verification.
+  - Finalization payload `PartialReleaseReport` is emitted via `EmitEncrypted` to the `kPartialReleaseReports` data node for downstream release verification.
 
 

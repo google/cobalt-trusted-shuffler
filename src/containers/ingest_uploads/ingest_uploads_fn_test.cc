@@ -55,8 +55,8 @@ using testing::CreateValidSignedRunContext;
 using ::testing::Eq;
 using ::testing::SizeIs;
 
-constexpr uint32_t kMessageKeyIndex = 0;
-constexpr uint32_t kReportKeyIndex = 1;
+constexpr uint32_t kIngestedMessagesKeyIndex = 0;
+constexpr uint32_t kPartialIngestionReportsKeyIndex = 1;
 const std::string kTestRunId(kRunIdByteLength, 'a');
 constexpr absl::string_view kTestPrivacyId = "test_privacy_id";
 
@@ -97,11 +97,11 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
   EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
   EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
 
-  // Verify message emitted encrypted with key index 0 (reencryption_key 2)
+  // The message is encrypted to Node::kIngestedMessages, key index 0.
   auto encrypted_messages = context.Encrypted();
   ASSERT_THAT(encrypted_messages, SizeIs(1));
   const auto emitted = encrypted_messages[0];
-  EXPECT_THAT(emitted.first, Eq(kMessageKeyIndex));
+  EXPECT_THAT(emitted.first, Eq(kIngestedMessagesKeyIndex));
 
   IngestMessagesHeader header;
   ASSERT_TRUE(emitted.second.key.UnpackTo(&header));
@@ -118,11 +118,11 @@ TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context), IsOk());
   EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(2));
 
-  // Verify partial report emitted encrypted with key index 1 (reencryption_key 3)
+  // The partial report is encrypted to Node::kPartialIngestionReports, key index 1.
   auto all_encrypted = context.Encrypted();
   ASSERT_THAT(all_encrypted, SizeIs(2));
   const auto report_emitted = all_encrypted[1];
-  EXPECT_THAT(report_emitted.first, Eq(kReportKeyIndex));
+  EXPECT_THAT(report_emitted.first, Eq(kPartialIngestionReportsKeyIndex));
 
   IngestMessagesHeader report_header;
   ASSERT_TRUE(report_emitted.second.key.UnpackTo(&report_header));
@@ -385,7 +385,7 @@ TEST(IngestUploadsFnTest, EstimatesDeviceCardinalityUsingPrivacyId) {
   // 3 messages + 1 report
   ASSERT_THAT(all_encrypted, SizeIs(4));
   const std::pair<int, IngestUploadsFn::KV>& report_emitted = all_encrypted[3];
-  EXPECT_THAT(report_emitted.first, Eq(kReportKeyIndex));
+  EXPECT_THAT(report_emitted.first, Eq(kPartialIngestionReportsKeyIndex));
 
   PartialIngestionReport report;
   ASSERT_TRUE(report.ParseFromString(report_emitted.second.data));
