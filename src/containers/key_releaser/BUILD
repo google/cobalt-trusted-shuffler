@@ -12,11 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
 # TODO(b/557303917): Wire key_releaser into Kokoro in CL 3.
+
+
+cc_binary(
+    name = "main",
+    srcs = ["main.cc"],
+    deps = [
+        ":key_releaser_transform",
+        "//src/version",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:check",
+        "@confidential-federated-compute//containers/fns:fns",
+        "@grpc//:grpc++",
+        "@oak//cc/containers/sdk:encryption_key_handle",
+        "@oak//cc/containers/sdk:orchestrator_client",
+        "@oak//cc/containers/sdk:signing_key_handle",
+        "@tink_cc//tink/aead:aead_config",
+    ],
+)
 
 cc_library(
     name = "key_releaser_fn",
@@ -37,6 +55,20 @@ cc_library(
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
+        "@protobuf//:protobuf",
+    ],
+)
+
+cc_library(
+    name = "key_releaser_transform",
+    srcs = ["key_releaser_transform.cc"],
+    hdrs = ["key_releaser_transform.h"],
+    deps = [
+        ":key_releaser_fn",
+        "@abseil-cpp//absl/status:statusor",
+        "@confidential-federated-compute//containers/fns:fns",
+        "@oak//cc/crypto:encryption_key",
+        "@oak//cc/crypto:signing_key",
         "@protobuf//:protobuf",
     ],
 )
@@ -73,3 +105,32 @@ cc_test(
         "@tink_cc//tink/util:secret_data",
     ],
 )
+
+cc_test(
+    name = "key_releaser_transform_test",
+    srcs = ["key_releaser_transform_test.cc"],
+    deps = [
+        ":key_releaser_fn",
+        ":key_releaser_transform",
+        "//src/crypto:multiset_fingerprint",
+        "//src/crypto:release_encrypter",
+        "//src/crypto:verify_signed_run_context",
+        "//src/proto:common_cc_proto",
+        "//src/proto:fingerprint_cc_proto",
+        "//src/proto:ingestion_cc_proto",
+        "//src/proto:release_cc_proto",
+        "//src/proto:run_context_cc_proto",
+        "//src/testing:fake_context",
+        "//src/testing:fake_keys",
+        "//src/testing:testable_transform",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@confidential-federated-compute//containers:session",
+        "@confidential-federated-compute//containers/fns:fns",
+        "@federated-compute//fcp/protos/confidentialcompute:confidential_transform_cc_proto",
+        "@googletest//:gtest_main",
+        "@protobuf//:protobuf",
+        "@tink_cc//tink/aead:aead_config",
+    ],
+)
+
