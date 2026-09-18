@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@oak//bazel:defs.bzl", "oci_runtime_bundle")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//visibility:public"])
-
-# TODO(b/557303917): Wire key_releaser into Kokoro in CL 3.
 
 
 cc_binary(
@@ -133,4 +134,22 @@ cc_test(
         "@tink_cc//tink/aead:aead_config",
     ],
 )
+
+pkg_tar(
+    name = "tar",
+    srcs = [":main"],
+)
+
+oci_image(
+    name = "oci_image",
+    base = "@distroless_cc_debian12_linux_amd64",
+    entrypoint = ["/main"],
+    tars = [":tar"],
+)
+
+oci_runtime_bundle(
+    name = "oci_runtime_bundle",
+    image = ":oci_image",
+)
+
 

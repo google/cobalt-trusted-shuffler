@@ -35,6 +35,7 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | [`threshold_filter`](threshold_filter/) | Filters messages by approved partition thresholds from Ingestion Verification report, drops unapproved partitions, and emits encrypted message streams. | Emits messages encrypted (`EmitEncrypted`) with key index 0 and plaintext `MetricEpochKey` headers. Partitions below threshold are dropped completely. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`scatter_shuffle`](scatter_shuffle/) | Cryptographically shuffles batches of messages partitioned by `MetricEpochKey`, validates batch size invariants, assigns group IDs (`group_id = new_position % batch_num`), increments `shuffle_count`, and re-encrypts payloads. | Emits encrypted KV records (`ScatterShuffleHeader` with `group_id` and encrypted `ShuffledMessage`) via `EmitEncrypted`; emits `IntegrityFault` via `EmitUnencrypted` on validation failure. | Record 0 `IngestionVerificationPayload` (`src/proto/ingestion.proto`) |
 | [`encrypt_output`](encrypt_output/) | Encrypts shuffled messages for release using `RunContext.release_key` via `ReleaseEncrypter` and accumulates the partial multiset release fingerprint. | Emits streaming `EncryptedMessageOutput` unencrypted (payloads encrypted for release) and final `PartialReleaseReport` encrypted under key index 0 (`kReencryptionKeyIndex`). | [`src/proto/run_context.proto`](../proto/run_context.proto), [`src/proto/release.proto`](../proto/release.proto) |
+| [`key_releaser`](key_releaser/) | Aggregates partial release multiset fingerprints from `encrypt_output` workers and verifies complete multiset equivalence against the canonical ingestion fingerprint before releasing the run's Tink AEAD `release_key`. | Emits unencrypted `DecryptionKeyRelease` (`ReleasedKeyReport` or `IntegrityFault`) via `EmitUnencrypted` on replica finalization. | Record 0 `IngestionVerificationPayload` (`src/proto/ingestion.proto`), Records 1..N `PartialReleaseReport` (`src/proto/release.proto`) |
 
 ---
 
@@ -142,3 +143,14 @@ The **`encrypt_output`** container is responsible for output encryption and rele
 - **Outputs**: Streaming `EncryptedMessageOutput` emitted unencrypted (payloads encrypted under `RunContext.release_key`), and `PartialReleaseReport` emitted encrypted under key index 0 (`kReencryptionKeyIndex`) to the downstream release verification stage upon finalization.
 - **Documentation**: See [`src/containers/encrypt_output/README.md`](encrypt_output/README.md).
 
+---
+
+## 10. `key_releaser`
+
+The **`key_releaser`** container performs cryptographic multiset fingerprint verification and decryption key release at the end of the pipeline.
+
+- **Purpose**: Aggregates partial release multiset fingerprints from all `encrypt_output` workers, verifies complete equivalence against the canonical ingestion fingerprint (`MultisetFingerprint::VerifyComplete`), and releases the run's Tink AES-256-GCM AEAD `release_key` to the untrusted orchestrator only when verification succeeds.
+- **Configuration**: `IngestionVerificationPayload` (record 0) containing `SignedRunContext`, `ThresholdReport`, and `canonical_fingerprint`.
+- **Inputs**: `IngestionVerificationPayload` on record 0 and `PartialReleaseReport` records on records 1..N.
+- **Outputs**: Emits a single unencrypted `DecryptionKeyRelease` (`ReleasedKeyReport` with `release_key`, or `IntegrityFault`) via `EmitUnencrypted` upon finalization.
+- **Documentation**: See [`src/containers/key_releaser/README.md`](key_releaser/README.md).
