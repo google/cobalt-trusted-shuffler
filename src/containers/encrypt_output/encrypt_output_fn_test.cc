@@ -29,6 +29,7 @@
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
@@ -697,6 +698,11 @@ TEST_F(EncryptOutputFnTest, ProcessPaddingMessageDoesNotEmitAndIsIgnored) {
   ASSERT_TRUE(partial_report.ParseFromString(context.Encrypted()[0].second.data));
   EXPECT_EQ(partial_report.partial_fingerprint().entries_size(), 1);
   EXPECT_EQ(partial_report.partial_fingerprint().entries(0).message_count(), 1);
+
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(2));
+  EXPECT_THAT(context.GetCounters().at(std::string(kUnencryptedOutputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
 }
 
 TEST_F(EncryptOutputFnTest, FinalizeReplicaBeforeConfigTriggersFault) {

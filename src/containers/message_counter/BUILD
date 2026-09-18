@@ -38,6 +38,7 @@ cc_library(
     srcs = ["counter_fn.cc"],
     hdrs = ["counter_fn.h"],
     deps = [
+        "//src/containers/base:counter_names",
         "//src/proto/message_counter:count_report_cc_proto",
         "//src/proto/message_counter:counter_config_cc_proto",
         "//src/proto/message_counter:output_key_cc_proto",
@@ -64,6 +65,7 @@ cc_test(
     srcs = ["counter_fn_test.cc"],
     deps = [
         ":counter_fn",
+        "//src/containers/base:counter_names",
         "//src/proto/message_counter:count_report_cc_proto",
         "//src/proto/message_counter:counter_config_cc_proto",
         "//src/proto/message_counter:output_key_cc_proto",

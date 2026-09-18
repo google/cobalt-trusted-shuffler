@@ -25,6 +25,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "google/protobuf/any.pb.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
@@ -57,9 +58,11 @@ absl::Status IngestionVerificationFn::InitializeReplica(google::protobuf::Any co
 
 absl::Status IngestionVerificationFn::OnConfig(
     const cobalt::trusted_shuffler::SignedRunContext& signed_run_context, DoContext& context) {
+  context.IncrementCounter(kInputConfigCount);
   const absl::StatusOr<RunContext> verified_run_context =
       VerifySignedRunContext(signed_run_context);
   if (!verified_run_context.ok()) {
+    context.IncrementCounter(kInputConfigInvalid);
     return verified_run_context.status();
   }
   run_id_ = verified_run_context->run_id();
@@ -71,6 +74,7 @@ absl::Status IngestionVerificationFn::OnConfig(
 
 absl::Status IngestionVerificationFn::OnRecord(const PartialIngestionReport& report,
                                                DoContext& context) {
+  context.IncrementCounter(kInputRecordCount);
   if (has_integrity_fault_) {
     return absl::OkStatus();
   }
@@ -123,6 +127,7 @@ void IngestionVerificationFn::EmitIntegrityFault(FnContext& context) {
   google::protobuf::Any header_any;
   header_any.PackFrom(header);
 
+  context.IncrementCounter(kEncryptedOutputRecordCount);
   context.EmitEncrypted(kReencryptionKeyIndex,
                         KV(std::move(header_any), payload.SerializeAsString()));
 }
@@ -192,6 +197,7 @@ absl::Status IngestionVerificationFn::FinalizeReplica(google::protobuf::Any conf
   google::protobuf::Any header_any;
   header_any.PackFrom(header);
 
+  context.IncrementCounter(kEncryptedOutputRecordCount);
   context.EmitEncrypted(kReencryptionKeyIndex,
                         KV(std::move(header_any), payload.SerializeAsString()));
 

@@ -22,6 +22,7 @@
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/counter_names.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
@@ -44,6 +45,7 @@ using ::cobalt::trusted_shuffler::testing::EquivToProto;
 using ::cobalt::trusted_shuffler::testing::kTestRunId;
 using ::cobalt::trusted_shuffler::testing::MetricEpochSpec;
 using ::cobalt::trusted_shuffler::testing::MetricIdentifierSpec;
+using ::testing::Eq;
 using FakeContext = ::cobalt::trusted_shuffler::testing::FakeCombinedContext;
 using KV = ::confidential_federated_compute::Session::KV;
 using ::testing::IsEmpty;
@@ -209,6 +211,7 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithInvalidRunContext) {
   EXPECT_THAT(fn.Do(CreateVerificationKV(report_payload), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_FALSE(fn.HasConfig());
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
 TEST(ThresholdFilterFnTest, ConfigFailsWithRunIdMismatch) {
@@ -226,6 +229,7 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithRunIdMismatch) {
   EXPECT_THAT(fn.Do(CreateVerificationKV(report_payload), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_FALSE(fn.HasConfig());
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
 TEST(ThresholdFilterFnTest, ConfigFailsWithInvalidApprovedPartitionBounds) {
@@ -241,6 +245,7 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithInvalidApprovedPartitionBounds) {
   EXPECT_THAT(fn.Do(CreateVerificationKV(report_payload), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_FALSE(fn.HasConfig());
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
 TEST(ThresholdFilterFnTest, FiltersMessagesForApprovedPartitions) {
@@ -298,6 +303,11 @@ TEST(ThresholdFilterFnTest, FiltersMessagesForApprovedPartitions) {
   EXPECT_EQ(emitted_msg.run_id(), kTestRunId);
   EXPECT_EQ(emitted_msg.shuffle_count(), 0);
   EXPECT_THAT(emitted_msg.metric_epoch_key(), EquivToProto(approved_key));
+
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(2));
+  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
 }
 
 TEST(ThresholdFilterFnTest, ForwardsApprovedPartitionWithStrippedHeaderKey) {
@@ -347,6 +357,8 @@ TEST(ThresholdFilterFnTest, OnRecordRejectsMissingMetricEpochKey) {
 
   EXPECT_THAT(fn.Do(KV(msg.SerializeAsString()), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
 }
 
 TEST(ThresholdFilterFnTest, OnRecordRejectsRunIdMismatch) {

@@ -23,6 +23,7 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "src/containers/base/counter_names.h"
 #include "src/containers/ingest_uploads/upload_parser.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
@@ -36,8 +37,10 @@ namespace cobalt::trusted_shuffler {
 
 absl::Status IngestUploadsFn::OnConfig(const SignedRunContext& signed_run_context,
                                        DoContext& context) {
+  context.IncrementCounter(kInputConfigCount);
   absl::StatusOr<RunContext> verified_run_context = VerifySignedRunContext(signed_run_context);
   if (!verified_run_context.ok()) {
+    context.IncrementCounter(kInputConfigInvalid);
     return verified_run_context.status();
   }
   run_context_ = *std::move(verified_run_context);
@@ -65,15 +68,16 @@ bool IngestUploadsFn::IsEpochInBounds(const Epoch epoch) const {
 
 absl::Status IngestUploadsFn::OnRecord(const fcp::confidentialcompute::BlobData& blob_data,
                                        DoContext& context) {
+  context.IncrementCounter(kInputRecordCount);
   const std::string payload(blob_data.data());
   absl::StatusOr<ClientUploads> uploads = ParseUploads(payload);
-  // If the checkpoint is invalid or empty, drop it.
+  // If the checkpoint is invalid or empty, drop it and record dropped message.
   if (!uploads.ok()) {
-    messages_dropped_++;
+    context.IncrementCounter(kInputRecordDropped);
     return absl::OkStatus();
   }
   if (uploads->privacy_id.empty()) {
-    messages_dropped_++;
+    context.IncrementCounter(kInputRecordDropped);
     return absl::OkStatus();
   }
 
@@ -83,14 +87,14 @@ absl::Status IngestUploadsFn::OnRecord(const fcp::confidentialcompute::BlobData&
     const int32_t metric_id = upload.metric_id();
 
     if (!IsMetricAllowed(project_id, metric_id)) {
-      messages_dropped_++;
+      context.IncrementCounter(kInputRecordDropped);
       continue;
     }
 
     const Epoch epoch = Epoch::FromTime(parsed_upload.event_time);
 
     if (!IsEpochInBounds(epoch)) {
-      messages_dropped_++;
+      context.IncrementCounter(kInputRecordDropped);
       continue;
     }
 
@@ -113,12 +117,12 @@ absl::Status IngestUploadsFn::OnRecord(const fcp::confidentialcompute::BlobData&
     if (it == sketches_.end()) {
       absl::StatusOr<HllSketch> created_sketch = HllSketch::Create(HllSketch::kDefaultPrecision);
       if (!created_sketch.ok()) {
+        context.IncrementCounter(kInputRecordDropped);
         return created_sketch.status();
       }
       it = sketches_.emplace(tuple_key, std::move(created_sketch.value())).first;
     }
     it->second.Insert(uploads->privacy_id);
-    messages_received_++;
 
     IngestMessagesHeader header;
     *header.mutable_metric_epoch_key() = metric_epoch_key;
@@ -127,6 +131,7 @@ absl::Status IngestUploadsFn::OnRecord(const fcp::confidentialcompute::BlobData&
     key.PackFrom(header);
 
     // Emits encrypted message.
+    context.IncrementCounter(kEncryptedOutputRecordCount);
     context.EmitEncrypted(message_key_index_,
                           KV(std::move(key), shuffled_message.SerializeAsString()));
   }
@@ -159,6 +164,7 @@ absl::Status IngestUploadsFn::FinalizeReplica(google::protobuf::Any config, FnCo
   key.PackFrom(report_header);
 
   // Emits encrypted partial report.
+  context.IncrementCounter(kEncryptedOutputRecordCount);
   context.EmitEncrypted(report_key_index_, KV(std::move(key), report.SerializeAsString()));
 
   return absl::OkStatus();

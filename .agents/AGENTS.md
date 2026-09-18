@@ -148,6 +148,15 @@ Define necessary schemas according to their scope:
    - Implement `InitializeReplica(google::protobuf::Any config, Context& context)`.
    - Implement `Do(KV input, Context& context)` using the appropriate emission primitive (`EmitEncrypted`, `EmitReleasable`, or `EmitUnencrypted`).
    - Implement `FinalizeReplica(google::protobuf::Any config, Context& context)`.
+   - Increment counters:
+     - Store all counter names as constants in `src/containers/base/counter_names.h`.
+     - Increment the `"input_config-count"` counter in the `OnConfig()` function for containers using `FirstRecordConfigDoFn`.
+     - Increment the `"input_config-invalid"` counter in the `OnConfig()` function when an error status is returned.
+     - Increment the `"input_record-count"` counter in the `OnRecord()` function for containers using `FirstRecordConfigDoFn`.
+     - Increment the `"input_record-count"` counter in the `Do()` function for single-record `DoFn` containers.
+     - Increment the `"input_record-dropped"` counter on dropped or invalid records.
+     - Increment the `"encrypted_output_record-count"` counter any time `EmitEncrypted` is called.
+     - Increment the `"unencrypted_output_record-count"` counter any time `EmitUnencrypted` is called.
 2. **`foo_bar_transform.h` / `foo_bar_transform.cc`**:
    - Subclass `confidential_federated_compute::fns::FnFactory`.
    - Provide factory function:
@@ -230,75 +239,75 @@ When ready for production release, failing to update Kokoro will cause builds an
    }
    ```
 
-213: ### Step 7: Send for Review with Team Visibility
-214: When pushing changes for review, ensure all team members are included as either reviewers or CCs to maintain team awareness:
-215: - **Alex Pankhurst** (`pankhurst@google.com`)
-216: - **Steve Fung** (`stevefung@google.com`)
-217: - **Anivia Li** (`aniviali@google.com`)
-218: - **Alex Zani** (`azani@google.com`)
-219: 
-220: ---
-221: 
-222: ## 5. Development & Verification Commands
-223: 
-224: - **Run all tests**:
-225:   ```bash
-226:   bazel test //...
-227:   ```
-228: - **Build the container runtime bundle**:
-229:   ```bash
-230:   bazel build //src/containers/<name>:oci_runtime_bundle
-231:   ```
-232: - **Refresh compile commands**:
-233:   ```bash
-234:   bazel run //:refresh_compile_commands
-235:   ```
-236: - **Format code**:
-237:   Apply `.clang-format` to all modified `.h` and `.cc` files.
-238: - **Lockfile cleanliness**:
-239:   Running local Bazel tests may touch `MODULE.bazel.lock`. If no dependencies were intentionally added, run `git restore MODULE.bazel.lock` before staging or committing.
-240: 
-241: ---
-242: 
-243: ## 6. C++ Architecture & Testing Standards
-244: 
-245: All C++ implementations, container transforms, and tests must adhere to the conventions documented in [`.agents/rules/cpp_conventions.md`](rules/cpp_conventions.md):
-246: - **Lifecycle Integrity**: DoFn session configuration must be unpacked inside `InitializeReplica`; never add testing-only backdoor constructors or setters to `DoFn` classes.
+### Step 7: Send for Review with Team Visibility
+When pushing changes for review, ensure all team members are included as either reviewers or CCs to maintain team awareness:
+- **Alex Pankhurst** (`pankhurst@google.com`)
+- **Steve Fung** (`stevefung@google.com`)
+- **Anivia Li** (`aniviali@google.com`)
+- **Alex Zani** (`azani@google.com`)
+
+---
+
+## 5. Development & Verification Commands
+
+- **Run all tests**:
+  ```bash
+  bazel test //...
+  ```
+- **Build the container runtime bundle**:
+  ```bash
+  bazel build //src/containers/<name>:oci_runtime_bundle
+  ```
+- **Refresh compile commands**:
+  ```bash
+  bazel run //:refresh_compile_commands
+  ```
+- **Format code**:
+  Apply `.clang-format` to all modified `.h` and `.cc` files.
+- **Lockfile cleanliness**:
+  Running local Bazel tests may touch `MODULE.bazel.lock`. If no dependencies were intentionally added, run `git restore MODULE.bazel.lock` before staging or committing.
+
+---
+
+## 6. C++ Architecture & Testing Standards
+
+All C++ implementations, container transforms, and tests must adhere to the conventions documented in [`.agents/rules/cpp_conventions.md`](rules/cpp_conventions.md):
+- **Lifecycle Integrity**: DoFn session configuration must be unpacked inside `InitializeReplica`; never add testing-only backdoor constructors or setters to `DoFn` classes.
 - **Verified Ingestion Verification Results**: Always use `VerifiedIngestionVerificationResult` (validated via `VerifyIngestionVerificationPayload` in `//src/crypto:verify_ingestion_verification_payload`) instead of the raw `IngestionVerificationPayload` or `IngestionVerificationResult` protos across container state, methods, and downstream libraries.
-247: - **Explicit Arguments**: Avoid default arguments (`= std::nullopt`, default booleans) in constructors or stage APIs where values must be passed explicitly.
-248: - **Schema Casing**: Match Protobuf schema casing for accessor methods (`SignedRunContext()`, `ConfigConstraints()`).
-249: - **Declarative Test Fixtures**: Use C++20 designated initializers (`{.project_id = 1, ...}`) and clean helper structs in anonymous namespaces instead of positional magic tuples.
-250: 
-251: ---
-252: 
-253: ## 7. Code Review & Team Awareness: Reviewers & CCs
-254: 
-255: To ensure all team members remain aware of ongoing changes, container additions, and pipeline developments—and to prevent duplicate implementation efforts across developers and agents—**every changelist (CL) created or submitted must include all team members as either a Reviewer or a CC**.
-256: 
-257: ### Team Members
-258: 
-259: Whenever creating, sending, uploading, or updating a CL:
-260: - **Alex Pankhurst** (`pankhurst@google.com`)
-261: - **Steve Fung** (`stevefung@google.com`)
-262: - **Anivia Li** (`aniviali@google.com`)
-263: - **Alex Zani** (`azani@google.com`)
-264: 
-265: Ensure that whoever is authoring the change includes the other team members as either a reviewer or a CC.
-266: 
-267: ### Workflow Commands
-268: 
-269: For example, when Alex Zani (`azani@google.com`) is authoring a change, the remaining team members can be added via the Gerrit CLI:
-270: ```bash
-271: /google/bin/releases/gemini-agents-gerrit/gerrit reviewers add \
-272:   --change=<change_id> \
-273:   --host=<gerrit_host> \
-274:   --reviewer=pankhurst@google.com,stevefung@google.com \
-275:   --cc=aniviali@google.com
-276: ```
-277: Alternatively, specify reviewers and CCs during `git push`:
-278: ```bash
-279: git push origin HEAD:refs/for/main%r=pankhurst@google.com,r=stevefung@google.com,cc=aniviali@google.com
-280: ```
+- **Explicit Arguments**: Avoid default arguments (`= std::nullopt`, default booleans) in constructors or stage APIs where values must be passed explicitly.
+- **Schema Casing**: Match Protobuf schema casing for accessor methods (`SignedRunContext()`, `ConfigConstraints()`).
+- **Declarative Test Fixtures**: Use C++20 designated initializers (`{.project_id = 1, ...}`) and clean helper structs in anonymous namespaces instead of positional magic tuples.
+
+---
+
+## 7. Code Review & Team Awareness: Reviewers & CCs
+
+To ensure all team members remain aware of ongoing changes, container additions, and pipeline developments—and to prevent duplicate implementation efforts across developers and agents—**every changelist (CL) created or submitted must include all team members as either a Reviewer or a CC**.
+
+### Team Members
+
+Whenever creating, sending, uploading, or updating a CL:
+- **Alex Pankhurst** (`pankhurst@google.com`)
+- **Steve Fung** (`stevefung@google.com`)
+- **Anivia Li** (`aniviali@google.com`)
+- **Alex Zani** (`azani@google.com`)
+
+Ensure that whoever is authoring the change includes the other team members as either a reviewer or a CC.
+
+### Workflow Commands
+
+For example, when Alex Zani (`azani@google.com`) is authoring a change, the remaining team members can be added via the Gerrit CLI:
+```bash
+/google/bin/releases/gemini-agents-gerrit/gerrit reviewers add \
+  --change=<change_id> \
+  --host=https://cobalt-internal-review.git.corp.google.com \
+  --reviewer=pankhurst@google.com,stevefung@google.com \
+  --cc=aniviali@google.com
+```
+Alternatively, specify reviewers and CCs during `git push`:
+```bash
+git push origin HEAD:refs/for/main%r=pankhurst@google.com,r=stevefung@google.com,cc=aniviali@google.com
+```
 
 ---
 

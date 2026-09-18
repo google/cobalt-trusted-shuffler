@@ -39,6 +39,7 @@ cc_library(
     srcs = ["run_context_initializer_fn.cc"],
     hdrs = ["run_context_initializer_fn.h"],
     deps = [
+        "//src/containers/base:counter_names",
         "//src/crypto:release_encrypter",
         "//src/crypto:secure_random",
         "//src/crypto:verify_signed_run_context",
@@ -71,6 +72,7 @@ cc_test(
     srcs = ["run_context_initializer_fn_test.cc"],
     deps = [
         ":run_context_initializer_fn",
+        "//src/containers/base:counter_names",
         "//src/crypto:release_encrypter",
         "//src/crypto:verify_signed_run_context",
         "//src/proto:run_context_cc_proto",

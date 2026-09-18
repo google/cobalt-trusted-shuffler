@@ -23,6 +23,7 @@ cc_library(
     srcs = ["key_releaser_fn.cc"],
     hdrs = ["key_releaser_fn.h"],
     deps = [
+        "//src/containers/base:counter_names",
         "//src/containers/base:first_record_config_do_fn",
         "//src/crypto:multiset_fingerprint",
         "//src/crypto:verify_ingestion_verification_payload",
@@ -46,6 +47,7 @@ cc_test(
     srcs = ["key_releaser_fn_test.cc"],
     deps = [
         ":key_releaser_fn",
+        "//src/containers/base:counter_names",
         "//src/crypto:multiset_fingerprint",
         "//src/crypto:release_encrypter",
         "//src/crypto:verify_signed_run_context",

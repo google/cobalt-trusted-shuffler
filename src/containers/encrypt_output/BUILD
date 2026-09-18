@@ -38,6 +38,7 @@ cc_library(
     srcs = ["encrypt_output_fn.cc"],
     hdrs = ["encrypt_output_fn.h"],
     deps = [
+        "//src/containers/base:counter_names",
         "//src/containers/base:first_record_config_do_fn",
         "//src/crypto:multiset_fingerprint",
         "//src/crypto:release_encrypter",
@@ -77,6 +78,7 @@ cc_test(
     srcs = ["encrypt_output_fn_test.cc"],
     deps = [
         ":encrypt_output_fn",
+        "//src/containers/base:counter_names",
         "//src/crypto:release_encrypter",
         "//src/crypto:verify_signed_run_context",
         "//src/proto:common_cc_proto",

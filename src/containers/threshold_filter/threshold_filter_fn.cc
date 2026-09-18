@@ -23,6 +23,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "google/protobuf/any.pb.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -39,17 +40,21 @@ void ThresholdFilterFn::EmitIntegrityFault(FnContext& context) {
   IntegrityFault fault;
   google::protobuf::Any key;
   key.PackFrom(fault);
+  context.IncrementCounter(kUnencryptedOutputRecordCount);
   context.EmitUnencrypted(KV(std::move(key), fault.SerializeAsString()));
 }
 
 absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& config,
                                          DoContext& context) {
+  context.IncrementCounter(kInputConfigCount);
   if (has_integrity_fault_ || config.has_integrity_fault()) {
+    context.IncrementCounter(kInputConfigInvalid);
     EmitIntegrityFault(context);
     return absl::FailedPreconditionError("Ingestion verification failed with integrity fault.");
   }
 
   if (!config.has_success()) {
+    context.IncrementCounter(kInputConfigInvalid);
     return absl::InvalidArgumentError(
         "IngestionVerificationPayload must contain either success (threshold_report) or "
         "integrity_fault.");
@@ -58,6 +63,7 @@ absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& con
   absl::StatusOr<VerifiedIngestionVerificationResult> verified_result =
       VerifyIngestionVerificationResult(config.success());
   if (!verified_result.ok()) {
+    context.IncrementCounter(kInputConfigInvalid);
     return verified_result.status();
   }
 
@@ -72,6 +78,7 @@ absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& con
 
 absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message,
                                          DoContext& context) {
+  context.IncrementCounter(kInputRecordCount);
   if (has_integrity_fault_) {
     EmitIntegrityFault(context);
     return absl::FailedPreconditionError("ThresholdFilterFn::OnRecord: Integrity fault occurred.");
@@ -83,6 +90,8 @@ absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message
   }
 
   if (!shuffled_message.has_metric_epoch_key()) {
+    // TODO(b/555372765): Add separate counters for dropped due to thresholding vs invalid records.
+    context.IncrementCounter(kInputRecordDropped);
     return absl::InvalidArgumentError(
         "ThresholdFilterFn::OnRecord: ShuffledMessage missing required MetricEpochKey.");
   }
@@ -102,8 +111,12 @@ absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message
   if (approved_partitions_.contains(shuffled_message.metric_epoch_key())) {
     google::protobuf::Any key;
     key.PackFrom(shuffled_message.metric_epoch_key());
+    context.IncrementCounter(kEncryptedOutputRecordCount);
     context.EmitEncrypted(kReencryptionKeyIndex,
                           KV(std::move(key), shuffled_message.SerializeAsString()));
+  } else {
+    // TODO(b/555372765): Add separate counters for dropped due to thresholding vs invalid records.
+    context.IncrementCounter(kInputRecordDropped);
   }
   // If not approved, message is discarded per specification.
   return absl::OkStatus();

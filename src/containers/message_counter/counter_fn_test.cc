@@ -14,10 +14,13 @@
 
 #include "src/containers/message_counter/counter_fn.h"
 
+#include <string>
+
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/counter_names.h"
 #include "src/proto/message_counter/count_report.pb.h"
 #include "src/proto/message_counter/counter_config.pb.h"
 #include "src/proto/message_counter/output_key.pb.h"
@@ -78,6 +81,8 @@ TEST(CounterFnTest, DoReturnsOk) {
   CounterFn fn(kKeyIndex);
 
   EXPECT_THAT(fn.Do(CounterFn::KV(), do_context), IsOk());
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
 }
 
 TEST(CounterFnTest, DoEmitsMessages) {
@@ -103,6 +108,8 @@ TEST(CounterFnTest, DoEmitsMessages) {
 
   EXPECT_THAT(context.Unencrypted(), IsEmpty());
   EXPECT_THAT(context.ReadResponses(), IsEmpty());
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
 }
 
 TEST(CounterFnTest, FinalizeReplicaReturnsOk) {
@@ -139,6 +146,10 @@ TEST(CounterFnTest, FinalizeReplicaEmitsReport) {
 
   EXPECT_THAT(context.Encrypted(), SizeIs(message_count));
   EXPECT_THAT(context.ReadResponses(), IsEmpty());
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(message_count));
+  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)),
+              Eq(message_count));
+  EXPECT_THAT(context.GetCounters().at(std::string(kUnencryptedOutputRecordCount)), Eq(1));
 
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
   CounterFn::KV kv = std::move(context.Unencrypted()[0]);

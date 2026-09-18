@@ -24,6 +24,7 @@
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/run_context.pb.h"
@@ -34,6 +35,7 @@ namespace {
 
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
+using ::cobalt::trusted_shuffler::testing::FakeDoContext;
 using ::cobalt::trusted_shuffler::testing::FakeFnContext;
 using ::testing::Eq;
 using ::testing::IsEmpty;
@@ -226,6 +228,16 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeTargetBatchSiz
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
+TEST(RunContextInitializerFnTest, DoIncrementsInputRecordCount) {
+  TestSigningKey key_handle;
+  RunContextInitializerFn fn(&key_handle);
+  testing::FakeContext context;
+  FakeDoContext do_context(context);
+
+  EXPECT_THAT(fn.Do(RunContextInitializerFn::KV(), do_context), IsOk());
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+}
+
 TEST(RunContextInitializerFnTest, FinalizeReplicaFailsWithoutInitializeReplica) {
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
@@ -276,6 +288,7 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaEmitsSignedRunContextWithKeyInd
 
   std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items = context.Encrypted();
   ASSERT_THAT(encrypted_items, SizeIs(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
 
   const auto& [key_index, output_kv] = encrypted_items[0];
   EXPECT_THAT(key_index, Eq(kReencryptionKeyIndex));

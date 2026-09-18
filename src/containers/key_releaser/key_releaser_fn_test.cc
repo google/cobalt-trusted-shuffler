@@ -27,6 +27,7 @@
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_signed_run_context.h"
@@ -51,6 +52,7 @@ namespace {
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
 using ::cobalt::trusted_shuffler::testing::CreateMetricEpochKey;
+using ::cobalt::trusted_shuffler::testing::FakeCombinedContext;
 using ::cobalt::trusted_shuffler::testing::MetricEpochSpec;
 using ::cobalt::trusted_shuffler::testing::PadRunId;
 using ::confidential_federated_compute::Session;
@@ -147,7 +149,7 @@ class KeyReleaserFnTest : public ::testing::Test {
 
 TEST_F(KeyReleaserFnTest, SingleWorkerHappyPathReleasesKey) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -186,11 +188,15 @@ TEST_F(KeyReleaserFnTest, SingleWorkerHappyPathReleasesKey) {
   ASSERT_TRUE(key_release.ParseFromString(context.Unencrypted()[0].data));
   ASSERT_TRUE(key_release.has_released_key_report());
   EXPECT_THAT(key_release.released_key_report().release_key(), Eq(*release_key));
+
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kUnencryptedOutputRecordCount)), Eq(1));
 }
 
 TEST_F(KeyReleaserFnTest, MultiWorkerHappyPathReleasesKey) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -239,7 +245,7 @@ TEST_F(KeyReleaserFnTest, MultiWorkerHappyPathReleasesKey) {
 
 TEST_F(KeyReleaserFnTest, EndToEndCryptographicDecryptionWithReleasedKeySucceeds) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -295,7 +301,7 @@ TEST_F(KeyReleaserFnTest, EndToEndCryptographicDecryptionWithReleasedKeySucceeds
 
 TEST_F(KeyReleaserFnTest, EmptyApprovedPartitionsSucceedsAndReleasesKey) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -322,7 +328,7 @@ TEST_F(KeyReleaserFnTest, EmptyApprovedPartitionsSucceedsAndReleasesKey) {
 
 TEST_F(KeyReleaserFnTest, TamperedMessageCountEmitsIntegrityFaultAndNeverReleasesKey) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -362,11 +368,15 @@ TEST_F(KeyReleaserFnTest, TamperedMessageCountEmitsIntegrityFaultAndNeverRelease
   EXPECT_TRUE(key_release.has_integrity_fault());
   EXPECT_FALSE(key_release.has_released_key_report());
   EXPECT_THAT(context.Unencrypted()[0].data, Not(HasSubstr(*release_key)));
+
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kUnencryptedOutputRecordCount)), Eq(1));
 }
 
 TEST_F(KeyReleaserFnTest, TamperedFingerprintHashEmitsIntegrityFaultAndNeverReleasesKey) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -406,7 +416,7 @@ TEST_F(KeyReleaserFnTest, TamperedFingerprintHashEmitsIntegrityFaultAndNeverRele
 
 TEST_F(KeyReleaserFnTest, MissingApprovedPartitionEmitsIntegrityFault) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -445,7 +455,7 @@ TEST_F(KeyReleaserFnTest, MissingApprovedPartitionEmitsIntegrityFault) {
 
 TEST_F(KeyReleaserFnTest, ExtraUnapprovedPartitionEmitsIntegrityFault) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -491,7 +501,7 @@ TEST_F(KeyReleaserFnTest, ExtraUnapprovedPartitionEmitsIntegrityFault) {
 
 TEST_F(KeyReleaserFnTest, UpstreamIntegrityFaultInRecord0EmitsIntegrityFaultOnFinalize) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   IngestionVerificationPayload fault_payload;
   fault_payload.mutable_integrity_fault();
@@ -513,7 +523,7 @@ TEST_F(KeyReleaserFnTest, UpstreamIntegrityFaultInRecord0EmitsIntegrityFaultOnFi
 
 TEST_F(KeyReleaserFnTest, CorruptOrInvalidPartialReleaseReportReturnsInvalidArgument) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -538,7 +548,7 @@ TEST_F(KeyReleaserFnTest, CorruptOrInvalidPartialReleaseReportReturnsInvalidArgu
 
 TEST_F(KeyReleaserFnTest, MissingPartialFingerprintInReportTriggersIntegrityFault) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -576,7 +586,7 @@ TEST_F(KeyReleaserFnTest, MissingPartialFingerprintInReportTriggersIntegrityFaul
 
 TEST_F(KeyReleaserFnTest, WrongStageIdInPartialReleaseReportTriggersIntegrityFault) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -617,7 +627,7 @@ TEST_F(KeyReleaserFnTest, WrongStageIdInPartialReleaseReportTriggersIntegrityFau
 
 TEST_F(KeyReleaserFnTest, NonPartialFingerprintInReportTriggersIntegrityFault) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -658,7 +668,7 @@ TEST_F(KeyReleaserFnTest, NonPartialFingerprintInReportTriggersIntegrityFault) {
 
 TEST_F(KeyReleaserFnTest, FinalizeWithoutRecord0EmitsIntegrityFault) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   EXPECT_THAT(
       fn.FinalizeReplica(google::protobuf::Any(), context),
@@ -668,7 +678,7 @@ TEST_F(KeyReleaserFnTest, FinalizeWithoutRecord0EmitsIntegrityFault) {
 
 TEST_F(KeyReleaserFnTest, DoubleFinalizeReturnsFailedPrecondition) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
@@ -678,7 +688,7 @@ TEST_F(KeyReleaserFnTest, DoubleFinalizeReturnsFailedPrecondition) {
 
 TEST_F(KeyReleaserFnTest, DoAfterFinalizeReturnsFailedPrecondition) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
@@ -702,7 +712,7 @@ TEST_F(KeyReleaserFnTest, DoAfterFinalizeReturnsFailedPrecondition) {
 
 TEST_F(KeyReleaserFnTest, NeverLeaksSecretsInErrorMessagesOrFaultOutputs) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -747,7 +757,7 @@ TEST_F(KeyReleaserFnTest, NeverLeaksSecretsInErrorMessagesOrFaultOutputs) {
 
 TEST_F(KeyReleaserFnTest, CorruptPartialReleaseReportInvalidFingerprintSizeTriggersIntegrityFault) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -800,7 +810,7 @@ TEST_F(KeyReleaserFnTest, CorruptPartialReleaseReportInvalidFingerprintSizeTrigg
 
 TEST_F(KeyReleaserFnTest, CorruptPartialReleaseReportMalformedEntryTriggersIntegrityFault) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -841,7 +851,7 @@ TEST_F(KeyReleaserFnTest, CorruptPartialReleaseReportMalformedEntryTriggersInteg
 
 TEST_F(KeyReleaserFnTest, ApprovedPartitionWithZeroMessageCountSucceeds) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -888,7 +898,7 @@ TEST_F(KeyReleaserFnTest, ApprovedPartitionWithZeroMessageCountSucceeds) {
 TEST_F(KeyReleaserFnTest,
        CorruptPartialReleaseReportNonZero32ByteFingerprintForZeroCountTriggersIntegrityFault) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -933,7 +943,7 @@ TEST_F(KeyReleaserFnTest,
 TEST_F(KeyReleaserFnTest,
        PartialReleaseReportWithUnapprovedZeroCountPartitionTriggersIntegrityFault) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -974,7 +984,7 @@ TEST_F(KeyReleaserFnTest,
 TEST_F(KeyReleaserFnTest,
        PartialReleaseReportWithUnapprovedNonZeroPartitionTriggersIntegrityFaultInOnRecord) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());
@@ -1013,7 +1023,7 @@ TEST_F(KeyReleaserFnTest,
 TEST_F(KeyReleaserFnTest,
        MultipleWorkersDisjointApprovedPartitionsWithZeroCountApprovedPartitionSucceeds) {
   KeyReleaserFn fn;
-  FakeContext context;
+  FakeCombinedContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());

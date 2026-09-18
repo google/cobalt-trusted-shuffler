@@ -46,9 +46,7 @@ class KeyReleaserFn
   KeyReleaserFn() = default;
   ~KeyReleaserFn() override = default;
 
-  absl::Status FinalizeReplica(
-      google::protobuf::Any config,
-      confidential_federated_compute::fns::Fn::FnContext& context) override;
+  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
 
   bool HasIntegrityFault() const { return has_integrity_fault_; }
 
@@ -63,15 +61,12 @@ class KeyReleaserFn
   }
 
  protected:
-  absl::Status OnConfig(const IngestionVerificationPayload& config,
-                        confidential_federated_compute::fns::DoFn::DoContext& context) override;
+  absl::Status OnConfig(const IngestionVerificationPayload& config, DoContext& context) override;
 
-  absl::Status OnRecord(const PartialReleaseReport& report,
-                        confidential_federated_compute::fns::DoFn::DoContext& context) override;
+  absl::Status OnRecord(const PartialReleaseReport& report, DoContext& context) override;
 
  private:
-  absl::Status EmitIntegrityFault(absl::string_view reason,
-                                  confidential_federated_compute::fns::Fn::FnContext& context);
+  absl::Status EmitIntegrityFault(absl::string_view reason, FnContext& context);
 
   bool has_integrity_fault_ = false;
   bool has_emitted_output_ = false;

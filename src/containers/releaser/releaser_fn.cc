@@ -17,10 +17,13 @@
 #include <utility>
 
 #include "absl/status/status.h"
+#include "src/containers/base/counter_names.h"
 
 namespace cobalt::trusted_shuffler {
 
 absl::Status ReleaserFn::Do(KV input, DoContext& context) {
+  context.IncrementCounter(kInputRecordCount);
+  context.IncrementCounter(kUnencryptedOutputRecordCount);
   context.EmitUnencrypted(std::move(input));
   return absl::OkStatus();
 }

@@ -21,6 +21,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "google/protobuf/any.pb.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/crypto/secure_random.h"
 #include "src/crypto/verify_signed_run_context.h"
@@ -46,7 +47,10 @@ absl::Status RunContextInitializerFn::InitializeReplica(google::protobuf::Any co
   return absl::OkStatus();
 }
 
-absl::Status RunContextInitializerFn::Do(KV input, DoContext& context) { return absl::OkStatus(); }
+absl::Status RunContextInitializerFn::Do(KV input, DoContext& context) {
+  context.IncrementCounter(kInputRecordCount);
+  return absl::OkStatus();
+}
 
 absl::Status RunContextInitializerFn::FinalizeReplica(google::protobuf::Any config,
                                                       FnContext& context) {
@@ -91,6 +95,7 @@ absl::Status RunContextInitializerFn::FinalizeReplica(google::protobuf::Any conf
   signed_run_context.set_serialized_run_context(serialized_run_context);
   signed_run_context.set_signature(signature->signature());
 
+  context.IncrementCounter(kEncryptedOutputRecordCount);
   context.EmitEncrypted(kReencryptionKeyIndex,
                         KV(std::move(config), signed_run_context.SerializeAsString()));
 

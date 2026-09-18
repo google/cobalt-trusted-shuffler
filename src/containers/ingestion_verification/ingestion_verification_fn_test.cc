@@ -27,6 +27,7 @@
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/counter_names.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_signed_run_context.h"
@@ -187,6 +188,9 @@ TEST(IngestionVerificationFnTest, SuccessfulConfigUnpackFollowedByDataRecords) {
       CreatePartialIngestionReport(std::string(kTestRunId), partition_specs);
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report1.SerializeAsString()), context), IsOk());
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report2.SerializeAsString()), context), IsOk());
+
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(2));
 }
 
 TEST(IngestionVerificationFnTest, CorruptedOrInvalidSignedRunContextPayloadReturnsError) {
@@ -219,6 +223,7 @@ TEST(IngestionVerificationFnTest, CorruptedInnerRunContextReturnsError) {
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(signed_context.SerializeAsString()), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_FALSE(fn.HasConfig());
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
 TEST(IngestionVerificationFnTest, InvalidRunContextInSignedRunContextReturnsError) {
@@ -234,6 +239,7 @@ TEST(IngestionVerificationFnTest, InvalidRunContextInSignedRunContextReturnsErro
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(signed_context.SerializeAsString()), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_FALSE(fn.HasConfig());
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
 TEST(IngestionVerificationFnTest, ConfigConstraintsAccessor) {
@@ -258,6 +264,7 @@ TEST(IngestionVerificationFnTest, FinalizeReplicaWithoutConfigEmitsIntegrityFaul
   ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
   ASSERT_EQ(context.Encrypted().size(), 1);
+  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
   EXPECT_EQ(context.Encrypted()[0].first, IngestionVerificationFn::kReencryptionKeyIndex);
 
   IngestionVerificationHeader header;
@@ -447,6 +454,7 @@ TEST(IngestionVerificationFnTest, SuccessfulIngestionVerificationSinglePartition
               EquivToProto(CreateMetricEpochKey(1001, 2, 50)));
   EXPECT_EQ(success.canonical_fingerprint().entries(0).message_count(), 15);
   EXPECT_THAT(success.signed_run_context(), EquivToProto(signed_context));
+  EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
 }
 
 TEST(IngestionVerificationFnTest, MultipleWorkersAndPartitionsWithThresholdFiltering) {

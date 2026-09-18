@@ -78,6 +78,7 @@ cc_library(
     hdrs = ["ingest_uploads_fn.h"],
     deps = [
         ":upload_parser",
+        "//src/containers/base:counter_names",
         "//src/containers/base:first_record_config_do_fn",
         "//src/crypto:multiset_fingerprint",
         "//src/crypto:verify_signed_run_context",
@@ -115,6 +116,7 @@ cc_test(
     srcs = ["ingest_uploads_fn_test.cc"],
     deps = [
         ":ingest_uploads_fn",
+        "//src/containers/base:counter_names",
         "//src/crypto:verify_signed_run_context",
         "//src/proto:common_cc_proto",
         "//src/proto:fingerprint_cc_proto",
