@@ -45,7 +45,7 @@ namespace {
 
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
-using ::cobalt::trusted_shuffler::testing::FakeContext;
+using FakeContext = ::cobalt::trusted_shuffler::testing::FakeCombinedContext;
 using ::cobalt::trusted_shuffler::testing::FakeEncryptionKeyHandle;
 using ::cobalt::trusted_shuffler::testing::FakeSigningKey;
 using ::confidential_federated_compute::fns::DoFn;

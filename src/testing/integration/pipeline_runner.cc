@@ -138,9 +138,9 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     return absl::FailedPreconditionError(
         "IngestionVerification reported an integrity fault in IngestionVerificationHeader.");
   }
-  if (!iv_header.has_summary_report()) {
+  if (!iv_header.has_ingestion_result()) {
     return absl::InternalError(
-        "IngestionVerificationHeader has neither summary_report nor integrity_fault.");
+        "IngestionVerificationHeader has neither ingestion_result nor integrity_fault.");
   }
 
   return result;
