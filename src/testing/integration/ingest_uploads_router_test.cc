@@ -241,5 +241,17 @@ TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsWithInjectedIntegrityFaul
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
+TEST(IngestUploadsRouterTest, DroppedReportSplitterDropsPartialReports) {
+  const KVBlobStageOutputs ingest_output{
+      .encrypted = {EncryptedKVBlob(PackToAny(CreatePartialIngestionReportHeader()),
+                                    "report_ciphertext")},
+  };
+
+  const absl::StatusOr<IngestUploadsOutputs> split =
+      SplitIngestUploadsOutputsWithDroppedReports(ingest_output);
+  ASSERT_THAT(split.status(), IsOk());
+  EXPECT_THAT(split->partial_reports, IsEmpty());
+}
+
 }  // namespace
 }  // namespace cobalt::trusted_shuffler::testing::integration
