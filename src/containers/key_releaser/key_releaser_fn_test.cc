@@ -51,10 +51,10 @@ namespace {
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
 using ::cobalt::trusted_shuffler::testing::CreateMetricEpochKey;
-using ::cobalt::trusted_shuffler::testing::FakeContext;
 using ::cobalt::trusted_shuffler::testing::MetricEpochSpec;
 using ::cobalt::trusted_shuffler::testing::PadRunId;
 using ::confidential_federated_compute::Session;
+using FakeContext = ::cobalt::trusted_shuffler::testing::FakeCombinedContext;
 using ::testing::Eq;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;

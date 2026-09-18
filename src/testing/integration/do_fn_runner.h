@@ -34,8 +34,7 @@ namespace cobalt::trusted_shuffler::testing::integration {
 // If InitializeReplica, Do, or FinalizeReplica returns a non-OK status, the
 // replica immediately aborts (skipping FinalizeReplica if Do fails) and
 // discards all emitted outputs from that replica, matching the host pipeline's
-// replica failure behavior. To drop a single invalid record while continuing
-// the replica, a DoFn calls Context::EmitError and returns OK from Do.
+// replica failure behavior.
 //
 // A stage declares its host-visible output type by choosing one of the two run
 // methods below. That choice is fixed for the whole stage, so callers cannot

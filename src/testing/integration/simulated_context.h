@@ -51,8 +51,9 @@ class SimulatedSessionContext : public confidential_federated_compute::Session::
                       std::optional<absl::string_view> src_state, absl::string_view dst_state,
                       std::string& release_token) override;
 
-  // No-op in simulated context.
-  bool EmitError(absl::Status status) override;
+  confidential_federated_compute::Counters& GetCounters() override { return counters_; }
+
+  const confidential_federated_compute::Counters& GetCounters() const { return counters_; }
 
   // Returns all encrypted records emitted by the session.
   const std::vector<EncryptedKVBlob>& Encrypted() const { return encrypted_; }
@@ -61,6 +62,7 @@ class SimulatedSessionContext : public confidential_federated_compute::Session::
   const std::vector<UnencryptedKVBlob>& Unencrypted() const { return unencrypted_; }
 
  private:
+  confidential_federated_compute::Counters counters_;
   std::vector<EncryptedKVBlob> encrypted_;
   std::vector<UnencryptedKVBlob> unencrypted_;
 };

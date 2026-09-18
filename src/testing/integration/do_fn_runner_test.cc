@@ -50,7 +50,7 @@ class FakeLifecycleDoFn : public confidential_federated_compute::fns::DoFn {
     return config_.init_status;
   }
 
-  absl::Status Do(confidential_federated_compute::Session::KV input, Context& context) override {
+  absl::Status Do(confidential_federated_compute::Session::KV input, DoContext& context) override {
     const int current_index = do_call_count_++;
     if (current_index == config_.fail_on_do_index) {
       return config_.do_fail_status;
@@ -59,7 +59,7 @@ class FakeLifecycleDoFn : public confidential_federated_compute::fns::DoFn {
     return absl::OkStatus();
   }
 
-  absl::Status FinalizeReplica(google::protobuf::Any /*config*/, Context& context) override {
+  absl::Status FinalizeReplica(google::protobuf::Any /*config*/, FnContext& context) override {
     finalize_called_ = true;
     if (!config_.finalize_status.ok()) {
       return config_.finalize_status;

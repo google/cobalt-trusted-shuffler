@@ -33,7 +33,8 @@
 
 namespace cobalt::trusted_shuffler {
 
-using Context = confidential_federated_compute::Session::Context;
+using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
+using FnContext = confidential_federated_compute::fns::Fn::FnContext;
 using KV = confidential_federated_compute::Session::KV;
 
 namespace {
@@ -74,7 +75,8 @@ absl::Status ValidatePartialReleaseFingerprint(
 
 }  // namespace
 
-absl::Status KeyReleaserFn::OnConfig(const IngestionVerificationPayload& config, Context& context) {
+absl::Status KeyReleaserFn::OnConfig(const IngestionVerificationPayload& config,
+                                     DoContext& context) {
   if (is_finalized_) {
     return absl::FailedPreconditionError("Replica is already finalized.");
   }
@@ -105,7 +107,7 @@ absl::Status KeyReleaserFn::OnConfig(const IngestionVerificationPayload& config,
   return absl::OkStatus();
 }
 
-absl::Status KeyReleaserFn::OnRecord(const PartialReleaseReport& report, Context& context) {
+absl::Status KeyReleaserFn::OnRecord(const PartialReleaseReport& report, DoContext& context) {
   if (is_finalized_) {
     return absl::FailedPreconditionError("Replica is already finalized.");
   }
@@ -127,7 +129,7 @@ absl::Status KeyReleaserFn::OnRecord(const PartialReleaseReport& report, Context
   return absl::OkStatus();
 }
 
-absl::Status KeyReleaserFn::EmitIntegrityFault(absl::string_view reason, Context& context) {
+absl::Status KeyReleaserFn::EmitIntegrityFault(absl::string_view reason, FnContext& context) {
   has_integrity_fault_ = true;
   LOG(ERROR) << "IntegrityFault in KeyReleaserFn: " << reason;
   if (!has_emitted_output_) {
@@ -146,7 +148,7 @@ absl::Status KeyReleaserFn::EmitIntegrityFault(absl::string_view reason, Context
   return absl::FailedPreconditionError(reason);
 }
 
-absl::Status KeyReleaserFn::FinalizeReplica(google::protobuf::Any config, Context& context) {
+absl::Status KeyReleaserFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
   if (is_finalized_) {
     return absl::FailedPreconditionError("Replica is already finalized.");
   }

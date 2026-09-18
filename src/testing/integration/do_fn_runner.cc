@@ -48,8 +48,9 @@ absl::StatusOr<SimulatedSessionContext> RunReplica(
     return status;
   }
 
+  confidential_federated_compute::fns::DoFn::DoContext do_context(context, {});
   for (const confidential_federated_compute::Session::KV& input : replica_inputs.inputs) {
-    if (absl::Status status = do_fn.Do(input, context); !status.ok()) {
+    if (absl::Status status = do_fn.Do(input, do_context); !status.ok()) {
       return status;
     }
   }
@@ -58,7 +59,8 @@ absl::StatusOr<SimulatedSessionContext> RunReplica(
   if (replica_inputs.finalize_config.has_value()) {
     finalize_any.PackFrom(replica_inputs.finalize_config->get());
   }
-  if (absl::Status status = do_fn.FinalizeReplica(finalize_any, context); !status.ok()) {
+  confidential_federated_compute::fns::Fn::FnContext fn_context(context, {});
+  if (absl::Status status = do_fn.FinalizeReplica(finalize_any, fn_context); !status.ok()) {
     return status;
   }
 

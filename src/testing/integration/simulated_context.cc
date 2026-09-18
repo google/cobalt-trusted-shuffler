@@ -53,6 +53,4 @@ bool SimulatedSessionContext::EmitReleasable(const int /*reencryption_key_index*
   return false;
 }
 
-bool SimulatedSessionContext::EmitError(absl::Status /*status*/) { return true; }
-
 }  // namespace cobalt::trusted_shuffler::testing::integration
