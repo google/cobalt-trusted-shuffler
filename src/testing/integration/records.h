@@ -135,14 +135,42 @@ class UnencryptedKVBlob {
 // records travel in one host collection and are told apart by their metadata,
 // so a stage cannot keep keys on some of its records and drop them on others.
 struct BlobStageOutputs {
+  // Encrypted blobs emitted by the stage.
   std::vector<EncryptedBlob> encrypted;
+
+  // Unencrypted blobs emitted by the stage.
   std::vector<UnencryptedBlob> unencrypted;
+
+  // Accumulates the outputs of another session of the same stage, used when a
+  // stage runs multiple sessions.
+  void Append(BlobStageOutputs&& other) {
+    for (EncryptedBlob& record : other.encrypted) {
+      encrypted.push_back(std::move(record));
+    }
+    for (UnencryptedBlob& record : other.unencrypted) {
+      unencrypted.push_back(std::move(record));
+    }
+  }
 };
 
 // Host-visible output of a stage that keeps keys.
 struct KVBlobStageOutputs {
+  // Encrypted KV blobs emitted by the stage.
   std::vector<EncryptedKVBlob> encrypted;
+
+  // Unencrypted KV blobs emitted by the stage.
   std::vector<UnencryptedKVBlob> unencrypted;
+
+  // Accumulates the outputs of another session of the same stage, used when a
+  // stage runs multiple sessions.
+  void Append(KVBlobStageOutputs&& other) {
+    for (EncryptedKVBlob& record : other.encrypted) {
+      encrypted.push_back(std::move(record));
+    }
+    for (UnencryptedKVBlob& record : other.unencrypted) {
+      unencrypted.push_back(std::move(record));
+    }
+  }
 };
 
 }  // namespace cobalt::trusted_shuffler::testing::integration
