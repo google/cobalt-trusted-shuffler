@@ -86,5 +86,44 @@ TEST(FakeContextTest, EmitError_StoresStatus) {
   EXPECT_THAT(errors[0], Eq(status));
 }
 
+TEST(FakeContextTest, IncrementsCountersViaDoContext) {
+  FakeContext context;
+  FakeDoContext do_context(context);
+
+  do_context.IncrementCounter("input_config-count");
+  do_context.IncrementCounter("input_record-count");
+  do_context.IncrementCounter("input_record-count");
+
+  EXPECT_THAT(context.GetCounters().at("input_config-count"), Eq(1));
+  EXPECT_THAT(context.GetCounters().at("input_record-count"), Eq(2));
+}
+
+TEST(FakeContextTest, IncrementsCountersViaFnContext) {
+  FakeContext context;
+  FakeFnContext fn_context(context);
+
+  fn_context.IncrementCounter("test-counter");
+  fn_context.IncrementCounterBy("test-counter", 5);
+
+  EXPECT_THAT(context.GetCounters().at("test-counter"), Eq(6));
+}
+
+TEST(FakeCombinedContextTest, ImplicitConversionsAndMethodsWork) {
+  FakeCombinedContext context;
+
+  confidential_federated_compute::Session::Context& session_context = context;
+  confidential_federated_compute::fns::DoFn::DoContext& do_context = context;
+  confidential_federated_compute::fns::Fn::FnContext& fn_context = context;
+
+  do_context.EmitUnencrypted("msg1");
+  do_context.IncrementCounter("c1");
+  fn_context.IncrementCounter("c2");
+
+  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
+  EXPECT_THAT(context.Unencrypted()[0].data, Eq("msg1"));
+  EXPECT_THAT(context.GetCounters().at("c1"), Eq(1));
+  EXPECT_THAT(context.GetCounters().at("c2"), Eq(1));
+}
+
 }  // namespace
 }  // namespace cobalt::trusted_shuffler::testing

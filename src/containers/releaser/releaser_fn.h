@@ -31,7 +31,11 @@ class ReleaserFn : public confidential_federated_compute::fns::DoFn {
   ~ReleaserFn() override = default;
 
   // Emits the input data unencrypted for release.
-  absl::Status Do(KV input, Context& context) override;
+  absl::Status Do(KV input, DoContext& context) override;
+
+ private:
+  using FnContext = confidential_federated_compute::fns::Fn::FnContext;
+  using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
 };
 
 }  // namespace cobalt::trusted_shuffler

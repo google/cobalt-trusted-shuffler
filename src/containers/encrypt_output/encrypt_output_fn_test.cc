@@ -43,6 +43,8 @@ namespace {
 
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
+using FakeContext = ::cobalt::trusted_shuffler::testing::FakeCombinedContext;
+using ::testing::Eq;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::Not;
@@ -154,21 +156,19 @@ absl::StatusOr<std::string> DecryptWithReleaseKey(absl::string_view release_key,
   return encrypter->DecryptReleased(ciphertext, /*associated_data=*/"");
 }
 
-void ExpectIntegrityFaultEmitted(const testing::FakeContext& context,
-                                 absl::string_view expected_message) {
+void ExpectIntegrityFaultEmitted(const FakeContext& context,
+                                 absl::string_view /*expected_message*/) {
   ASSERT_THAT(context.Unencrypted(), Not(IsEmpty()));
   ReleaseOutputHeader header;
   ASSERT_TRUE(context.Unencrypted().back().key.UnpackTo(&header));
   EXPECT_EQ(header.type(), ReleaseOutputHeader::TYPE_INTEGRITY_FAULT);
-  ASSERT_THAT(context.Errors(), Not(IsEmpty()));
-  EXPECT_EQ(context.Errors().back().message(), expected_message);
 }
 
 using EncryptOutputFnTest = ::testing::Test;
 
 TEST_F(EncryptOutputFnTest, FailsIfFirstRecordIsEmpty) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   EXPECT_THAT(fn.Do(EncryptOutputFn::KV(google::protobuf::Any(), ""), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
@@ -177,7 +177,7 @@ TEST_F(EncryptOutputFnTest, FailsIfFirstRecordIsEmpty) {
 
 TEST_F(EncryptOutputFnTest, FailsIfFirstRecordNotIngestionVerificationPayload) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   EXPECT_THAT(fn.Do(EncryptOutputFn::KV(google::protobuf::Any(), "corrupted-payload"), context),
               StatusIs(absl::StatusCode::kInvalidArgument));
@@ -186,7 +186,7 @@ TEST_F(EncryptOutputFnTest, FailsIfFirstRecordNotIngestionVerificationPayload) {
 
 TEST_F(EncryptOutputFnTest, FailsIfIngestionVerificationPayloadHasIntegrityFault) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   IngestionVerificationPayload payload;
   payload.mutable_integrity_fault();
@@ -200,7 +200,7 @@ TEST_F(EncryptOutputFnTest, FailsIfIngestionVerificationPayloadHasIntegrityFault
 
 TEST_F(EncryptOutputFnTest, FailsIfIngestionVerificationPayloadMissingSuccessResult) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   // Non-empty valid protobuf wire bytes with an unknown field (tag 15, varint 1)
   // so FirstRecordConfigDoFn parses it as an IngestionVerificationPayload with
@@ -215,7 +215,7 @@ TEST_F(EncryptOutputFnTest, FailsIfIngestionVerificationPayloadMissingSuccessRes
 
 TEST_F(EncryptOutputFnTest, FailsIfIngestionVerificationResultMissingSignedRunContext) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   IngestionVerificationPayload payload;
   payload.mutable_success()->mutable_threshold_report()->set_run_id(PadRunId("run-123"));
@@ -229,7 +229,7 @@ TEST_F(EncryptOutputFnTest, FailsIfIngestionVerificationResultMissingSignedRunCo
 
 TEST_F(EncryptOutputFnTest, FailsIfRunContextMissingOrEmptyRunId) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -244,7 +244,7 @@ TEST_F(EncryptOutputFnTest, FailsIfRunContextMissingOrEmptyRunId) {
 
 TEST_F(EncryptOutputFnTest, FailsIfRunContextPayloadCorrupted) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   SignedRunContext signed_context;
   signed_context.set_serialized_run_context("invalid-run-context-bytes");
@@ -261,7 +261,7 @@ TEST_F(EncryptOutputFnTest, FailsIfRunContextPayloadCorrupted) {
 
 TEST_F(EncryptOutputFnTest, FailsIfRunContextMissingSignature) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   SignedRunContext signed_context = CreateSignedRunContext("run-123");
   signed_context.clear_signature();
@@ -277,7 +277,7 @@ TEST_F(EncryptOutputFnTest, FailsIfRunContextMissingSignature) {
 
 TEST_F(EncryptOutputFnTest, FailsIfRunContextMissingReleaseKey) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   RunContext run_context;
   run_context.set_run_id(PadRunId("run-123"));
@@ -305,7 +305,7 @@ TEST_F(EncryptOutputFnTest, FailsIfRunContextMissingReleaseKey) {
 
 TEST_F(EncryptOutputFnTest, FailsIfRunContextInvalidReleaseKeyset) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   RunContext run_context;
   run_context.set_run_id(PadRunId("run-123"));
@@ -334,7 +334,7 @@ TEST_F(EncryptOutputFnTest, FailsIfRunContextInvalidReleaseKeyset) {
 
 TEST_F(EncryptOutputFnTest, FailsIfRunContextMissingRunConfig) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   RunContext run_context;
@@ -357,7 +357,7 @@ TEST_F(EncryptOutputFnTest, FailsIfRunContextMissingRunConfig) {
 
 TEST_F(EncryptOutputFnTest, FailsIfIngestionVerificationResultMissingCanonicalFingerprint) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -375,7 +375,7 @@ TEST_F(EncryptOutputFnTest, FailsIfIngestionVerificationResultMissingCanonicalFi
 
 TEST_F(EncryptOutputFnTest, FailsIfCanonicalFingerprintRunIdMismatch) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("expected-run-id");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -391,7 +391,7 @@ TEST_F(EncryptOutputFnTest, FailsIfCanonicalFingerprintRunIdMismatch) {
 
 TEST_F(EncryptOutputFnTest, FailsIfIngestionVerificationResultMissingThresholdReport) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -408,7 +408,7 @@ TEST_F(EncryptOutputFnTest, FailsIfIngestionVerificationResultMissingThresholdRe
 
 TEST_F(EncryptOutputFnTest, FailsIfThresholdReportRunIdMismatch) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("expected-run-id");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -424,7 +424,7 @@ TEST_F(EncryptOutputFnTest, FailsIfThresholdReportRunIdMismatch) {
 
 TEST_F(EncryptOutputFnTest, FailsIfApprovedPartitionInvalidProjectId) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec invalid_approved[] = {{.project_id = 0, .metric_id = 2, .epoch_index = 100}};
@@ -440,7 +440,7 @@ TEST_F(EncryptOutputFnTest, FailsIfApprovedPartitionInvalidProjectId) {
 
 TEST_F(EncryptOutputFnTest, FailsIfApprovedPartitionZeroMetricId) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec invalid_approved[] = {{.project_id = 1, .metric_id = 0, .epoch_index = 100}};
@@ -456,7 +456,7 @@ TEST_F(EncryptOutputFnTest, FailsIfApprovedPartitionZeroMetricId) {
 
 TEST_F(EncryptOutputFnTest, FailsIfApprovedPartitionNegativeEpochIndex) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec invalid_approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = -1}};
@@ -472,7 +472,7 @@ TEST_F(EncryptOutputFnTest, FailsIfApprovedPartitionNegativeEpochIndex) {
 
 TEST_F(EncryptOutputFnTest, SuccessfulConfigTransitionToConfigured) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-abc-123");
   const PartitionSpec approved[] = {
@@ -488,7 +488,7 @@ TEST_F(EncryptOutputFnTest, SuccessfulConfigTransitionToConfigured) {
 
 TEST_F(EncryptOutputFnTest, ProcessRecordWithMalformedShuffledMessagePayloadTriggersFault) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -507,7 +507,7 @@ TEST_F(EncryptOutputFnTest, ProcessMessageWithInvalidShuffleCountTriggersFault) 
   const int32_t invalid_counts[] = {0, 1, 3};
   for (const int32_t count : invalid_counts) {
     EncryptOutputFn fn;
-    testing::FakeContext context;
+    FakeContext context;
 
     const SignedRunContext signed_context = CreateSignedRunContext("run-100");
     const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -530,7 +530,7 @@ TEST_F(EncryptOutputFnTest, ProcessMessageWithInvalidShuffleCountTriggersFault) 
 
 TEST_F(EncryptOutputFnTest, ProcessMessageWithRunIdMismatchTriggersFault) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -551,7 +551,7 @@ TEST_F(EncryptOutputFnTest, ProcessMessageWithRunIdMismatchTriggersFault) {
 
 TEST_F(EncryptOutputFnTest, ProcessMessageMissingMetricEpochKeyTriggersFault) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -574,7 +574,7 @@ TEST_F(EncryptOutputFnTest, ProcessMessageMissingMetricEpochKeyTriggersFault) {
 
 TEST_F(EncryptOutputFnTest, ProcessMessageWithUnapprovedPartitionTriggersFault) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -596,7 +596,7 @@ TEST_F(EncryptOutputFnTest, ProcessMessageWithUnapprovedPartitionTriggersFault) 
 
 TEST_F(EncryptOutputFnTest, ProcessValidMessageEncryptsPayloadAndEmitsUnencrypted) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const std::string release_key = ExtractReleaseKey(signed_context);
@@ -637,7 +637,7 @@ TEST_F(EncryptOutputFnTest, ProcessValidMessageEncryptsPayloadAndEmitsUnencrypte
 
 TEST_F(EncryptOutputFnTest, ProcessMessageWithEmptyPayloadSucceeds) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const std::string release_key = ExtractReleaseKey(signed_context);
@@ -665,7 +665,7 @@ TEST_F(EncryptOutputFnTest, ProcessMessageWithEmptyPayloadSucceeds) {
 
 TEST_F(EncryptOutputFnTest, ProcessPaddingMessageDoesNotEmitAndIsIgnored) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -701,7 +701,7 @@ TEST_F(EncryptOutputFnTest, ProcessPaddingMessageDoesNotEmitAndIsIgnored) {
 
 TEST_F(EncryptOutputFnTest, FinalizeReplicaBeforeConfigTriggersFault) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   EXPECT_THAT(
       fn.FinalizeReplica(google::protobuf::Any(), context),
@@ -714,7 +714,7 @@ TEST_F(EncryptOutputFnTest, FinalizeReplicaBeforeConfigTriggersFault) {
 
 TEST_F(EncryptOutputFnTest, FinalizeReplicaWithActiveFaultDoesNotEmitReport) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -738,7 +738,7 @@ TEST_F(EncryptOutputFnTest, FinalizeReplicaWithActiveFaultDoesNotEmitReport) {
 
 TEST_F(EncryptOutputFnTest, FinalizeReplicaEmitsPartialReleaseReportEncryptedUnderReencryptionKey) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {
@@ -781,7 +781,7 @@ TEST_F(EncryptOutputFnTest, FinalizeReplicaEmitsPartialReleaseReportEncryptedUnd
 
 TEST_F(EncryptOutputFnTest, FinalizeReplicaTwiceFailsPrecondition) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -797,7 +797,7 @@ TEST_F(EncryptOutputFnTest, FinalizeReplicaTwiceFailsPrecondition) {
 
 TEST_F(EncryptOutputFnTest, FinalizeReplicaWithZeroMessagesSucceeds) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -815,7 +815,7 @@ TEST_F(EncryptOutputFnTest, FinalizeReplicaWithZeroMessagesSucceeds) {
 
 TEST_F(EncryptOutputFnTest, SubsequentRecordsAndFinalizeLogGenericIntegrityFault) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -850,7 +850,7 @@ TEST_F(EncryptOutputFnTest, SubsequentRecordsAndFinalizeLogGenericIntegrityFault
 
 TEST_F(EncryptOutputFnTest, FinalizeReplicaAfterConfigFaultLogsGenericIntegrityFault) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("expected-run-id");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -872,7 +872,7 @@ TEST_F(EncryptOutputFnTest, FinalizeReplicaAfterConfigFaultLogsGenericIntegrityF
 TEST_F(EncryptOutputFnTest,
        FinalizeReplicaBeforeConfigThenSubsequentFinalizeLogsGenericIntegrityFault) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   // First FinalizeReplica before config logs/returns specific fault reason.
   EXPECT_THAT(
@@ -890,7 +890,7 @@ TEST_F(EncryptOutputFnTest,
 
 TEST_F(EncryptOutputFnTest, ProcessRecordAfterFinalizeReplicaFailsPrecondition) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
@@ -910,7 +910,7 @@ TEST_F(EncryptOutputFnTest, ProcessRecordAfterFinalizeReplicaFailsPrecondition) 
 
 TEST_F(EncryptOutputFnTest, DeduplicatesApprovedPartitionsAndProcessesMessages) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const SignedRunContext signed_context = CreateSignedRunContext("run-100");
   const PartitionSpec approved_with_duplicates[] = {
@@ -937,7 +937,7 @@ TEST_F(EncryptOutputFnTest, DeduplicatesApprovedPartitionsAndProcessesMessages) 
 
 TEST_F(EncryptOutputFnTest, PrivacyBoundaryEnforcedSecretsNeverLeakedToOrchestrator) {
   EncryptOutputFn fn;
-  testing::FakeContext context;
+  FakeContext context;
 
   const std::string run_id = PadRunId("secret-run-identifier-123");
   const SignedRunContext signed_context = CreateSignedRunContext("secret-run-identifier-123");

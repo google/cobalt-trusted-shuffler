@@ -49,6 +49,7 @@ namespace {
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
 using ::cobalt::trusted_shuffler::testing::EquivToProto;
+using FakeContext = ::cobalt::trusted_shuffler::testing::FakeCombinedContext;
 using ::confidential_federated_compute::fns::Fn;
 using ::confidential_federated_compute::fns::FnConfidentialTransform;
 using ::confidential_federated_compute::fns::FnFactory;
@@ -178,7 +179,7 @@ TEST(IngestionVerificationTransformTest, FnFactoryCreatedFnExecutesLifecycleAndE
   ASSERT_THAT(fn_or, IsOk());
   std::unique_ptr<Fn> fn = std::move(fn_or.value());
 
-  testing::FakeContext context;
+  FakeContext context;
   ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
 
   // Record 0: SignedRunContext
@@ -260,7 +261,7 @@ TEST(IngestionVerificationTransformTest,
   ASSERT_THAT(fn_or, IsOk());
   std::unique_ptr<Fn> fn = std::move(fn_or.value());
 
-  testing::FakeContext context;
+  FakeContext context;
   ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
   ASSERT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context), IsOk());
 

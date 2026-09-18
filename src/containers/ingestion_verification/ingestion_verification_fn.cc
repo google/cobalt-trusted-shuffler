@@ -56,7 +56,7 @@ absl::Status IngestionVerificationFn::InitializeReplica(google::protobuf::Any co
 }
 
 absl::Status IngestionVerificationFn::OnConfig(
-    const cobalt::trusted_shuffler::SignedRunContext& signed_run_context, Context& context) {
+    const cobalt::trusted_shuffler::SignedRunContext& signed_run_context, DoContext& context) {
   const absl::StatusOr<RunContext> verified_run_context =
       VerifySignedRunContext(signed_run_context);
   if (!verified_run_context.ok()) {
@@ -70,7 +70,7 @@ absl::Status IngestionVerificationFn::OnConfig(
 }
 
 absl::Status IngestionVerificationFn::OnRecord(const PartialIngestionReport& report,
-                                               Context& context) {
+                                               DoContext& context) {
   if (has_integrity_fault_) {
     return absl::OkStatus();
   }
@@ -113,7 +113,7 @@ absl::Status IngestionVerificationFn::OnRecord(const PartialIngestionReport& rep
   return absl::OkStatus();
 }
 
-void IngestionVerificationFn::EmitIntegrityFault(Context& context) {
+void IngestionVerificationFn::EmitIntegrityFault(FnContext& context) {
   IngestionVerificationHeader header;
   header.mutable_integrity_fault();
 
@@ -128,7 +128,7 @@ void IngestionVerificationFn::EmitIntegrityFault(Context& context) {
 }
 
 absl::Status IngestionVerificationFn::FinalizeReplica(google::protobuf::Any config,
-                                                      Context& context) {
+                                                      FnContext& context) {
   if (!HasConfig() || has_integrity_fault_ || !multiset_fingerprint_.has_value()) {
     EmitIntegrityFault(context);
     return absl::OkStatus();

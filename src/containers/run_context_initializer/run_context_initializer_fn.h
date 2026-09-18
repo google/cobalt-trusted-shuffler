@@ -28,24 +28,23 @@
 namespace cobalt::trusted_shuffler {
 
 // A DoFn class for generating a SignedRunContext from a RunConfig.
-class RunContextInitializerFn
-    : public confidential_federated_compute::fns::DoFn {
+class RunContextInitializerFn : public confidential_federated_compute::fns::DoFn {
  public:
-  explicit RunContextInitializerFn(
-      oak::crypto::SigningKeyHandle* signing_key_handle)
+  explicit RunContextInitializerFn(oak::crypto::SigningKeyHandle* signing_key_handle)
       : signing_key_handle_(signing_key_handle) {}
 
   ~RunContextInitializerFn() override = default;
 
-  absl::Status InitializeReplica(google::protobuf::Any config,
-                                 Context& context) override;
+  absl::Status InitializeReplica(google::protobuf::Any config, Context& context) override;
 
-  absl::Status Do(KV input, Context& context) override;
+  absl::Status Do(KV input, DoContext& context) override;
 
-  absl::Status FinalizeReplica(google::protobuf::Any config,
-                               Context& context) override;
+  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
 
  private:
+  using FnContext = confidential_federated_compute::fns::Fn::FnContext;
+  using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
+
   oak::crypto::SigningKeyHandle* signing_key_handle_;
   std::optional<RunConfig> run_config_;
 };

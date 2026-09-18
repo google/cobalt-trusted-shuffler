@@ -19,12 +19,14 @@
 #include <utility>
 #include <vector>
 
+#include "containers/fns/do_fn.h"
+#include "containers/fns/fn.h"
 #include "containers/session.h"
 #include "fcp/protos/confidentialcompute/confidential_transform.pb.h"
 
 namespace cobalt::trusted_shuffler::testing {
 
-// Fake implementation of Session::Context that captures calls to Emit, 
+// Fake implementation of Session::Context that captures calls to Emit,
 // EmitUnencrypted, and EmitEncrypted and stores them for testing.
 class FakeContext : public confidential_federated_compute::Session::Context {
  public:
@@ -57,8 +59,7 @@ class FakeContext : public confidential_federated_compute::Session::Context {
   }
 
   bool EmitReleasable(int reencryption_key_index, confidential_federated_compute::Session::KV kv,
-                      std::optional<absl::string_view> src_state,
-                      absl::string_view dst_state,
+                      std::optional<absl::string_view> src_state, absl::string_view dst_state,
                       std::string& release_token) override {
     releasable_.push_back({reencryption_key_index, std::move(kv),
                            src_state ? std::make_optional(std::string(*src_state)) : std::nullopt,
@@ -67,7 +68,11 @@ class FakeContext : public confidential_federated_compute::Session::Context {
     return true;
   }
 
-  bool EmitError(absl::Status status) override {
+  confidential_federated_compute::Counters& GetCounters() override { return counters_; }
+
+  const confidential_federated_compute::Counters& GetCounters() const { return counters_; }
+
+  bool EmitError(absl::Status status) {
     errors_.push_back(std::move(status));
     return true;
   }
@@ -83,11 +88,65 @@ class FakeContext : public confidential_federated_compute::Session::Context {
   std::vector<absl::Status> Errors() const { return errors_; }
 
  private:
+  confidential_federated_compute::Counters counters_;
   std::vector<ReleasableInfo> releasable_;
   std::vector<absl::Status> errors_;
   std::vector<fcp::confidentialcompute::ReadResponse> read_responses_;
   std::vector<confidential_federated_compute::Session::KV> unencrypted_;
   std::vector<std::pair<int, confidential_federated_compute::Session::KV>> encrypted_;
+};
+
+// Fake FnContext wrapping a Session::Context for testing Fn lifecycle methods.
+class FakeFnContext : public confidential_federated_compute::fns::Fn::FnContext {
+ public:
+  explicit FakeFnContext(confidential_federated_compute::Session::Context& session_context,
+                         fcp::confidentialcompute::AssociatedMetadata metadata = {})
+      : FnContext(session_context, std::move(metadata)) {}
+};
+
+// Fake DoContext wrapping a Session::Context for testing DoFn::Do.
+class FakeDoContext : public confidential_federated_compute::fns::DoFn::DoContext {
+ public:
+  explicit FakeDoContext(confidential_federated_compute::Session::Context& session_context,
+                         fcp::confidentialcompute::AssociatedMetadata metadata = {})
+      : DoContext(session_context, std::move(metadata)) {}
+};
+
+// Combined fake context holding Session::Context, DoContext, and FnContext,
+// providing implicit conversions to each for seamless testing of DoFn pipelines.
+class FakeCombinedContext {
+ public:
+  FakeCombinedContext() = default;
+
+  operator FakeContext&() { return session_context_; }
+  operator FakeDoContext&() { return do_context_; }
+  operator FakeFnContext&() { return fn_context_; }
+  operator confidential_federated_compute::Session::Context&() { return session_context_; }
+  operator confidential_federated_compute::fns::DoFn::DoContext&() { return do_context_; }
+  operator confidential_federated_compute::fns::Fn::FnContext&() { return fn_context_; }
+
+  std::vector<fcp::confidentialcompute::ReadResponse> ReadResponses() const {
+    return session_context_.ReadResponses();
+  }
+  std::vector<confidential_federated_compute::Session::KV> Unencrypted() const {
+    return session_context_.Unencrypted();
+  }
+  std::vector<std::pair<int, confidential_federated_compute::Session::KV>> Encrypted() const {
+    return session_context_.Encrypted();
+  }
+  std::vector<FakeContext::ReleasableInfo> Releasable() const {
+    return session_context_.Releasable();
+  }
+  std::vector<absl::Status> Errors() const { return session_context_.Errors(); }
+  const confidential_federated_compute::Counters& GetCounters() const {
+    return session_context_.GetCounters();
+  }
+  confidential_federated_compute::Counters& GetCounters() { return session_context_.GetCounters(); }
+
+ private:
+  FakeContext session_context_;
+  FakeDoContext do_context_{session_context_};
+  FakeFnContext fn_context_{session_context_};
 };
 
 }  // namespace cobalt::trusted_shuffler::testing

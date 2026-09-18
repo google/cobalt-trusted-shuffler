@@ -65,7 +65,7 @@ class IngestionVerificationFn
 
   // Evaluates unique device counts against reporting thresholds, constructs
   // canonical fingerprint and threshold report, and emits dual verification output.
-  absl::Status FinalizeReplica(google::protobuf::Any config, Context& context) override;
+  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
 
   const TrustedShufflerConfigConstraints& ConfigConstraints() const { return config_constraints_; }
 
@@ -73,16 +73,18 @@ class IngestionVerificationFn
   // Ingests SignedRunContext on record 0, parses the inner RunContext, and initializes
   // fingerprinting.
   absl::Status OnConfig(const cobalt::trusted_shuffler::SignedRunContext& signed_run_context,
-                        Context& context) override;
+                        DoContext& context) override;
 
   // Ingests incoming PartialIngestionReport records from IngestUploads workers.
-  absl::Status OnRecord(const PartialIngestionReport& report, Context& context) override;
+  absl::Status OnRecord(const PartialIngestionReport& report, DoContext& context) override;
 
  private:
+  using FnContext = confidential_federated_compute::fns::Fn::FnContext;
+  using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
   using MetricKey = std::pair<int32_t, int32_t>;
   using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
 
-  void EmitIntegrityFault(Context& context);
+  void EmitIntegrityFault(FnContext& context);
 
   TrustedShufflerConfigConstraints config_constraints_;
   absl::flat_hash_map<MetricKey, int32_t> threshold_map_;

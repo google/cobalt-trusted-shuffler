@@ -34,6 +34,7 @@ namespace {
 
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
+using ::cobalt::trusted_shuffler::testing::FakeFnContext;
 using ::testing::Eq;
 using ::testing::IsEmpty;
 using ::testing::Ne;
@@ -229,17 +230,19 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaFailsWithoutInitializeReplica) 
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
+  FakeFnContext fn_context(context);
 
-  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
 TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnNullSigningKey) {
   RunContextInitializerFn fn(nullptr);
   testing::FakeContext context;
+  FakeFnContext fn_context(context);
 
   ASSERT_THAT(fn.InitializeReplica(ToAny(CreateValidRunConfig()), context), IsOk());
-  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context),
               StatusIs(absl::StatusCode::kInternal));
 }
 
@@ -247,9 +250,10 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnSigningError) {
   FailingSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
+  FakeFnContext fn_context(context);
 
   ASSERT_THAT(fn.InitializeReplica(ToAny(CreateValidRunConfig()), context), IsOk());
-  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context),
               StatusIs(absl::StatusCode::kInternal));
 }
 
@@ -257,6 +261,7 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaEmitsSignedRunContextWithKeyInd
   TestSigningKey key_handle;
   RunContextInitializerFn fn(&key_handle);
   testing::FakeContext context;
+  FakeFnContext fn_context(context);
 
   RunConfig config;
   config.set_min_epoch_index(10);
@@ -267,7 +272,7 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaEmitsSignedRunContextWithKeyInd
   metric->set_metric_id(202);
 
   ASSERT_THAT(fn.InitializeReplica(ToAny(config), context), IsOk());
-  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context), IsOk());
 
   std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items = context.Encrypted();
   ASSERT_THAT(encrypted_items, SizeIs(1));
@@ -313,8 +318,10 @@ TEST(RunContextInitializerFnTest, GeneratesUniqueCryptoRandomKeysPerCall) {
   ASSERT_THAT(fn1.InitializeReplica(ToAny(config), context1), IsOk());
   ASSERT_THAT(fn2.InitializeReplica(ToAny(config), context2), IsOk());
 
-  ASSERT_THAT(fn1.FinalizeReplica(google::protobuf::Any(), context1), IsOk());
-  ASSERT_THAT(fn2.FinalizeReplica(google::protobuf::Any(), context2), IsOk());
+  FakeFnContext fn_context1(context1);
+  FakeFnContext fn_context2(context2);
+  ASSERT_THAT(fn1.FinalizeReplica(google::protobuf::Any(), fn_context1), IsOk());
+  ASSERT_THAT(fn2.FinalizeReplica(google::protobuf::Any(), fn_context2), IsOk());
 
   std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items1 = context1.Encrypted();
   std::vector<std::pair<int, RunContextInitializerFn::KV>> encrypted_items2 = context2.Encrypted();

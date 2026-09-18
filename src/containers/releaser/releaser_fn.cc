@@ -20,7 +20,7 @@
 
 namespace cobalt::trusted_shuffler {
 
-absl::Status ReleaserFn::Do(KV input, Context& context) {
+absl::Status ReleaserFn::Do(KV input, DoContext& context) {
   context.EmitUnencrypted(std::move(input));
   return absl::OkStatus();
 }

@@ -49,15 +49,12 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
                 "RecordProto must inherit from google::protobuf::Message.");
 
  public:
-  using KV = confidential_federated_compute::Session::KV;
-  using Context = confidential_federated_compute::Session::Context;
-
   FirstRecordConfigDoFn() = default;
   ~FirstRecordConfigDoFn() override = default;
 
   // Intercepts input records and executes the configuration state machine.
   // Final to prevent subclasses from inadvertently bypassing configuration checks.
-  absl::Status Do(KV input, Context& context) final {
+  absl::Status Do(KV input, DoContext& context) final {
     if (config_failure_.has_value()) {
       return absl::FailedPreconditionError(absl::StrCat(
           "Configuration failed on first record; cannot process records: ", *config_failure_));
@@ -104,11 +101,11 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
  protected:
   // Hook invoked exactly once when the first record arrives. Subclasses must
   // validate the configuration proto.
-  virtual absl::Status OnConfig(const ConfigProto& config, Context& context) = 0;
+  virtual absl::Status OnConfig(const ConfigProto& config, DoContext& context) = 0;
 
   // Hook invoked for all subsequent records (records 1..N) after configuration
   // has succeeded.
-  virtual absl::Status OnRecord(const RecordProto& record, Context& context) = 0;
+  virtual absl::Status OnRecord(const RecordProto& record, DoContext& context) = 0;
 
  private:
   std::optional<ConfigProto> config_;

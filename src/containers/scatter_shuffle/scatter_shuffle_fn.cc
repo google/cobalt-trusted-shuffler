@@ -36,7 +36,7 @@
 namespace cobalt::trusted_shuffler {
 
 absl::Status ScatterShuffleFn::OnConfig(
-    const IngestionVerificationPayload& ingestion_verification_payload, Context& context) {
+    const IngestionVerificationPayload& ingestion_verification_payload, DoContext& context) {
   absl::StatusOr<VerifiedIngestionVerificationResult> verified_result =
       VerifyIngestionVerificationPayload(ingestion_verification_payload);
   if (!verified_result.ok()) {
@@ -48,7 +48,7 @@ absl::Status ScatterShuffleFn::OnConfig(
   return absl::OkStatus();
 }
 
-absl::Status ScatterShuffleFn::OnRecord(const ShuffledMessage& message, Context& context) {
+absl::Status ScatterShuffleFn::OnRecord(const ShuffledMessage& message, DoContext& context) {
   if (fault_reason_.has_value()) {
     return SignalIntegrityFault(context);
   }
@@ -105,7 +105,7 @@ absl::Status ScatterShuffleFn::OnRecord(const ShuffledMessage& message, Context&
   return absl::OkStatus();
 }
 
-absl::Status ScatterShuffleFn::SignalIntegrityFault(Context& context) {
+absl::Status ScatterShuffleFn::SignalIntegrityFault(FnContext& context) {
   const absl::string_view reason = fault_reason_.has_value()
                                        ? absl::string_view(*fault_reason_)
                                        : "IntegrityFault: Unspecified integrity fault.";
@@ -120,17 +120,12 @@ absl::Status ScatterShuffleFn::SignalIntegrityFault(Context& context) {
 
     IntegrityFault fault;
     context.EmitUnencrypted(KV(std::move(key), fault.SerializeAsString()));
-
-    // Record the error status once on the Context to notify the orchestrator
-    // without producing duplicate error events if called again across
-    // subsequent records or FinalizeReplica.
-    context.EmitError(absl::FailedPreconditionError(reason));
   }
 
   return absl::FailedPreconditionError(reason);
 }
 
-absl::Status ScatterShuffleFn::FinalizeReplica(google::protobuf::Any config, Context& context) {
+absl::Status ScatterShuffleFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
   if (!HasConfig() || !verified_result_.has_value()) {
     fault_reason_ = "IntegrityFault: Configuration was not established before FinalizeReplica.";
     return SignalIntegrityFault(context);
