@@ -100,6 +100,10 @@ if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/encrypt_output
   cp -Rp ./bazel-bin/src/containers/encrypt_output/* ${KOKORO_ARTIFACTS_DIR}/encrypt_output/.
 
+  log "Copying key_releaser container output to kokoro artifacts dir."
+  mkdir -p ${KOKORO_ARTIFACTS_DIR}/key_releaser
+  cp -Rp ./bazel-bin/src/containers/key_releaser/* ${KOKORO_ARTIFACTS_DIR}/key_releaser/.
+
   # Kokoro tooling uses the `bazel_invocation_ids` file, but add a .txt
   # extension to it before also uploading it as an output artifact so
   # that the MIME type in GCS  gets set to something easily openable in
