@@ -26,6 +26,7 @@ inline constexpr absl::string_view kInputRecordDropped = "input_record-dropped";
 inline constexpr absl::string_view kEncryptedOutputRecordCount = "encrypted_output_record-count";
 inline constexpr absl::string_view kUnencryptedOutputRecordCount =
     "unencrypted_output_record-count";
+inline constexpr absl::string_view kIntegrityFaultCount = "integrity_fault-count";
 
 }  // namespace cobalt::trusted_shuffler
 

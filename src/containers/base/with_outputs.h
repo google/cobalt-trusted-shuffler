@@ -31,6 +31,9 @@
 
 namespace cobalt::trusted_shuffler {
 
+template <typename HeaderType>
+class IntegrityFaultHandler;
+
 // Key type of an output stream that leaves KV.key empty.
 struct NoKey {};
 
@@ -297,6 +300,9 @@ std::string SerializePayload(ValueArg&& value) {
 // rather than from the call site.
 template <typename Destinations, typename... OutputStreams>
 class WithOutputs {
+  template <typename HeaderType>
+  friend class IntegrityFaultHandler;
+
   static_assert(internal::kIsEncryptsTo<Destinations>,
                 "A container must declare the data nodes it encrypts output to as an "
                 "EncryptsTo<...> first template argument, or EncryptsTo<> if it emits no "
