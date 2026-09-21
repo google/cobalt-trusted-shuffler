@@ -34,6 +34,7 @@
 #include "src/testing/integration/ingestion_verification_router.h"
 #include "src/testing/integration/pipeline_runner.h"
 #include "src/testing/integration/records.h"
+#include "src/testing/integration/threshold_filter_router.h"
 #include "src/testing/test_utils.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
@@ -41,6 +42,7 @@ namespace {
 
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
+using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
 // Deterministic signing key implementation for testing.
@@ -102,8 +104,7 @@ TrustedShufflerConfigConstraints CreateTestConstraints(
   return constraints;
 }
 
-TEST(ShufflerFlowIntegrationTest,
-     EndToEndSingleSessionFlowVerifiesIngestionAndEvaluatesThresholds) {
+TEST(ShufflerFlowIntegrationTest, EndToEndSingleSessionFlowVerifiesIngestionAndFiltersThresholds) {
   const int32_t project_id = 1001;
   const int32_t metric_id_above_threshold = 2;
   const int32_t metric_id_below_threshold = 3;
@@ -171,6 +172,10 @@ TEST(ShufflerFlowIntegrationTest,
   ASSERT_EQ(iv_payload.success().threshold_report().approved_partitions_size(), 1);
   EXPECT_EQ(iv_payload.success().threshold_report().approved_partitions(0).metric_id(),
             metric_id_above_threshold);
+
+  // 3. ThresholdFilter kept the 3 messages for metric_id_above_threshold and dropped
+  // metric_id_below_threshold.
+  ASSERT_THAT(result->threshold_filter_output.encrypted, SizeIs(3));
 }
 
 TEST(ShufflerFlowIntegrationTest, EndToEndMultipleMetricEpochKeysApprovesAllEligiblePartitions) {
@@ -246,6 +251,9 @@ TEST(ShufflerFlowIntegrationTest, EndToEndMultipleMetricEpochKeysApprovesAllElig
       iv_payload.ParseFromString(result->ingestion_verification_output.encrypted[0].ciphertext()));
   ASSERT_TRUE(iv_payload.has_success());
   EXPECT_EQ(iv_payload.success().threshold_report().approved_partitions_size(), 3);
+
+  // ThresholdFilter: all 7 messages survive filtering.
+  EXPECT_THAT(result->threshold_filter_output.encrypted, SizeIs(7));
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineProcessesCheckpointsAcrossMultipleIngestUploadsShards) {
@@ -461,12 +469,41 @@ TEST(ShufflerFlowIntegrationTest,
 
   // Only the 2 valid messages + 1 partial report should be emitted by IngestUploads.
   EXPECT_THAT(result->ingest_uploads_output.encrypted, SizeIs(3));
-  ASSERT_THAT(result->ingestion_verification_output.encrypted, SizeIs(1));
-  IngestionVerificationPayload iv_payload;
-  ASSERT_TRUE(
-      iv_payload.ParseFromString(result->ingestion_verification_output.encrypted[0].ciphertext()));
-  ASSERT_TRUE(iv_payload.has_success());
-  EXPECT_EQ(iv_payload.success().threshold_report().approved_partitions_size(), 1);
+  EXPECT_THAT(result->threshold_filter_output.encrypted, SizeIs(2));
+}
+
+TEST(ShufflerFlowIntegrationTest, ThresholdFilterFailsWhenVerificationPayloadNotFirstInput) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  const int64_t min_epoch_index = 0;
+  const int64_t max_epoch_index = 10;
+  const int32_t target_batch_size = 5;
+
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}}, min_epoch_index,
+                          max_epoch_index, target_batch_size);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+  };
+
+  // Fault-injection router that places partition messages before the IngestionVerificationPayload.
+  const PipelineRouters routers{
+      .threshold_filter_router = RouteToThresholdFilterWithLateVerificationPayload,
+  };
+
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(ShufflerFlowIntegrationTest, OrchestratorDropsPartialReportCausesThresholdRejection) {
@@ -539,7 +576,7 @@ TEST(ShufflerFlowIntegrationTest, OrchestratorDropsPartialReportCausesThresholdR
   };
 
   // First verify that with both shards' partial reports intact, both Metric A (1 + 3 = 4 >= 4)
-  // and Metric B (2 >= 2) meet threshold.
+  // and Metric B (2 >= 2) meet threshold, and all 6 messages pass ThresholdFilter.
   const PipelineRouters baseline_routers{
       .ingest_uploads_router = RouteToTwoShardIngestUploads,
   };
@@ -552,9 +589,11 @@ TEST(ShufflerFlowIntegrationTest, OrchestratorDropsPartialReportCausesThresholdR
       baseline_result->ingestion_verification_output.encrypted[0].ciphertext()));
   ASSERT_TRUE(baseline_iv.has_success());
   EXPECT_EQ(baseline_iv.success().threshold_report().approved_partitions_size(), 2);
+  EXPECT_THAT(baseline_result->threshold_filter_output.encrypted, SizeIs(6));
 
   // Now drop Shard 1's partial report. Metric B (2 devices in Shard 0) still meets threshold 2,
   // whereas Metric A drops from 4 unique devices to 1 (below threshold 4) and is rejected.
+  // ThresholdFilter drops all 4 Metric A messages and emits only the 2 Metric B messages.
   const PipelineRouters fault_routers{
       .ingest_uploads_router = RouteToTwoShardIngestUploads,
       .ingest_uploads_output_splitter = SplitIngestUploadsOutputsWithDroppedReports,
@@ -571,6 +610,7 @@ TEST(ShufflerFlowIntegrationTest, OrchestratorDropsPartialReportCausesThresholdR
   ASSERT_EQ(iv_payload.success().threshold_report().approved_partitions_size(), 1);
   EXPECT_EQ(iv_payload.success().threshold_report().approved_partitions(0).metric_id(),
             metric_id_b);
+  EXPECT_THAT(result->threshold_filter_output.encrypted, SizeIs(2));
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineTerminatesWhenIngestUploadsEmitsIntegrityFault) {
