@@ -25,7 +25,6 @@
 #include "absl/status/status_matchers.h"
 #include "absl/strings/cord.h"
 #include "fcp/confidentialcompute/client_payload.h"
-#include "fcp/protos/confidentialcompute/blob_data.pb.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "src/containers/base/counter_names.h"
@@ -62,9 +61,7 @@ const std::string kTestRunId(kRunIdByteLength, 'a');
 constexpr absl::string_view kTestPrivacyId = "test_privacy_id";
 
 IngestUploadsFn::KV CreateBlobRecord(absl::string_view checkpoint_data) {
-  fcp::confidentialcompute::BlobData blob_data;
-  blob_data.set_data(std::string(checkpoint_data));
-  return IngestUploadsFn::KV(blob_data.SerializeAsString());
+  return IngestUploadsFn::KV(std::string(checkpoint_data));
 }
 
 TEST(IngestUploadsFnTest, IngestsConfigOnRecordZeroAndProcessesSubsequentUploads) {
@@ -440,7 +437,7 @@ TEST(IngestUploadsFnTest, FailsOnCorruptedConfigProtoAndRejectsSubsequentRecords
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
-TEST(IngestUploadsFnTest, RejectsCorruptedRecordPayload) {
+TEST(IngestUploadsFnTest, DropsCorruptedRecordPayload) {
   testing::FakeContext context;
   testing::FakeDoContext do_context(context);
   IngestUploadsFn fn;
@@ -451,9 +448,11 @@ TEST(IngestUploadsFnTest, RejectsCorruptedRecordPayload) {
   ASSERT_THAT(fn.Do(IngestUploadsFn::KV(signed_run_context.SerializeAsString()), do_context),
               IsOk());
 
-  // Invalid proto wire data for RecordProto (BlobData)
-  EXPECT_THAT(fn.Do(IngestUploadsFn::KV("corrupted_record_payload"), do_context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+  // Corrupted checkpoint payload is dropped and counted via kInputRecordDropped.
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV("corrupted_record_payload"), do_context), IsOk());
+  EXPECT_THAT(context.Encrypted(), SizeIs(0));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
 }
 
 }  // namespace

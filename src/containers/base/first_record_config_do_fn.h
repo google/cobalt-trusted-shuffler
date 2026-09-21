@@ -40,17 +40,19 @@ namespace cobalt::trusted_shuffler {
 //   to the configured state upon success. If configuration fails, the failure is
 //   recorded under one-shot semantics.
 // - Records 1..N: Enforces that configuration was successfully established, parses
-//   RecordProto from input.data, and routes records to OnRecord(). If configuration
+//   RecordType from input.data (or forwards the raw byte string directly when
+//   RecordType is std::string), and routes records to OnRecord(). If configuration
 //   failed on record 0, subsequent records are rejected with kFailedPrecondition.
-template <typename ConfigProto, typename RecordProto>
+template <typename ConfigProto, typename RecordType = std::string>
 class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
   static_assert(std::is_base_of_v<google::protobuf::Message, ConfigProto>,
                 "ConfigProto must inherit from google::protobuf::Message.");
-  static_assert(std::is_base_of_v<google::protobuf::Message, RecordProto>,
-                "RecordProto must inherit from google::protobuf::Message.");
+  static_assert(std::is_base_of_v<google::protobuf::Message, RecordType> ||
+                    std::is_same_v<std::string, RecordType>,
+                "RecordType must inherit from google::protobuf::Message or be std::string.");
 
  public:
-  // Base class combining FirstRecordConfigDoFn<ConfigProto, RecordProto> with
+  // Base class combining FirstRecordConfigDoFn<ConfigProto, RecordType> with
   // strongly typed output declarations.
   template <typename... OutputStreams>
   class WithOutputs;
@@ -90,13 +92,16 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
       return absl::OkStatus();
     }
 
-    RecordProto record;
-    if (!record.ParseFromString(input.data)) {
-      return absl::InvalidArgumentError(
-          "Failed to parse record as record proto: corrupted or invalid payload.");
+    if constexpr (std::is_same_v<std::string, RecordType>) {
+      return OnRecord(input.data, context);
+    } else {
+      RecordType record;
+      if (!record.ParseFromString(input.data)) {
+        return absl::InvalidArgumentError(
+            "Failed to parse record as record proto: corrupted or invalid payload.");
+      }
+      return OnRecord(record, context);
     }
-
-    return OnRecord(record, context);
   }
 
   // Returns true if configuration was successfully received, parsed, and validated.
@@ -112,20 +117,20 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
 
   // Hook invoked for all subsequent records (records 1..N) after configuration
   // has succeeded.
-  virtual absl::Status OnRecord(const RecordProto& record, DoContext& context) = 0;
+  virtual absl::Status OnRecord(const RecordType& record, DoContext& context) = 0;
 
  private:
   std::optional<ConfigProto> config_;
   std::optional<std::string> config_failure_;
 };
 
-template <typename ConfigProto, typename RecordProto>
+template <typename ConfigProto, typename RecordType>
 template <typename... OutputStreams>
-class FirstRecordConfigDoFn<ConfigProto, RecordProto>::WithOutputs
-    : public FirstRecordConfigDoFn<ConfigProto, RecordProto>,
+class FirstRecordConfigDoFn<ConfigProto, RecordType>::WithOutputs
+    : public FirstRecordConfigDoFn<ConfigProto, RecordType>,
       public ::cobalt::trusted_shuffler::WithOutputs<OutputStreams...> {
  public:
-  using FirstRecordConfigDoFn<ConfigProto, RecordProto>::FirstRecordConfigDoFn;
+  using FirstRecordConfigDoFn<ConfigProto, RecordType>::FirstRecordConfigDoFn;
   ~WithOutputs() override = default;
 };
 

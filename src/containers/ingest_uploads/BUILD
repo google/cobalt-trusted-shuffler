@@ -94,7 +94,6 @@ cc_library(
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@confidential-federated-compute//containers/fns:fns",
-        "@federated-compute//fcp/protos/confidentialcompute:blob_data_cc_proto",
         "@protobuf//:any_cc_proto",
     ],
 )
@@ -132,7 +131,6 @@ cc_test(
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@federated-compute//fcp/confidentialcompute:client_payload",
-        "@federated-compute//fcp/protos/confidentialcompute:blob_data_cc_proto",
         "@googletest//:gtest_main",
         "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/core:tensor",
         "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/protocol:federated_compute_checkpoint_builder",

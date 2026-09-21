@@ -82,7 +82,6 @@ cc_library(
         "@abseil-cpp//absl/strings:string_view",
         "@abseil-cpp//absl/types:span",
         "@confidential-federated-compute//containers:session",
-        "@federated-compute//fcp/protos/confidentialcompute:blob_data_cc_proto",
         "@protobuf//:protobuf",
     ],
 )
@@ -99,7 +98,6 @@ cc_test(
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/status:statusor",
         "@confidential-federated-compute//containers:session",
-        "@federated-compute//fcp/protos/confidentialcompute:blob_data_cc_proto",
         "@googletest//:gtest_main",
         "@protobuf//:protobuf",
     ],

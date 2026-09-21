@@ -24,19 +24,12 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "containers/session.h"
-#include "fcp/protos/confidentialcompute/blob_data.pb.h"
 #include "google/protobuf/any.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/testing/integration/records.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
 namespace {
-
-confidential_federated_compute::Session::KV CreateBlobDataKV(absl::string_view checkpoint_bytes) {
-  fcp::confidentialcompute::BlobData blob_data;
-  blob_data.set_data(std::string(checkpoint_bytes));
-  return confidential_federated_compute::Session::KV(blob_data.SerializeAsString());
-}
 
 KVCollection BuildShardInputs(const EncryptedBlob& signed_run_context,
                               absl::Span<const std::string> checkpoints) {
@@ -45,7 +38,7 @@ KVCollection BuildShardInputs(const EncryptedBlob& signed_run_context,
   inputs.push_back(signed_run_context.ToKV());
 
   for (const std::string& checkpoint : checkpoints) {
-    inputs.push_back(CreateBlobDataKV(checkpoint));
+    inputs.push_back(confidential_federated_compute::Session::KV(checkpoint));
   }
 
   return inputs;
@@ -75,7 +68,7 @@ absl::StatusOr<std::vector<KVCollection>> RouteToIngestUploadsWithLateRunContext
   inputs.reserve(1 + raw_checkpoints.size());
 
   for (const std::string& checkpoint : raw_checkpoints) {
-    inputs.push_back(CreateBlobDataKV(checkpoint));
+    inputs.push_back(confidential_federated_compute::Session::KV(checkpoint));
   }
   inputs.push_back(signed_run_context.ToKV());
 
@@ -88,7 +81,7 @@ absl::StatusOr<std::vector<KVCollection>> RouteToTwoShardIngestUploadsWithSecond
   KVCollection shard_1;
   shard_1.reserve(1 + (raw_checkpoints.size() - mid));
   for (const std::string& checkpoint : raw_checkpoints.subspan(mid)) {
-    shard_1.push_back(CreateBlobDataKV(checkpoint));
+    shard_1.push_back(confidential_federated_compute::Session::KV(checkpoint));
   }
   shard_1.push_back(signed_run_context.ToKV());
 

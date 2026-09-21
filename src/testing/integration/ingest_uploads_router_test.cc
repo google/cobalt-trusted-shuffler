@@ -21,7 +21,6 @@
 #include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "containers/session.h"
-#include "fcp/protos/confidentialcompute/blob_data.pb.h"
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "google/protobuf/message.h"
@@ -76,14 +75,8 @@ TEST(IngestUploadsRouterTest, RouteToIngestUploadsPrependsSignedRunContextAndChe
   const KVCollection& shard = (*result)[0];
   ASSERT_THAT(shard, SizeIs(3));
   EXPECT_EQ(shard[0].data, "ctx_ciphertext");
-
-  fcp::confidentialcompute::BlobData blob_1;
-  ASSERT_TRUE(blob_1.ParseFromString(shard[1].data));
-  EXPECT_EQ(blob_1.data(), "cp_1");
-
-  fcp::confidentialcompute::BlobData blob_2;
-  ASSERT_TRUE(blob_2.ParseFromString(shard[2].data));
-  EXPECT_EQ(blob_2.data(), "cp_2");
+  EXPECT_EQ(shard[1].data, "cp_1");
+  EXPECT_EQ(shard[2].data, "cp_2");
 }
 
 TEST(IngestUploadsRouterTest, RouteToIngestUploadsLeavesEveryRecordKeyEmpty) {
@@ -111,19 +104,13 @@ TEST(IngestUploadsRouterTest, RouteToTwoShardIngestUploadsSplitsCheckpointsAcros
   // Shard 0: context + cp_1
   ASSERT_THAT((*result)[0], SizeIs(2));
   EXPECT_EQ((*result)[0][0].data, "ctx_ciphertext");
-  fcp::confidentialcompute::BlobData blob_1;
-  ASSERT_TRUE(blob_1.ParseFromString((*result)[0][1].data));
-  EXPECT_EQ(blob_1.data(), "cp_1");
+  EXPECT_EQ((*result)[0][1].data, "cp_1");
 
   // Shard 1: context + cp_2 + cp_3
   ASSERT_THAT((*result)[1], SizeIs(3));
   EXPECT_EQ((*result)[1][0].data, "ctx_ciphertext");
-  fcp::confidentialcompute::BlobData blob_2;
-  ASSERT_TRUE(blob_2.ParseFromString((*result)[1][1].data));
-  EXPECT_EQ(blob_2.data(), "cp_2");
-  fcp::confidentialcompute::BlobData blob_3;
-  ASSERT_TRUE(blob_3.ParseFromString((*result)[1][2].data));
-  EXPECT_EQ(blob_3.data(), "cp_3");
+  EXPECT_EQ((*result)[1][1].data, "cp_2");
+  EXPECT_EQ((*result)[1][2].data, "cp_3");
 }
 
 TEST(IngestUploadsRouterTest, RouteToIngestUploadsWithLateRunContextPlacesRunContextLast) {
@@ -137,9 +124,7 @@ TEST(IngestUploadsRouterTest, RouteToIngestUploadsWithLateRunContextPlacesRunCon
   const KVCollection& shard = (*result)[0];
   ASSERT_THAT(shard, SizeIs(2));
 
-  fcp::confidentialcompute::BlobData blob_1;
-  ASSERT_TRUE(blob_1.ParseFromString(shard[0].data));
-  EXPECT_EQ(blob_1.data(), "cp_1");
+  EXPECT_EQ(shard[0].data, "cp_1");
   EXPECT_EQ(shard[1].data, "ctx_ciphertext");
 }
 

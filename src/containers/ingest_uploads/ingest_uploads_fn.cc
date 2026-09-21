@@ -66,11 +66,9 @@ bool IngestUploadsFn::IsEpochInBounds(const Epoch epoch) const {
          epoch <= Epoch::FromDays(run_config.max_epoch_index());
 }
 
-absl::Status IngestUploadsFn::OnRecord(const fcp::confidentialcompute::BlobData& blob_data,
-                                       DoContext& context) {
+absl::Status IngestUploadsFn::OnRecord(const std::string& record_data, DoContext& context) {
   context.IncrementCounter(kInputRecordCount);
-  const std::string payload(blob_data.data());
-  absl::StatusOr<ClientUploads> uploads = ParseUploads(payload);
+  absl::StatusOr<ClientUploads> uploads = ParseUploads(record_data);
   // If the checkpoint is invalid or empty, drop it and record dropped message.
   if (!uploads.ok()) {
     context.IncrementCounter(kInputRecordDropped);

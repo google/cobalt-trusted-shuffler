@@ -194,5 +194,44 @@ TEST(FirstRecordConfigDoFnTest, OnRecordFailureReturnsErrorStatus) {
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
+class TestRawBytesFirstRecordDoFn : public FirstRecordConfigDoFn<RunConfig, std::string> {
+ public:
+  TestRawBytesFirstRecordDoFn() = default;
+
+  const std::vector<std::string>& ReceivedPayloads() const { return received_payloads_; }
+
+ protected:
+  absl::Status OnConfig(const RunConfig& config, DoContext& context) override {
+    if (config.target_batch_size() <= 0) {
+      return absl::InvalidArgumentError("Invalid target_batch_size");
+    }
+    return absl::OkStatus();
+  }
+
+  absl::Status OnRecord(const std::string& record_data, DoContext& context) override {
+    received_payloads_.push_back(record_data);
+    return absl::OkStatus();
+  }
+
+ private:
+  std::vector<std::string> received_payloads_;
+};
+
+TEST(FirstRecordConfigDoFnTest, RoutesRawStringRecordsWithoutProtobufParsing) {
+  TestRawBytesFirstRecordDoFn fn;
+  FakeContext context;
+  FakeDoContext do_context(context);
+
+  RunConfig config = CreateValidConfig(101, 202, 50);
+  ASSERT_THAT(fn.Do(TestRawBytesFirstRecordDoFn::KV(config.SerializeAsString()), do_context),
+              IsOk());
+
+  // Raw binary bytes that are not valid protobuf wire format are forwarded directly to OnRecord.
+  const std::string raw_checkpoint_bytes = "\xff\xff\xff\xff_non_proto_binary_checkpoint_bytes";
+  EXPECT_THAT(fn.Do(TestRawBytesFirstRecordDoFn::KV(raw_checkpoint_bytes), do_context), IsOk());
+  ASSERT_THAT(fn.ReceivedPayloads(), SizeIs(1));
+  EXPECT_THAT(fn.ReceivedPayloads()[0], Eq(raw_checkpoint_bytes));
+}
+
 }  // namespace
 }  // namespace cobalt::trusted_shuffler
