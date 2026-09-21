@@ -26,17 +26,22 @@ namespace cobalt::trusted_shuffler {
 // Batching parameters calculated for a partition.
 struct BatchParameters {
   // Target batch size configured in the signed run context.
-  // Each batch / scattering worker receives exactly target_batch_size messages
-  // (real messages plus dummy padding messages).
   int32_t target_batch_size;
+
+  // Actual batch size per worker:
+  // ceil(message_count / batch_num) == (message_count + padding_count) / batch_num.
+  // Each downstream scattering worker receives exactly actual_batch_size messages
+  // (real messages plus dummy padding messages).
+  int32_t actual_batch_size;
 
   // Number of batches and downstream scattering groups:
   // ceil(message_count / target_batch_size).
   int32_t batch_num;
 
   // Number of dummy padding messages added to the partition so that
-  // message_count + padding_count == batch_num * target_batch_size:
-  // (target_batch_size - (message_count % target_batch_size)) % target_batch_size.
+  // message_count + padding_count == batch_num * actual_batch_size:
+  // (remainder_count > 0) ? (batch_num - remainder_count) : 0, where
+  // remainder_count = message_count % batch_num.
   int32_t padding_count;
 
   bool operator==(const BatchParameters&) const = default;

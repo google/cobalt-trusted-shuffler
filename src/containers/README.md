@@ -126,8 +126,8 @@ The **`threshold_filter`** container filters incoming partitions against approve
 The **`scatter_shuffle`** container is responsible for the scatter shuffle and group assignment phase (first pass) of the Trusted Shuffler two-pass shuffle.
 
 - **Purpose**: Cryptographically shuffles batches of messages partitioned by `MetricEpochKey`, validates batch size invariants, assigns group IDs (`group_id = new_position % batch_num`), increments `shuffle_count` to 1, and re-encrypts payloads under the stage's re-encryption key.
-- **Configuration**: Dynamic configuration via `IngestionVerificationPayload` on Record 0; computes batch parameters dynamically (`target_batch_size`, `batch_num`, `padding_count`) for the partition using `//src/batching:batch_calculator`.
-- **Inputs**: Record 0 is `IngestionVerificationPayload`. Records 1..N are `target_batch_size` messages with payload `ShuffledMessage` (real messages and dummy padding messages).
+- **Configuration**: Dynamic configuration via `IngestionVerificationPayload` on Record 0; computes batch parameters dynamically (`target_batch_size`, `actual_batch_size`, `batch_num`, `padding_count`) for the partition using `//src/batching:batch_calculator`.
+- **Inputs**: Record 0 is `IngestionVerificationPayload`. Records 1..N are `actual_batch_size` messages with payload `ShuffledMessage` (real messages and dummy padding messages).
 - **Outputs**: Emits encrypted KV records (`ScatterShuffleHeader` with `group_id` and encrypted `ShuffledMessage`) via `EmitEncrypted` with visible unencrypted `group_id` header and payload re-encrypted under the stage key. Emits `IntegrityFault` via `EmitUnencrypted` upon validation or batch size failure.
 - **Documentation**: See [`src/containers/scatter_shuffle/README.md`](scatter_shuffle/README.md).
 

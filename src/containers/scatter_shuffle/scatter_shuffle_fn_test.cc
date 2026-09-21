@@ -159,8 +159,9 @@ TEST(ScatterShuffleFnTest, SuccessfulScatterShuffleAndGroupAssignment) {
   // Ingest Record 0: IngestionVerificationPayload with target_batch_size = 6, message_count = 11.
   // Batch calculation:
   // batch_num = ceil(11 / 6) = 2
-  // remainder_count = 11 % 6 = 5
-  // padding_count = (6 - 5) % 6 = 1 (so 11 + 1 = 12 = 2 * 6)
+  // remainder_count = 11 % 2 = 1
+  // padding_count = 2 - 1 = 1 (so 11 + 1 = 12 = 2 * 6)
+  // actual_batch_size = 6
   // target_batch_size = 6
   const IngestionVerificationPayload verification_payload =
       CreateIngestionVerificationPayload({.target_batch_size = 6, .message_count = 11});
@@ -256,6 +257,7 @@ TEST(ScatterShuffleFnTest, BatchParametersEstablishedOnFirstDataRecord) {
 
   ASSERT_TRUE(fn.CurrentBatchParameters().has_value());
   EXPECT_EQ(fn.CurrentBatchParameters()->target_batch_size, 6);
+  EXPECT_EQ(fn.CurrentBatchParameters()->actual_batch_size, 6);
   EXPECT_EQ(fn.CurrentBatchParameters()->batch_num, 2);
   EXPECT_EQ(fn.CurrentBatchParameters()->padding_count, 1);
 }
@@ -705,6 +707,77 @@ TEST(ScatterShuffleFnTest, ShufflingPreservesMultisetAcrossLargeBatch) {
 
   // Verify all items are preserved.
   EXPECT_THAT(output_payloads, ::testing::UnorderedElementsAreArray(input_payloads));
+}
+
+TEST(ScatterShuffleFnTest, ActualBatchSizeDiffersFromTargetBatchSize) {
+  FakeContext context;
+  ScatterShuffleFn fn;
+
+  // target_batch_size = 10, message_count = 25.
+  // batch_num = ceil(25 / 10) = 3.
+  // remainder_count = 25 % 3 = 1.
+  // padding_count = 3 - 1 = 2.
+  // actual_batch_size = (25 + 2) / 3 = 9.
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.target_batch_size = 10, .message_count = 25});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
+
+  // Ingest 9 messages (actual_batch_size).
+  for (int i = 0; i < 9; ++i) {
+    const ShuffledMessage message = CreateMessage({.payload = absl::StrCat("payload_", i)});
+    ASSERT_THAT(fn.Do(CreateMessageRecord(message), context), IsOk());
+  }
+
+  ASSERT_TRUE(fn.CurrentBatchParameters().has_value());
+  EXPECT_EQ(fn.CurrentBatchParameters()->target_batch_size, 10);
+  EXPECT_EQ(fn.CurrentBatchParameters()->actual_batch_size, 9);
+  EXPECT_EQ(fn.CurrentBatchParameters()->batch_num, 3);
+  EXPECT_EQ(fn.CurrentBatchParameters()->padding_count, 2);
+
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(context.Encrypted(), SizeIs(9));
+}
+
+TEST(ScatterShuffleFnTest, RejectsMoreThanActualBatchSizeMessages) {
+  FakeContext context;
+  ScatterShuffleFn fn;
+
+  // target_batch_size = 10, message_count = 25 -> actual_batch_size = 9.
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.target_batch_size = 10, .message_count = 25});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
+
+  // Send exactly actual_batch_size (9) messages.
+  for (int i = 0; i < 9; ++i) {
+    const ShuffledMessage message = CreateMessage({.payload = absl::StrCat("payload_", i)});
+    ASSERT_THAT(fn.Do(CreateMessageRecord(message), context), IsOk());
+  }
+
+  // Sending the 10th message must trigger an integrity fault because actual_batch_size is 9.
+  const ShuffledMessage excess_message = CreateMessage({.payload = "excess"});
+  EXPECT_THAT(fn.Do(CreateMessageRecord(excess_message), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       ::testing::HasSubstr("Received more messages than expected batch size.")));
+}
+
+TEST(ScatterShuffleFnTest, FinalizeReplicaFailsWhenReceivedFewerThanActualBatchSize) {
+  FakeContext context;
+  ScatterShuffleFn fn;
+
+  // target_batch_size = 10, message_count = 25 -> actual_batch_size = 9.
+  const IngestionVerificationPayload verification_payload =
+      CreateIngestionVerificationPayload({.target_batch_size = 10, .message_count = 25});
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
+
+  // Send only 8 messages instead of 9.
+  for (int i = 0; i < 8; ++i) {
+    const ShuffledMessage message = CreateMessage({.payload = absl::StrCat("payload_", i)});
+    ASSERT_THAT(fn.Do(CreateMessageRecord(message), context), IsOk());
+  }
+
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       ::testing::HasSubstr("Batch size mismatch.")));
 }
 
 }  // namespace

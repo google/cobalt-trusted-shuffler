@@ -108,6 +108,7 @@ TEST(BatchCalculatorTest, ComputeBatchParametersExactMultipleTargetBatchSize) {
 
   const BatchParameters expected{
       .target_batch_size = 100,
+      .actual_batch_size = 100,
       .batch_num = 2,
       .padding_count = 0,
   };
@@ -120,6 +121,7 @@ TEST(BatchCalculatorTest, ComputeBatchParametersSingleBatchWithoutRemainder) {
 
   const BatchParameters expected{
       .target_batch_size = 100,
+      .actual_batch_size = 100,
       .batch_num = 1,
       .padding_count = 0,
   };
@@ -132,40 +134,62 @@ TEST(BatchCalculatorTest, ComputeBatchParametersSingleBatchLessThanTarget) {
 
   const BatchParameters expected{
       .target_batch_size = 100,
+      .actual_batch_size = 50,
       .batch_num = 1,
-      .padding_count = 50,
+      .padding_count = 0,
   };
   EXPECT_THAT(*params, Eq(expected));
 }
 
 TEST(BatchCalculatorTest, ComputeBatchParametersAddsPaddingWhenRemainderExists) {
   // 105 messages with target 100 => batch_num = 2.
-  // remainder = 105 % 100 = 5.
-  // padding = (100 - 5) % 100 = 95.
-  // message_count + padding = 200 = 2 * 100.
+  // remainder = 105 % 2 = 1.
+  // padding = 2 - 1 = 1.
+  // actual_batch_size = (105 + 1) / 2 = 53.
+  // message_count + padding = 106 = 2 * 53.
   const auto params = ComputeForSinglePartition(/*message_count=*/105, /*target_batch_size=*/100);
   ASSERT_THAT(params, IsOk());
 
   const BatchParameters expected{
       .target_batch_size = 100,
+      .actual_batch_size = 53,
       .batch_num = 2,
-      .padding_count = 95,
+      .padding_count = 1,
   };
   EXPECT_THAT(*params, Eq(expected));
 }
 
 TEST(BatchCalculatorTest, ComputeBatchParametersMultipleBatchesWithRemainder) {
+  // 25 messages with target 10 => batch_num = 3.
+  // remainder = 25 % 3 = 1.
+  // padding = 3 - 1 = 2.
+  // actual_batch_size = (25 + 2) / 3 = 9.
+  // message_count + padding = 27 = 3 * 9.
+  const auto params = ComputeForSinglePartition(/*message_count=*/25, /*target_batch_size=*/10);
+  ASSERT_THAT(params, IsOk());
+
+  const BatchParameters expected{
+      .target_batch_size = 10,
+      .actual_batch_size = 9,
+      .batch_num = 3,
+      .padding_count = 2,
+  };
+  EXPECT_THAT(*params, Eq(expected));
+}
+
+TEST(BatchCalculatorTest, ComputeBatchParametersMultipleBatchesWithoutRemainder) {
   // 150 messages with target 100 => batch_num = 2.
-  // remainder = 150 % 100 = 50.
-  // padding = (100 - 50) % 100 = 50.
-  // message_count + padding = 200 = 2 * 100.
+  // remainder = 150 % 2 = 0.
+  // padding = 0.
+  // actual_batch_size = 150 / 2 = 75.
   const auto params = ComputeForSinglePartition(/*message_count=*/150, /*target_batch_size=*/100);
   ASSERT_THAT(params, IsOk());
 
   const BatchParameters expected{
       .target_batch_size = 100,
+      .actual_batch_size = 75,
       .batch_num = 2,
-      .padding_count = 50,
+      .padding_count = 0,
   };
   EXPECT_THAT(*params, Eq(expected));
 }
@@ -205,8 +229,9 @@ TEST(BatchCalculatorTest, ComputeBatchParametersForPartitionSucceedsForApprovedP
 
   const BatchParameters expected{
       .target_batch_size = 100,
+      .actual_batch_size = 76,
       .batch_num = 2,
-      .padding_count = 49,
+      .padding_count = 1,
   };
   EXPECT_THAT(*params, Eq(expected));
 }

@@ -47,11 +47,14 @@ absl::StatusOr<BatchParameters> ComputeBatchParameters(int64_t message_count,
     return absl::OutOfRangeError("Computed batch_num exceeds int32_t max.");
   }
   const int32_t batch_num = static_cast<int32_t>(batch_num_64);
-  const int32_t remainder_count = static_cast<int32_t>(message_count % target_batch_size);
-  const int32_t padding_count = (target_batch_size - remainder_count) % target_batch_size;
+  const int32_t remainder_count = static_cast<int32_t>(message_count % batch_num);
+  const int32_t padding_count = (remainder_count > 0) ? (batch_num - remainder_count) : 0;
+  const int64_t total_messages = message_count + padding_count;
+  const int32_t actual_batch_size = static_cast<int32_t>(total_messages / batch_num);
 
   return BatchParameters{
       .target_batch_size = target_batch_size,
+      .actual_batch_size = actual_batch_size,
       .batch_num = batch_num,
       .padding_count = padding_count,
   };

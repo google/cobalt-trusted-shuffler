@@ -100,7 +100,7 @@ absl::Status ScatterShuffleFn::OnRecord(const ShuffledMessage& message, DoContex
   }
 
   // Enforce batch size bound.
-  if (messages_.size() >= static_cast<size_t>(batch_parameters_->target_batch_size)) {
+  if (messages_.size() >= static_cast<size_t>(batch_parameters_->actual_batch_size)) {
     fault_reason_ = "IntegrityFault: Received more messages than expected batch size.";
     return SignalIntegrityFault(context);
   }
@@ -143,8 +143,8 @@ absl::Status ScatterShuffleFn::FinalizeReplica(google::protobuf::Any config, FnC
     return SignalIntegrityFault(context);
   }
 
-  const int32_t target_batch_size = batch_parameters_->target_batch_size;
-  if (static_cast<int32_t>(messages_.size()) != target_batch_size) {
+  const int32_t expected_batch_size = batch_parameters_->actual_batch_size;
+  if (static_cast<int32_t>(messages_.size()) != expected_batch_size) {
     fault_reason_ = "IntegrityFault: Batch size mismatch.";
     return SignalIntegrityFault(context);
   }

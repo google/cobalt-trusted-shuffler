@@ -41,11 +41,12 @@ namespace cobalt::trusted_shuffler {
 // 2. Subsequent records (Records 1..N): Ingests encrypted KV records (MetricEpochKey header,
 //    ShuffledMessage payload, including real encrypted messages and dummy padding messages).
 //    - Validates that the record header key is an approved partition.
-//    - Calculates batching parameters (target_batch_size, batch_num, padding_count) from the
+//    - Calculates batching parameters (target_batch_size, actual_batch_size, batch_num,
+//    padding_count) from the
 //      VerifiedIngestionVerificationResult using the batch calculator library.
 //    - Enforces that all records share identical MetricEpochKey, run_id, and shuffle_count (0).
 // 3. FinalizeReplica:
-//    - Verifies that the replica received exactly `target_batch_size` messages.
+//    - Verifies that the replica received exactly `actual_batch_size` messages.
 //    - If any validation or batch size check fails, signals IntegrityFault.
 //    - Cryptographically shuffles the batch using Fisher-Yates CSPRNG shuffling.
 //    - Assigns each message a group_id equal to (new_position % batch_num).
