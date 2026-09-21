@@ -26,6 +26,7 @@
 #include "src/proto/run_context.pb.h"
 #include "src/testing/integration/ingest_uploads_router.h"
 #include "src/testing/integration/ingestion_verification_router.h"
+#include "src/testing/integration/pre_padding_router.h"
 #include "src/testing/integration/records.h"
 #include "src/testing/integration/threshold_filter_router.h"
 
@@ -48,6 +49,9 @@ struct PipelineExecutionResult {
   // Encrypted ShuffledMessage records approved by ThresholdFilter, each keyed
   // by MetricEpochKey.
   KVBlobStageOutputs threshold_filter_output;
+
+  // Encrypted padding messages emitted by PrePadding, keyed by MetricEpochKey.
+  KVBlobStageOutputs pre_padding_output;
 };
 
 // Builds one input stream per IngestUploads shard from the SignedRunContext
@@ -72,6 +76,10 @@ using ThresholdFilterRouterFn = absl::AnyInvocable<absl::StatusOr<KVCollection>(
     const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> partition_messages)
                                                        const>;
 
+// Builds the input stream for a PrePadding session from the IngestionVerificationPayload.
+using PrePaddingRouterFn = absl::AnyInvocable<absl::StatusOr<KVCollection>(
+    const EncryptedBlob& verification_payload) const>;
+
 // Holds routing and output-splitting functions used by ExecutePipeline to route
 // data between container stages. Defaults to the standard router implementations,
 // which tests can override to inject faults.
@@ -87,6 +95,9 @@ struct PipelineRouters {
 
   // Routes IngestionVerificationPayload and partition messages into the ThresholdFilter session.
   ThresholdFilterRouterFn threshold_filter_router = RouteToThresholdFilter;
+
+  // Routes IngestionVerificationPayload into the PrePadding session.
+  PrePaddingRouterFn pre_padding_router = RouteToPrePadding;
 };
 
 // Executes the 4 currently implemented container stages end-to-end using the

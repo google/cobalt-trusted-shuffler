@@ -25,6 +25,7 @@
 #include "cc/crypto/signing_key.h"
 #include "src/containers/ingest_uploads/ingest_uploads_fn.h"
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
+#include "src/containers/pre_padding/pre_padding_fn.h"
 #include "src/containers/run_context_initializer/run_context_initializer_fn.h"
 #include "src/containers/threshold_filter/threshold_filter_fn.h"
 #include "src/proto/config_constraints.pb.h"
@@ -161,6 +162,24 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     return tf_out.status();
   }
   result.threshold_filter_output = *std::move(tf_out);
+
+  // 5. PrePadding
+  // Replica requirement: Requires a single replica per pipeline run. It takes
+  // the IngestionVerificationPayload to learn which partitions were approved, and
+  // outputs all padding messages for all approved partitions.
+  // Output: padding messages keyed by MetricEpochKey.
+  absl::StatusOr<KVCollection> pp_inputs = routers.pre_padding_router(verification_payload);
+  if (!pp_inputs.ok()) {
+    return pp_inputs.status();
+  }
+
+  PrePaddingFn pp_fn;
+  absl::StatusOr<KVBlobStageOutputs> pp_out =
+      DoFnRunner::RunReplicaWithKVBlobOutput(pp_fn, {.inputs = *pp_inputs});
+  if (!pp_out.ok()) {
+    return pp_out.status();
+  }
+  result.pre_padding_output = *std::move(pp_out);
 
   return result;
 }

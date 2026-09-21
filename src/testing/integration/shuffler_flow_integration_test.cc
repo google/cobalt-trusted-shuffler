@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
@@ -26,6 +27,7 @@
 #include "containers/session.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/proto/common.pb.h"
 #include "src/proto/config_constraints.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
@@ -36,6 +38,7 @@
 #include "src/testing/integration/records.h"
 #include "src/testing/integration/threshold_filter_router.h"
 #include "src/testing/test_utils.h"
+#include "src/util/metric_epoch_key_utils.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
 namespace {
@@ -43,7 +46,9 @@ namespace {
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
 using ::testing::IsEmpty;
+using ::testing::Pair;
 using ::testing::SizeIs;
+using ::testing::UnorderedElementsAre;
 
 // Deterministic signing key implementation for testing.
 class TestSigningKey : public oak::crypto::SigningKeyHandle {
@@ -110,7 +115,7 @@ TEST(ShufflerFlowIntegrationTest, EndToEndSingleSessionFlowVerifiesIngestionAndF
   const int32_t metric_id_below_threshold = 3;
   const int64_t min_epoch_index = 0;
   const int64_t max_epoch_index = 10;
-  const int32_t target_batch_size = 5;
+  const int32_t target_batch_size = 2;
   const int32_t min_unique_devices_threshold = 3;
 
   TestSigningKey signing_key;
@@ -130,11 +135,8 @@ TEST(ShufflerFlowIntegrationTest, EndToEndSingleSessionFlowVerifiesIngestionAndF
        .threshold = min_unique_devices_threshold},
   });
 
-  // Create 5 client checkpoints:
-  // - 3 uploads for metric_id_above_threshold from 3 unique devices (meets threshold of 3 ->
-  // approved)
-  // - 2 uploads for metric_id_below_threshold from 2 unique devices (below threshold of 3 ->
-  // dropped)
+  // Create 3 uploads for metric_id_above_threshold (3 unique devices >= 3)
+  // and 2 uploads for metric_id_below_threshold (2 unique devices < 3).
   std::vector<std::string> checkpoints;
   for (int i = 0; i < 3; ++i) {
     checkpoints.push_back(CreateCheckpointFromSpec({
@@ -176,6 +178,10 @@ TEST(ShufflerFlowIntegrationTest, EndToEndSingleSessionFlowVerifiesIngestionAndF
   // 3. ThresholdFilter kept the 3 messages for metric_id_above_threshold and dropped
   // metric_id_below_threshold.
   ASSERT_THAT(result->threshold_filter_output.encrypted, SizeIs(3));
+
+  // 4. PrePadding emitted 1 padding message for the single approved partition
+  // (count 3 with target_batch_size 2 -> batch_num = 2, remainder = 1, padding_count = 1).
+  EXPECT_THAT(result->pre_padding_output.encrypted, SizeIs(1));
 }
 
 TEST(ShufflerFlowIntegrationTest, EndToEndMultipleMetricEpochKeysApprovesAllEligiblePartitions) {
@@ -184,7 +190,7 @@ TEST(ShufflerFlowIntegrationTest, EndToEndMultipleMetricEpochKeysApprovesAllElig
   const int32_t metric_id_b = 4;
   const int64_t min_epoch_index = 0;
   const int64_t max_epoch_index = 10;
-  const int32_t target_batch_size = 4;
+  const int32_t target_batch_size = 2;
   const int32_t min_unique_devices_threshold = 2;
 
   TestSigningKey signing_key;
@@ -254,6 +260,22 @@ TEST(ShufflerFlowIntegrationTest, EndToEndMultipleMetricEpochKeysApprovesAllElig
 
   // ThresholdFilter: all 7 messages survive filtering.
   EXPECT_THAT(result->threshold_filter_output.encrypted, SizeIs(7));
+
+  // PrePadding: with target_batch_size = 2, (Metric A, Epoch 1) has count 3 (batch_num = 2,
+  // padding_count = 1), while (Metric A, Epoch 0) and (Metric B, Epoch 0) have count 2
+  // (batch_num = 1, padding_count = 0).
+  ASSERT_THAT(result->pre_padding_output.encrypted, SizeIs(1));
+  absl::flat_hash_map<MetricEpochKey, int> padding_counts;
+  for (const EncryptedKVBlob& blob : result->pre_padding_output.encrypted) {
+    MetricEpochKey key;
+    ASSERT_TRUE(blob.key().UnpackTo(&key));
+    padding_counts[key]++;
+  }
+  EXPECT_THAT(padding_counts,
+              UnorderedElementsAre(
+                  Pair(CreateMetricEpochKey(
+                           {.project_id = project_id, .metric_id = metric_id_a, .epoch_index = 1}),
+                       1)));
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineProcessesCheckpointsAcrossMultipleIngestUploadsShards) {
@@ -302,6 +324,13 @@ TEST(ShufflerFlowIntegrationTest, PipelineProcessesCheckpointsAcrossMultipleInge
       iv_payload.ParseFromString(result->ingestion_verification_output.encrypted[0].ciphertext()));
   ASSERT_TRUE(iv_payload.has_success());
   EXPECT_EQ(iv_payload.success().threshold_report().approved_partitions_size(), 1);
+
+  // ThresholdFilter processes the 4 partition messages.
+  EXPECT_THAT(result->threshold_filter_output.encrypted, SizeIs(4));
+
+  // PrePadding emits 0 padding messages for the approved partition (count 4 with target 5 ->
+  // batch_num = 1, remainder = 0, actual_batch_size = 4).
+  EXPECT_THAT(result->pre_padding_output.encrypted, IsEmpty());
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenSignedRunContextNotFirstInput) {
@@ -590,6 +619,9 @@ TEST(ShufflerFlowIntegrationTest, OrchestratorDropsPartialReportCausesThresholdR
   ASSERT_TRUE(baseline_iv.has_success());
   EXPECT_EQ(baseline_iv.success().threshold_report().approved_partitions_size(), 2);
   EXPECT_THAT(baseline_result->threshold_filter_output.encrypted, SizeIs(6));
+  // Baseline PrePadding emitted 0 padding messages (both counts 4 and 2 <= target_batch_size 5,
+  // so batch_num = 1 and remainder = 0).
+  EXPECT_THAT(baseline_result->pre_padding_output.encrypted, IsEmpty());
 
   // Now drop Shard 1's partial report. Metric B (2 devices in Shard 0) still meets threshold 2,
   // whereas Metric A drops from 4 unique devices to 1 (below threshold 4) and is rejected.
@@ -611,6 +643,8 @@ TEST(ShufflerFlowIntegrationTest, OrchestratorDropsPartialReportCausesThresholdR
   EXPECT_EQ(iv_payload.success().threshold_report().approved_partitions(0).metric_id(),
             metric_id_b);
   EXPECT_THAT(result->threshold_filter_output.encrypted, SizeIs(2));
+  // Faulted pipeline PrePadding emitted 0 padding messages (Metric B count 2 <= target 5).
+  EXPECT_THAT(result->pre_padding_output.encrypted, IsEmpty());
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineTerminatesWhenIngestUploadsEmitsIntegrityFault) {
@@ -669,6 +703,65 @@ TEST(ShufflerFlowIntegrationTest, PipelineTerminatesWhenIngestionVerificationEmi
 
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
               StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(ShufflerFlowIntegrationTest, PipelineTerminatesWhenPrePaddingEmitsIntegrityFaultOnEmptyInput) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}}, 0, 10, 5);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+  };
+
+  const PipelineRouters routers{
+      .pre_padding_router = RouteToPrePaddingWithEmptyInput,
+  };
+
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(ShufflerFlowIntegrationTest,
+     PipelineTerminatesWhenPrePaddingEmitsIntegrityFaultOnUnexpectedRecord) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}}, 0, 10, 5);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+  };
+
+  const PipelineRouters routers{
+      .pre_padding_router = RouteToPrePaddingWithUnexpectedRecord,
+  };
+
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 }  // namespace

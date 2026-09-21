@@ -60,6 +60,10 @@ enum class Node {
   // Client messages forwarded after counting, written by message_counter.
   kCountedMessages = 7,
 
+  // Dummy padding messages rounding each approved partition up to a multiple of
+  // the target batch size, written by pre_padding.
+  kPaddingMessages = 8,
+
   // TODO(b/563428525): Renumber these to their real node ids when their
   // containers are added to the access policy.
   //

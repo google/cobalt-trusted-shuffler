@@ -118,6 +118,41 @@ struct ShuffledMessageSpec {
   int32_t shuffle_count;
 };
 
+struct FingerprintSpec {
+  MetricEpochKey metric_epoch_key;
+  int64_t message_count;
+};
+
+// Builds an IngestionVerificationPayload mimicking expected success state.
+inline IngestionVerificationPayload CreateIngestionVerificationPayload(
+    absl::string_view run_id, absl::Span<const MetricEpochKey> approved_partitions,
+    absl::Span<const FingerprintSpec> canonical_fingerprint,
+    const SignedRunContext& signed_run_context) {
+  IngestionVerificationResult result;
+  *result.mutable_signed_run_context() = signed_run_context;
+
+  auto* threshold = result.mutable_threshold_report();
+  threshold->set_run_id(std::string(run_id));
+  for (const MetricEpochKey& partition : approved_partitions) {
+    *threshold->add_approved_partitions() = partition;
+  }
+
+  auto* fp = result.mutable_canonical_fingerprint();
+  fp->set_run_id(std::string(run_id));
+  fp->set_stage_id(cobalt::trusted_shuffler::STAGE_INGESTION);
+  fp->set_is_partial(false);
+  for (const auto& spec : canonical_fingerprint) {
+    auto* partition_fp = fp->add_entries();
+    *partition_fp->mutable_metric_epoch_key() = spec.metric_epoch_key;
+    partition_fp->set_message_count(spec.message_count);
+    partition_fp->set_fingerprint(std::string(32, 'x'));
+  }
+
+  IngestionVerificationPayload payload;
+  *payload.mutable_success() = result;
+  return payload;
+}
+
 // Builds a ShuffledMessage proto with the specified parameters.
 inline ShuffledMessage CreateShuffledMessage(const ShuffledMessageSpec& spec) {
   ShuffledMessage msg;

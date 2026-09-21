@@ -157,6 +157,17 @@ cc_test(
 )
 
 cc_library(
+    name = "pre_padding_router",
+    srcs = ["pre_padding_router.cc"],
+    hdrs = ["pre_padding_router.h"],
+    deps = [
+        ":records",
+        "@abseil-cpp//absl/status:statusor",
+        "@confidential-federated-compute//containers:session",
+    ],
+)
+
+cc_library(
     name = "pipeline_runner",
     srcs = ["pipeline_runner.cc"],
     hdrs = ["pipeline_runner.h"],
@@ -164,12 +175,14 @@ cc_library(
         ":do_fn_runner",
         ":ingest_uploads_router",
         ":ingestion_verification_router",
+        ":pre_padding_router",
         ":records",
         ":threshold_filter_router",
         "//src/containers/ingest_uploads:ingest_uploads_fn",
         "//src/containers/ingestion_verification:ingestion_verification_fn",
         "//src/containers/run_context_initializer:run_context_initializer_fn",
         "//src/containers/threshold_filter:threshold_filter_fn",
+        "//src/containers/pre_padding:pre_padding_fn",
         "//src/proto:config_constraints_cc_proto",
         "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",
@@ -189,13 +202,17 @@ cc_test(
         ":ingest_uploads_router",
         ":ingestion_verification_router",
         ":pipeline_runner",
+        ":pre_padding_router",
         ":records",
         ":threshold_filter_router",
+        "//src/proto:common_cc_proto",
         "//src/proto:config_constraints_cc_proto",
         "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",
         "//src/proto:trusted_shuffler_upload_cc_proto",
         "//src/testing:test_utils",
+        "//src/util:metric_epoch_key_utils",
+        "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/status:statusor",
@@ -204,5 +221,17 @@ cc_test(
         "@confidential-federated-compute//containers:session",
         "@googletest//:gtest_main",
         "@oak//cc/crypto:signing_key",
+    ],
+)
+
+cc_test(
+    name = "pre_padding_router_test",
+    srcs = ["pre_padding_router_test.cc"],
+    deps = [
+        ":records",
+        ":pre_padding_router",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@googletest//:gtest_main",
     ],
 )
