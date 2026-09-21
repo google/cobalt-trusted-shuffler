@@ -53,8 +53,12 @@ enum class Node {
   // canonical run fingerprint, written by ingestion_verification.
   kVerifiedIngestion = 5,
 
+  // Client messages surviving the threshold filter, written by
+  // threshold_filter.
+  kFilteredMessages = 6,
+
   // Client messages forwarded after counting, written by message_counter.
-  kCountedMessages = 6,
+  kCountedMessages = 7,
 
   // TODO(b/563428525): Renumber these to their real node ids when their
   // containers are added to the access policy.
@@ -63,16 +67,12 @@ enum class Node {
   // policy, so they have no node id yet. They are numbered from 100 so that
   // they cannot be mistaken for real node ids.
 
-  // Client messages surviving the threshold filter, written by
-  // threshold_filter.
-  kFilteredMessages = 100,
-
   // Client messages assigned to a shuffle group, written by scatter_shuffle.
-  kScatteredMessages = 101,
+  kScatteredMessages = 100,
 
   // One PartialReleaseReport per encrypt_output worker, carrying that worker's
   // output encryption key.
-  kPartialReleaseReports = 102,
+  kPartialReleaseReports = 101,
 };
 
 }  // namespace cobalt::trusted_shuffler
