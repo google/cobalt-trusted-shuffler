@@ -174,6 +174,7 @@ cc_library(
     hdrs = ["pipeline_runner.h"],
     deps = [
         ":do_fn_runner",
+        ":encrypt_output_router",
         ":gather_shuffle_router",
         ":ingest_uploads_router",
         ":ingestion_verification_router",
@@ -181,6 +182,7 @@ cc_library(
         ":records",
         ":threshold_filter_router",
         ":scatter_shuffle_router",
+        "//src/containers/encrypt_output:encrypt_output_fn",
         "//src/containers/gather_shuffle:gather_shuffle_fn",
         "//src/containers/ingest_uploads:ingest_uploads_fn",
         "//src/containers/ingestion_verification:ingestion_verification_fn",
@@ -204,6 +206,7 @@ cc_test(
     name = "shuffler_flow_integration_test",
     srcs = ["shuffler_flow_integration_test.cc"],
     deps = [
+        ":encrypt_output_router",
         ":gather_shuffle_router",
         ":ingest_uploads_router",
         ":ingestion_verification_router",
@@ -299,6 +302,37 @@ cc_test(
         "//src/proto:common_cc_proto",
         "//src/proto:scatter_shuffle_cc_proto",
         "//src/testing:test_utils",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@googletest//:gtest_main",
+        "@protobuf//:protobuf",
+    ],
+)
+
+cc_library(
+    name = "encrypt_output_router",
+    srcs = ["encrypt_output_router.cc"],
+    hdrs = ["encrypt_output_router.h"],
+    deps = [
+        ":records",
+        "//src/proto:ingestion_cc_proto",
+        "//src/proto:release_cc_proto",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/types:span",
+        "@confidential-federated-compute//containers:session",
+    ],
+)
+
+cc_test(
+    name = "encrypt_output_router_test",
+    srcs = ["encrypt_output_router_test.cc"],
+    deps = [
+        ":encrypt_output_router",
+        ":records",
+        "//src/proto:common_cc_proto",
+        "//src/proto:release_cc_proto",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/status:statusor",

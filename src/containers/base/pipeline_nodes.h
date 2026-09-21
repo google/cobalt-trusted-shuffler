@@ -71,16 +71,10 @@ enum class Node {
   // gather_shuffle.
   kGatheredMessages = 10,
 
-  // TODO(b/563428525): Renumber these to their real node ids when their
-  // containers are added to the access policy.
-  //
-  // The nodes below belong to containers that are not yet part of the access
-  // policy, so they have no node id yet. They are numbered from 100 so that
-  // they cannot be mistaken for real node ids.
-
   // One PartialReleaseReport per encrypt_output worker, carrying that worker's
-  // output encryption key.
-  kPartialReleaseReports = 100,
+  // partial release fingerprint for key_releaser to aggregate and verify before
+  // releasing the output decryption key.
+  kPartialReleaseReports = 11,
 };
 
 }  // namespace cobalt::trusted_shuffler

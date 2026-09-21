@@ -17,6 +17,8 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
+package(default_visibility = ["//visibility:public"])
+
 cc_binary(
     name = "main",
     srcs = ["main.cc"],

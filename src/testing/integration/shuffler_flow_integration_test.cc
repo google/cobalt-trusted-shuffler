@@ -32,6 +32,7 @@
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
 #include "src/proto/trusted_shuffler_upload.pb.h"
+#include "src/testing/integration/encrypt_output_router.h"
 #include "src/testing/integration/ingest_uploads_router.h"
 #include "src/testing/integration/ingestion_verification_router.h"
 #include "src/testing/integration/pipeline_runner.h"
@@ -1126,6 +1127,134 @@ TEST(ShufflerFlowIntegrationTest, PipelineGathersPartitionWhoseGroupsAreMostlyEm
   EXPECT_THAT(
       GatheredPayloads(result->gather_shuffle_output.encrypted),
       UnorderedElementsAreArray(ScatteredPayloads(result->scatter_shuffle_output.encrypted)));
+}
+
+TEST(ShufflerFlowIntegrationTest,
+     EncryptOutputEmitsNonPaddingMessagesAndPartialReportsAcrossMultipleShards) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  // 3 real messages with target_batch_size = 2 -> 1 padding message (4 total in shuffle),
+  // but EncryptOutput must strip the 1 padding message and emit only 3 EncryptedMessageOutputs
+  // plus 2 PartialReleaseReports (1 per shard).
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/2);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 2},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_1",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_1",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_2",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_2",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.encrypt_output_router = RouteToTwoShardEncryptOutput;
+  absl::StatusOr<PipelineExecutionResult> result =
+      ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints);
+  ASSERT_THAT(result, IsOk());
+
+  // 3 unencrypted EncryptedMessageOutput records (padding stripped) + 2 encrypted
+  // PartialReleaseReports.
+  EXPECT_THAT(result->encrypt_output_output.unencrypted, SizeIs(3));
+  EXPECT_THAT(result->encrypt_output_output.encrypted, SizeIs(2));
+}
+
+TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenEncryptOutputReceivesEmptyInput) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/1);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.encrypt_output_router = RouteToEncryptOutputWithEmptyInput;
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenEncryptOutputReceivesLateVerificationPayload) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/1);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.encrypt_output_router = RouteToEncryptOutputWithLateVerificationPayload;
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenEncryptOutputReceivesPartiallyShuffledMessage) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/1);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.encrypt_output_router = RoutePartiallyShuffledMessageToEncryptOutput;
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
 }  // namespace

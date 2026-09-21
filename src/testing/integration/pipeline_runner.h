@@ -24,6 +24,7 @@
 #include "cc/crypto/signing_key.h"
 #include "src/proto/config_constraints.pb.h"
 #include "src/proto/run_context.pb.h"
+#include "src/testing/integration/encrypt_output_router.h"
 #include "src/testing/integration/gather_shuffle_router.h"
 #include "src/testing/integration/ingest_uploads_router.h"
 #include "src/testing/integration/ingestion_verification_router.h"
@@ -62,6 +63,10 @@ struct PipelineExecutionResult {
   // Encrypted ShuffledMessage records emitted by GatherShuffle after the second
   // shuffling pass.
   BlobStageOutputs gather_shuffle_output;
+
+  // Unencrypted EncryptedMessageOutput records and encrypted PartialReleaseReport
+  // records emitted across all EncryptOutput shards, keyed by ReleaseOutputHeader.
+  KVBlobStageOutputs encrypt_output_output;
 };
 
 // Builds one input stream per IngestUploads shard from the SignedRunContext
@@ -102,6 +107,17 @@ using GatherShuffleRouterFn = absl::AnyInvocable<absl::StatusOr<std::vector<KVCo
     const EncryptedBlob& verification_payload,
     absl::Span<const EncryptedKVBlob> scatter_shuffle_messages) const>;
 
+// Routes IngestionVerificationPayload and gathered messages into one or more
+// EncryptOutput shards.
+using EncryptOutputRouterFn = absl::AnyInvocable<absl::StatusOr<std::vector<KVCollection>>(
+    const EncryptedBlob& verification_payload,
+    absl::Span<const EncryptedBlob> gathered_messages) const>;
+
+// Demultiplexes EncryptOutput records by ReleaseOutputHeader into
+// EncryptedMessageOutput records and PartialReleaseReports.
+using EncryptOutputSplitterFn = absl::AnyInvocable<absl::StatusOr<EncryptOutputOutputs>(
+    const KVBlobStageOutputs& encrypt_output) const>;
+
 // Holds routing and output-splitting functions used by ExecutePipeline to route
 // data between container stages. Defaults to the standard router implementations,
 // which tests can override to inject faults.
@@ -127,9 +143,15 @@ struct PipelineRouters {
 
   // Routes IngestionVerificationPayload and ScatterShuffle messages into GatherShuffle.
   GatherShuffleRouterFn gather_shuffle_router = RouteToGatherShuffle;
+
+  // Routes IngestionVerificationPayload and GatherShuffle messages into EncryptOutput.
+  EncryptOutputRouterFn encrypt_output_router = RouteToEncryptOutput;
+
+  // Demultiplexes EncryptOutput records into EncryptedMessageOutputs and PartialReleaseReports.
+  EncryptOutputSplitterFn encrypt_output_splitter = SplitEncryptOutputOutputs;
 };
 
-// Executes the 7 currently implemented container stages end-to-end using the
+// Executes the 8 currently implemented container stages end-to-end using the
 // provided routing functions.
 absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     const PipelineRouters& routers, oak::crypto::SigningKeyHandle& signing_key,

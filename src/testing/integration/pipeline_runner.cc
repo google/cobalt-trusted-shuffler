@@ -23,6 +23,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "cc/crypto/signing_key.h"
+#include "src/containers/encrypt_output/encrypt_output_fn.h"
 #include "src/containers/gather_shuffle/gather_shuffle_fn.h"
 #include "src/containers/ingest_uploads/ingest_uploads_fn.h"
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
@@ -225,6 +226,36 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     }
     result.gather_shuffle_output.Append(*std::move(gather_output));
   }
+
+  // 8. EncryptOutput
+  // Replica requirement: Can use any number of replicas. Gathered two-pass
+  // shuffled messages can be partitioned across arbitrary parallel replicas,
+  // with each replica emitting unencrypted EncryptedMessageOutput records and
+  // one encrypted PartialReleaseReport for its assigned shard.
+  // Output: key plus payload. The host reads ReleaseOutputHeader to separate
+  // EncryptedMessageOutput records from PartialReleaseReports.
+  absl::StatusOr<std::vector<KVCollection>> encrypt_shards = routers.encrypt_output_router(
+      verification_payload, result.gather_shuffle_output.encrypted);
+  if (!encrypt_shards.ok()) {
+    return encrypt_shards.status();
+  }
+
+  for (const KVCollection& shard_inputs : *encrypt_shards) {
+    EncryptOutputFn encrypt_fn;
+    absl::StatusOr<KVBlobStageOutputs> encrypt_out =
+        DoFnRunner::RunReplicaWithKVBlobOutput(encrypt_fn, {.inputs = shard_inputs});
+    if (!encrypt_out.ok()) {
+      return encrypt_out.status();
+    }
+    result.encrypt_output_output.Append(*std::move(encrypt_out));
+  }
+
+  absl::StatusOr<EncryptOutputOutputs> split_encrypt_outputs =
+      routers.encrypt_output_splitter(result.encrypt_output_output);
+  if (!split_encrypt_outputs.ok()) {
+    return split_encrypt_outputs.status();
+  }
+
   return result;
 }
 
