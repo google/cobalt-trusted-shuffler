@@ -148,6 +148,7 @@ cc_test(
     deps = [
         ":records",
         ":threshold_filter_router",
+        ":scatter_shuffle_router",
         "//src/proto:common_cc_proto",
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/status:statusor",
@@ -178,11 +179,13 @@ cc_library(
         ":pre_padding_router",
         ":records",
         ":threshold_filter_router",
+        ":scatter_shuffle_router",
         "//src/containers/ingest_uploads:ingest_uploads_fn",
         "//src/containers/ingestion_verification:ingestion_verification_fn",
         "//src/containers/run_context_initializer:run_context_initializer_fn",
         "//src/containers/threshold_filter:threshold_filter_fn",
         "//src/containers/pre_padding:pre_padding_fn",
+        "//src/containers/scatter_shuffle:scatter_shuffle_fn",
         "//src/proto:config_constraints_cc_proto",
         "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",
@@ -204,6 +207,7 @@ cc_test(
         ":pipeline_runner",
         ":pre_padding_router",
         ":records",
+        ":scatter_shuffle_router",
         ":threshold_filter_router",
         "//src/proto:common_cc_proto",
         "//src/proto:config_constraints_cc_proto",
@@ -233,5 +237,37 @@ cc_test(
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/status:statusor",
         "@googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "scatter_shuffle_router",
+    srcs = ["scatter_shuffle_router.cc"],
+    hdrs = ["scatter_shuffle_router.h"],
+    deps = [
+        ":records",
+        "//src/proto:common_cc_proto",
+        "//src/util:metric_epoch_key_utils",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/types:span",
+        "@confidential-federated-compute//containers:session",
+    ],
+)
+
+cc_test(
+    name = "scatter_shuffle_router_test",
+    srcs = ["scatter_shuffle_router_test.cc"],
+    deps = [
+        ":records",
+        ":scatter_shuffle_router",
+        "//src/testing:test_utils",
+        "//src/proto:common_cc_proto",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@googletest//:gtest_main",
+        "@protobuf//:protobuf",
     ],
 )

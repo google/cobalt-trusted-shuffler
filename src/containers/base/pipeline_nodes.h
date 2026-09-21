@@ -64,6 +64,9 @@ enum class Node {
   // the target batch size, written by pre_padding.
   kPaddingMessages = 8,
 
+  // Client messages assigned to a shuffle group, written by scatter_shuffle.
+  kScatteredMessages = 9,
+
   // TODO(b/563428525): Renumber these to their real node ids when their
   // containers are added to the access policy.
   //
@@ -71,12 +74,9 @@ enum class Node {
   // policy, so they have no node id yet. They are numbered from 100 so that
   // they cannot be mistaken for real node ids.
 
-  // Client messages assigned to a shuffle group, written by scatter_shuffle.
-  kScatteredMessages = 100,
-
   // One PartialReleaseReport per encrypt_output worker, carrying that worker's
   // output encryption key.
-  kPartialReleaseReports = 101,
+  kPartialReleaseReports = 100,
 };
 
 }  // namespace cobalt::trusted_shuffler

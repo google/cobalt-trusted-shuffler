@@ -27,6 +27,7 @@
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
 #include "src/containers/pre_padding/pre_padding_fn.h"
 #include "src/containers/run_context_initializer/run_context_initializer_fn.h"
+#include "src/containers/scatter_shuffle/scatter_shuffle_fn.h"
 #include "src/containers/threshold_filter/threshold_filter_fn.h"
 #include "src/proto/config_constraints.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -180,6 +181,27 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     return pp_out.status();
   }
   result.pre_padding_output = *std::move(pp_out);
+
+  // 6. ScatterShuffle
+  // Replica requirement: Requires one replica per batch (can use any number of replicas across the
+  // stage as long as each batch of target_batch_size messages is processed by its own unique
+  // replica). Output: encrypted payloads with ScatterShuffleHeader keyed by ScatterGroupKey.
+  absl::StatusOr<std::vector<KVCollection>> ss_inputs = routers.scatter_shuffle_router(
+      verification_payload, run_config.target_batch_size(),
+      result.threshold_filter_output.encrypted, result.pre_padding_output.encrypted);
+  if (!ss_inputs.ok()) {
+    return ss_inputs.status();
+  }
+
+  for (const KVCollection& batch_inputs : *ss_inputs) {
+    ScatterShuffleFn ss_fn;
+    absl::StatusOr<KVBlobStageOutputs> ss_out =
+        DoFnRunner::RunReplicaWithKVBlobOutput(ss_fn, {.inputs = batch_inputs});
+    if (!ss_out.ok()) {
+      return ss_out.status();
+    }
+    result.scatter_shuffle_output.Append(*std::move(ss_out));
+  }
 
   return result;
 }

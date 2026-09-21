@@ -28,6 +28,7 @@
 #include "src/testing/integration/ingestion_verification_router.h"
 #include "src/testing/integration/pre_padding_router.h"
 #include "src/testing/integration/records.h"
+#include "src/testing/integration/scatter_shuffle_router.h"
 #include "src/testing/integration/threshold_filter_router.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
@@ -52,6 +53,10 @@ struct PipelineExecutionResult {
 
   // Encrypted padding messages emitted by PrePadding, keyed by MetricEpochKey.
   KVBlobStageOutputs pre_padding_output;
+
+  // Encrypted ShuffledMessage records emitted by ScatterShuffle, keyed by
+  // ScatterShuffleHeader. Unencrypted integrity fault records on failure.
+  KVBlobStageOutputs scatter_shuffle_output;
 };
 
 // Builds one input stream per IngestUploads shard from the SignedRunContext
@@ -80,6 +85,13 @@ using ThresholdFilterRouterFn = absl::AnyInvocable<absl::StatusOr<KVCollection>(
 using PrePaddingRouterFn = absl::AnyInvocable<absl::StatusOr<KVCollection>(
     const EncryptedBlob& verification_payload) const>;
 
+// Builds the input stream for a ScatterShuffle session from the IngestionVerificationPayload,
+// real (ThresholdFilter) and padding (PrePadding) messages.
+using ScatterShuffleRouterFn = absl::AnyInvocable<absl::StatusOr<std::vector<KVCollection>>(
+    const EncryptedBlob& verification_payload, int32_t target_batch_size,
+    absl::Span<const EncryptedKVBlob> threshold_filter_messages,
+    absl::Span<const EncryptedKVBlob> pre_padding_messages) const>;
+
 // Holds routing and output-splitting functions used by ExecutePipeline to route
 // data between container stages. Defaults to the standard router implementations,
 // which tests can override to inject faults.
@@ -98,9 +110,13 @@ struct PipelineRouters {
 
   // Routes IngestionVerificationPayload into the PrePadding session.
   PrePaddingRouterFn pre_padding_router = RouteToPrePadding;
+
+  // Routes IngestionVerificationPayload, ThresholdFilter and PrePadding messages into
+  // ScatterShuffle.
+  ScatterShuffleRouterFn scatter_shuffle_router = RouteToScatterShuffle;
 };
 
-// Executes the 4 currently implemented container stages end-to-end using the
+// Executes the 6 currently implemented container stages end-to-end using the
 // provided routing functions.
 absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     const PipelineRouters& routers, oak::crypto::SigningKeyHandle& signing_key,
