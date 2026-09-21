@@ -22,6 +22,16 @@ option java_package = "com.google.cobalt.trustedshuffler";
 option java_multiple_files = true;
 option java_outer_classname = "ScatterShuffleProto";
 
+// Identifies the target gather group for a scattered message by its partition
+// key and within-partition group index.
+message ScatterGroupKey {
+  // Partition identifier for routing scattered records to per-partition gather
+  // groups.
+  MetricEpochKey metric_epoch_key = 1;
+
+  // Assigned group identifier within the partition.
+  int32 group_id = 2;
+}
 
 // Header metadata associated with records emitted by ScatterShuffleFn.
 message ScatterShuffleHeader {
@@ -29,7 +39,7 @@ message ScatterShuffleHeader {
     // Signals an integrity violation or validation failure.
     IntegrityFault integrity_fault = 1;
 
-    // Assigned group identifier for successfully shuffled records.
-    int32 group_id = 2;
+    // Target gather group key for a successfully shuffled record.
+    ScatterGroupKey scatter_group_key = 2;
   }
 }

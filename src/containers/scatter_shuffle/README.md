@@ -38,9 +38,9 @@ In the two-pass shuffling architecture, the scatter shuffle container processes 
   - Dummy padding messages (`is_padding == true`).
 
 ### Outputs
-- **Streaming Output**: A stream of encrypted KV records (`ScatterShuffleHeader` with `group_id`, encrypted `ShuffledMessage`) emitted via `EmitEncrypted`:
+- **Streaming Output**: A stream of encrypted KV records (`ScatterShuffleHeader` with `ScatterGroupKey`, encrypted `ShuffledMessage`) emitted via `EmitEncrypted`:
   - Note: `Node::kScatteredMessages` is the data node the payload is encrypted to, which the downstream gather shuffle stage reads.
-  - **Header**: Visible unencrypted `ScatterShuffleHeader` with `group_id` (`new_position % batch_num`), inspected by the untrusted orchestrator to group messages for subsequent shuffle stages.
+  - **Header**: Visible unencrypted `ScatterShuffleHeader` containing `ScatterGroupKey` (`metric_epoch_key` and `group_id = new_position % batch_num`), inspected by the untrusted orchestrator to group messages per partition and group for subsequent shuffle stages.
   - **Payload**: Re-encrypted `ShuffledMessage` ciphertext with `shuffle_count = 1`.
 - **Integrity Violation Output**: Emitted via `EmitUnencrypted` only when an integrity violation occurs:
   - **Header**: `ScatterShuffleHeader` with `IntegrityFault`.
@@ -52,7 +52,7 @@ In the two-pass shuffling architecture, the scatter shuffle container processes 
 
 - **`EmitEncrypted(kv)`**:
   - The payload is encrypted to the `kScatteredMessages` data node, which the downstream gather shuffle stage reads.
-  - The `group_id` header in `kv.key` is unencrypted and visible to the untrusted orchestrator for routing.
+  - The `ScatterGroupKey` (`metric_epoch_key` and `group_id`) header in `kv.key` is unencrypted and visible to the untrusted orchestrator for routing.
   - The `ShuffledMessage` payload in `kv.value` is encrypted with the session's re-encryption key and is **completely opaque** to the untrusted orchestrator. Only downstream confidential TEE stages holding the corresponding key can decrypt it.
 - **`EmitUnencrypted(kv)`**:
   - Exclusively used to emit `IntegrityFault` signals upon validation or invariant failure.

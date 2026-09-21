@@ -204,8 +204,12 @@ TEST(ScatterShuffleFnTest, SuccessfulScatterShuffleAndGroupAssignment) {
     // Verify visible unencrypted header.
     ScatterShuffleHeader header;
     ASSERT_TRUE(kv.key.UnpackTo(&header));
-    ASSERT_EQ(header.header_type_case(), ScatterShuffleHeader::kGroupId);
-    const int32_t group_id = header.group_id();
+    ASSERT_EQ(header.header_type_case(), ScatterShuffleHeader::kScatterGroupKey);
+    const ScatterGroupKey& group_key = header.scatter_group_key();
+    EXPECT_EQ(group_key.metric_epoch_key().project_id(), kDefaultProjectId);
+    EXPECT_EQ(group_key.metric_epoch_key().metric_id(), kDefaultMetricId);
+    EXPECT_EQ(group_key.metric_epoch_key().epoch_index(), kDefaultEpochIndex);
+    const int32_t group_id = group_key.group_id();
     EXPECT_GE(group_id, 0);
     EXPECT_LT(group_id, 2);
     group_counts[group_id]++;
@@ -693,7 +697,8 @@ TEST(ScatterShuffleFnTest, ShufflingPreservesMultisetAcrossLargeBatch) {
   for (const auto& [_, kv] : encrypted) {
     ScatterShuffleHeader header;
     ASSERT_TRUE(kv.key.UnpackTo(&header));
-    group_counts[header.group_id()]++;
+    ASSERT_EQ(header.header_type_case(), ScatterShuffleHeader::kScatterGroupKey);
+    group_counts[header.scatter_group_key().group_id()]++;
 
     ShuffledMessage message;
     ASSERT_TRUE(message.ParseFromString(kv.data));

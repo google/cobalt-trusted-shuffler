@@ -167,7 +167,9 @@ absl::Status ScatterShuffleFn::FinalizeReplica(google::protobuf::Any config, FnC
     message.set_shuffle_count(message.shuffle_count() + 1);
 
     ScatterShuffleHeader header;
-    header.set_group_id(group_id);
+    ScatterGroupKey* const group_key = header.mutable_scatter_group_key();
+    *group_key->mutable_metric_epoch_key() = *expected_metric_epoch_key_;
+    group_key->set_group_id(group_id);
 
     context.IncrementCounter(kEncryptedOutputRecordCount);
     EmitEncrypted(context, header, message).IgnoreError();
