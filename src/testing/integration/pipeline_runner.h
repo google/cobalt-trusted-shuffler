@@ -18,20 +18,24 @@
 #include <string>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
 #include "cc/crypto/signing_key.h"
+#include "src/proto/common.pb.h"
 #include "src/proto/config_constraints.pb.h"
 #include "src/proto/run_context.pb.h"
 #include "src/testing/integration/encrypt_output_router.h"
 #include "src/testing/integration/gather_shuffle_router.h"
 #include "src/testing/integration/ingest_uploads_router.h"
 #include "src/testing/integration/ingestion_verification_router.h"
+#include "src/testing/integration/key_releaser_router.h"
 #include "src/testing/integration/pre_padding_router.h"
 #include "src/testing/integration/records.h"
 #include "src/testing/integration/scatter_shuffle_router.h"
 #include "src/testing/integration/threshold_filter_router.h"
+#include "src/util/metric_epoch_key_utils.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
 
@@ -67,6 +71,13 @@ struct PipelineExecutionResult {
   // Unencrypted EncryptedMessageOutput records and encrypted PartialReleaseReport
   // records emitted across all EncryptOutput shards, keyed by ReleaseOutputHeader.
   KVBlobStageOutputs encrypt_output_output;
+
+  // Unencrypted DecryptionKeyRelease payload emitted by KeyReleaser.
+  BlobStageOutputs key_releaser_output;
+
+  // Decrypted customer message payloads grouped by MetricEpochKey after the
+  // orchestrator decrypts EncryptedMessageOutput records with the released key.
+  absl::flat_hash_map<MetricEpochKey, std::vector<std::string>> released_customer_messages;
 };
 
 // Builds one input stream per IngestUploads shard from the SignedRunContext
@@ -118,6 +129,19 @@ using EncryptOutputRouterFn = absl::AnyInvocable<absl::StatusOr<std::vector<KVCo
 using EncryptOutputSplitterFn = absl::AnyInvocable<absl::StatusOr<EncryptOutputOutputs>(
     const KVBlobStageOutputs& encrypt_output) const>;
 
+// Routes IngestionVerificationPayload and PartialReleaseReports into the
+// KeyReleaser session.
+using KeyReleaserRouterFn = absl::AnyInvocable<absl::StatusOr<KVCollection>(
+    const EncryptedBlob& verification_payload,
+    absl::Span<const EncryptedBlob> partial_release_reports) const>;
+
+// Decrypts EncryptedMessageOutput records using the released DecryptionKeyRelease
+// and groups customer messages by MetricEpochKey.
+using OrchestratorDecryptAndRouteFn = absl::AnyInvocable<
+    absl::StatusOr<absl::flat_hash_map<MetricEpochKey, std::vector<std::string>>>(
+        const BlobStageOutputs& key_releaser_output,
+        absl::Span<const UnencryptedBlob> encrypted_message_outputs) const>;
+
 // Holds routing and output-splitting functions used by ExecutePipeline to route
 // data between container stages. Defaults to the standard router implementations,
 // which tests can override to inject faults.
@@ -149,9 +173,15 @@ struct PipelineRouters {
 
   // Demultiplexes EncryptOutput records into EncryptedMessageOutputs and PartialReleaseReports.
   EncryptOutputSplitterFn encrypt_output_splitter = SplitEncryptOutputOutputs;
+
+  // Routes IngestionVerificationPayload and PartialReleaseReports into KeyReleaser.
+  KeyReleaserRouterFn key_releaser_router = RouteToKeyReleaser;
+
+  // Decrypts EncryptedMessageOutputs with the released key and groups by MetricEpochKey.
+  OrchestratorDecryptAndRouteFn orchestrator_decrypt_and_route = DecryptAndRouteReleasedMessages;
 };
 
-// Executes the 8 currently implemented container stages end-to-end using the
+// Executes the complete 9-stage Trusted Shuffler pipeline end-to-end using the
 // provided routing functions.
 absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     const PipelineRouters& routers, oak::crypto::SigningKeyHandle& signing_key,

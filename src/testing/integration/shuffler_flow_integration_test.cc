@@ -1257,5 +1257,191 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenEncryptOutputReceivesPartiall
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
+TEST(ShufflerFlowIntegrationTest,
+     EndToEndFullPipelineReleasesKeyAndDecryptsExactApprovedCustomerMessages) {
+  const int32_t project_id = 1001;
+  const int32_t approved_metric_a = 2;
+  const int32_t approved_metric_b = 4;
+  const int32_t dropped_metric_c = 5;
+
+  TestSigningKey signing_key;
+  const RunConfig run_config = CreateTestRunConfig(
+      {
+          {.project_id = project_id, .metric_id = approved_metric_a},
+          {.project_id = project_id, .metric_id = approved_metric_b},
+          {.project_id = project_id, .metric_id = dropped_metric_c},
+      },
+      /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/2);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = approved_metric_a, .threshold = 2},
+      {.project_id = project_id, .metric_id = approved_metric_b, .threshold = 2},
+      {.project_id = project_id, .metric_id = dropped_metric_c, .threshold = 2},
+  });
+
+  // Metric A: 3 messages from 3 devices (approved; 1 padding added for batch_size=2).
+  // Metric B: 2 messages from 2 devices (approved; 0 padding added).
+  // Metric C: 1 message from 1 device (below threshold=2 -> dropped).
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = approved_metric_a,
+          .payload = "customer_msg_a_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "dev_a0",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = approved_metric_a,
+          .payload = "customer_msg_a_1",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "dev_a1",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = approved_metric_a,
+          .payload = "customer_msg_a_2",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "dev_a2",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = approved_metric_b,
+          .payload = "customer_msg_b_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "dev_b0",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = approved_metric_b,
+          .payload = "customer_msg_b_1",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "dev_b1",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = dropped_metric_c,
+          .payload = "customer_msg_c_dropped",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "dev_c0",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.ingest_uploads_router = RouteToTwoShardIngestUploads;
+  routers.encrypt_output_router = RouteToTwoShardEncryptOutput;
+
+  absl::StatusOr<PipelineExecutionResult> result =
+      ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints);
+  ASSERT_THAT(result, IsOk());
+
+  const MetricEpochKey key_a = CreateMetricEpochKey(
+      {.project_id = project_id, .metric_id = approved_metric_a, .epoch_index = 0});
+  const MetricEpochKey key_b = CreateMetricEpochKey(
+      {.project_id = project_id, .metric_id = approved_metric_b, .epoch_index = 0});
+  const MetricEpochKey key_c = CreateMetricEpochKey(
+      {.project_id = project_id, .metric_id = dropped_metric_c, .epoch_index = 0});
+
+  ASSERT_EQ(result->released_customer_messages.size(), 2);
+  ASSERT_TRUE(result->released_customer_messages.contains(key_a));
+  ASSERT_TRUE(result->released_customer_messages.contains(key_b));
+  EXPECT_FALSE(result->released_customer_messages.contains(key_c));
+
+  EXPECT_THAT(
+      result->released_customer_messages.at(key_a),
+      ::testing::UnorderedElementsAre("customer_msg_a_0", "customer_msg_a_1", "customer_msg_a_2"));
+  EXPECT_THAT(result->released_customer_messages.at(key_b),
+              ::testing::UnorderedElementsAre("customer_msg_b_0", "customer_msg_b_1"));
+}
+
+TEST(ShufflerFlowIntegrationTest,
+     PipelineFailsAndWithholdsReleaseKeyWhenPartialReleaseReportIsDropped) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/2);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 2},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_1",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_1",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.encrypt_output_router = RouteToTwoShardEncryptOutput;
+  routers.key_releaser_router = RouteToKeyReleaserWithDroppedReport;
+
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenKeyReleaserReceivesEmptyInput) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/1);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.key_releaser_router = RouteToKeyReleaserWithEmptyInput;
+
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenKeyReleaserReceivesLateVerificationPayload) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/1);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.key_releaser_router = RouteToKeyReleaserWithLateVerificationPayload;
+
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
 }  // namespace
 }  // namespace cobalt::trusted_shuffler::testing::integration

@@ -41,7 +41,8 @@ namespace cobalt::trusted_shuffler {
 // FinalizeReplica that the complete release multiset fingerprint matches the
 // canonical ingestion fingerprint before releasing the Tink AEAD release_key.
 class KeyReleaserFn
-    : public FirstRecordConfigDoFn<IngestionVerificationPayload, PartialReleaseReport> {
+    : public FirstRecordConfigDoFn<IngestionVerificationPayload, PartialReleaseReport>::WithOutputs<
+          EncryptsTo<>, Unencrypted<DecryptionKeyRelease>> {
  public:
   KeyReleaserFn() = default;
   ~KeyReleaserFn() override = default;
@@ -68,12 +69,25 @@ class KeyReleaserFn
  private:
   absl::Status EmitIntegrityFault(absl::string_view reason, FnContext& context);
 
+  // Indicates whether a fatal validation or fingerprint error occurred.
   bool has_integrity_fault_ = false;
+
+  // Ensures at most one DecryptionKeyRelease record is emitted across the replica lifecycle.
   bool has_emitted_output_ = false;
+
+  // Tracks whether FinalizeReplica has already been invoked.
   bool is_finalized_ = false;
+
+  // Verified RunContext unpacked from the Record 0 IngestionVerificationPayload.
   std::optional<cobalt::trusted_shuffler::RunContext> run_context_;
+
+  // Approved MetricEpochKey partitions that met privacy thresholds.
   absl::flat_hash_set<MetricEpochKey> approved_partitions_;
+
+  // Canonical ingestion multiset fingerprint established during ingestion verification.
   std::optional<RunFingerprint> canonical_fingerprint_;
+
+  // Accumulator merging PartialReleaseReport fingerprints across EncryptOutput shards.
   std::optional<MultisetFingerprint> multiset_fingerprint_;
 };
 

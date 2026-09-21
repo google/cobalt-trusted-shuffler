@@ -180,9 +180,7 @@ TEST_F(KeyReleaserFnTest, SingleWorkerHappyPathReleasesKey) {
   EXPECT_THAT(context.Encrypted(), IsEmpty());
   EXPECT_THAT(context.Errors(), IsEmpty());
 
-  ReleaseOutputHeader header;
-  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
-  EXPECT_THAT(header.type(), Eq(ReleaseOutputHeader::TYPE_REPORT));
+  EXPECT_THAT(context.Unencrypted()[0].key.type_url(), IsEmpty());
 
   DecryptionKeyRelease key_release;
   ASSERT_TRUE(key_release.ParseFromString(context.Unencrypted()[0].data));
@@ -256,15 +254,15 @@ TEST_F(KeyReleaserFnTest, EndToEndCryptographicDecryptionWithReleasedKeySucceeds
   const absl::StatusOr<ReleaseEncrypter> encrypter = ReleaseEncrypter::Create(run_context);
   ASSERT_THAT(encrypter, IsOk());
 
-  constexpr absl::string_view kPlaintextCustomerMessage = "confidential-telemetry-payload";
+  const absl::string_view plaintext_customer_message = "confidential-telemetry-payload";
   const absl::StatusOr<std::string> ciphertext =
-      encrypter->EncryptForRelease(kPlaintextCustomerMessage, /*associated_data=*/"");
+      encrypter->EncryptForRelease(plaintext_customer_message, /*associated_data=*/"");
   ASSERT_THAT(ciphertext, IsOk());
 
   const PartitionSpec approved[] = {{.project_id = 1, .metric_id = 2, .epoch_index = 100}};
   const MessageSpec messages[] = {
       {.partition = {.project_id = 1, .metric_id = 2, .epoch_index = 100},
-       .customer_message = std::string(kPlaintextCustomerMessage)},
+       .customer_message = std::string(plaintext_customer_message)},
   };
 
   ASSERT_THAT(
@@ -296,7 +294,7 @@ TEST_F(KeyReleaserFnTest, EndToEndCryptographicDecryptionWithReleasedKeySucceeds
 
   const absl::StatusOr<std::string> decrypted = (*aead)->Decrypt(*ciphertext, "");
   ASSERT_THAT(decrypted, IsOk());
-  EXPECT_THAT(*decrypted, Eq(kPlaintextCustomerMessage));
+  EXPECT_THAT(*decrypted, Eq(plaintext_customer_message));
 }
 
 TEST_F(KeyReleaserFnTest, EmptyApprovedPartitionsSucceedsAndReleasesKey) {
@@ -359,9 +357,7 @@ TEST_F(KeyReleaserFnTest, TamperedMessageCountEmitsIntegrityFaultAndNeverRelease
                "Release multiset fingerprint does not match canonical ingestion fingerprint."));
 
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
-  ReleaseOutputHeader header;
-  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
-  EXPECT_THAT(header.type(), Eq(ReleaseOutputHeader::TYPE_INTEGRITY_FAULT));
+  EXPECT_THAT(context.Unencrypted()[0].key.type_url(), IsEmpty());
 
   DecryptionKeyRelease key_release;
   ASSERT_TRUE(key_release.ParseFromString(context.Unencrypted()[0].data));

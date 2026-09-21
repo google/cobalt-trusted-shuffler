@@ -27,6 +27,7 @@
 #include "src/containers/gather_shuffle/gather_shuffle_fn.h"
 #include "src/containers/ingest_uploads/ingest_uploads_fn.h"
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
+#include "src/containers/key_releaser/key_releaser_fn.h"
 #include "src/containers/pre_padding/pre_padding_fn.h"
 #include "src/containers/run_context_initializer/run_context_initializer_fn.h"
 #include "src/containers/scatter_shuffle/scatter_shuffle_fn.h"
@@ -255,6 +256,37 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
   if (!split_encrypt_outputs.ok()) {
     return split_encrypt_outputs.status();
   }
+
+  // 9. KeyReleaser (VerifyFingerprintAndReleaseKey)
+  // Replica requirement: Requires a single replica to aggregate all
+  // PartialReleaseReports across every EncryptOutput shard and verify that the
+  // complete release multiset fingerprint matches the canonical ingestion
+  // fingerprint before releasing the Tink AEAD release_key.
+  // Output: payload only. Emits a single unencrypted DecryptionKeyRelease.
+  absl::StatusOr<KVCollection> kr_inputs = routers.key_releaser_router(
+      verification_payload, split_encrypt_outputs->partial_release_reports);
+  if (!kr_inputs.ok()) {
+    return kr_inputs.status();
+  }
+
+  KeyReleaserFn kr_fn;
+  absl::StatusOr<BlobStageOutputs> kr_out =
+      DoFnRunner::RunReplicaWithBlobOutput(kr_fn, {.inputs = *kr_inputs});
+  if (!kr_out.ok()) {
+    return kr_out.status();
+  }
+  result.key_releaser_output = *std::move(kr_out);
+
+  // 10. OrchestratorDecryptAndRoute
+  // Decrypts every EncryptedMessageOutput using the released Tink AEAD key and
+  // groups the customer messages by MetricEpochKey.
+  absl::StatusOr<absl::flat_hash_map<MetricEpochKey, std::vector<std::string>>> released =
+      routers.orchestrator_decrypt_and_route(result.key_releaser_output,
+                                             split_encrypt_outputs->encrypted_message_outputs);
+  if (!released.ok()) {
+    return released.status();
+  }
+  result.released_customer_messages = *std::move(released);
 
   return result;
 }

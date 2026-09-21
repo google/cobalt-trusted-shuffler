@@ -34,9 +34,11 @@
 
 namespace cobalt::trusted_shuffler {
 
+// Execution context passed to per-record Do invocations.
 using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
+
+// Session context passed to replica initialization and finalization hooks.
 using FnContext = confidential_federated_compute::fns::Fn::FnContext;
-using KV = confidential_federated_compute::Session::KV;
 
 namespace {
 
@@ -82,6 +84,10 @@ absl::Status KeyReleaserFn::OnConfig(const IngestionVerificationPayload& config,
   if (is_finalized_) {
     context.IncrementCounter(kInputConfigInvalid);
     return absl::FailedPreconditionError("Replica is already finalized.");
+  }
+  if (has_integrity_fault_) {
+    context.IncrementCounter(kInputConfigInvalid);
+    return EmitIntegrityFault("Replica previously encountered an integrity fault.", context);
   }
   absl::StatusOr<VerifiedIngestionVerificationResult> verified =
       VerifyIngestionVerificationPayload(config);
@@ -141,16 +147,11 @@ absl::Status KeyReleaserFn::EmitIntegrityFault(absl::string_view reason, FnConte
   LOG(ERROR) << "IntegrityFault in KeyReleaserFn: " << reason;
   if (!has_emitted_output_) {
     has_emitted_output_ = true;
-    ReleaseOutputHeader header;
-    header.set_type(ReleaseOutputHeader::TYPE_INTEGRITY_FAULT);
-    google::protobuf::Any header_any;
-    header_any.PackFrom(header);
-
     DecryptionKeyRelease release_msg;
     release_msg.mutable_integrity_fault();
 
     context.IncrementCounter(kUnencryptedOutputRecordCount);
-    context.EmitUnencrypted(KV(std::move(header_any), release_msg.SerializeAsString()));
+    EmitUnencrypted(context, release_msg).IgnoreError();
   }
   return absl::FailedPreconditionError(reason);
 }
@@ -173,16 +174,11 @@ absl::Status KeyReleaserFn::FinalizeReplica(google::protobuf::Any config, FnCont
   }
 
   has_emitted_output_ = true;
-  ReleaseOutputHeader header;
-  header.set_type(ReleaseOutputHeader::TYPE_REPORT);
-  google::protobuf::Any header_any;
-  header_any.PackFrom(header);
-
   DecryptionKeyRelease release_msg;
   release_msg.mutable_released_key_report()->set_release_key(run_context_->release_key());
 
   context.IncrementCounter(kUnencryptedOutputRecordCount);
-  context.EmitUnencrypted(KV(std::move(header_any), release_msg.SerializeAsString()));
+  EmitUnencrypted(context, release_msg).IgnoreError();
   return absl::OkStatus();
 }
 

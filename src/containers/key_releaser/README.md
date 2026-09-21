@@ -51,13 +51,11 @@ The container uses the first-record configuration pattern (`FirstRecordConfigDoF
 No records are emitted during `Do()`. Upon `FinalizeReplica()`:
 
 - **Success Path (`MultisetFingerprint::VerifyComplete` succeeds)**:
-  - Emits a single KV pair via `context.EmitUnencrypted`:
-    - **Key (`ReleaseOutputHeader`)**: `type = ReleaseOutputHeader::TYPE_REPORT`
+  - Emits a single keyless unencrypted `DecryptionKeyRelease` record via `EmitUnencrypted`:
     - **Value (`DecryptionKeyRelease`)**: `released_key_report.release_key` containing the serialized Tink AES-256-GCM AEAD keyset from `RunContext.release_key`.
 
 - **Failure Path (Missing config, upstream fault, corrupt input, or fingerprint mismatch)**:
-  - Emits a single KV pair via `context.EmitUnencrypted`:
-    - **Key (`ReleaseOutputHeader`)**: `type = ReleaseOutputHeader::TYPE_INTEGRITY_FAULT`
+  - Emits a single keyless unencrypted `DecryptionKeyRelease` record via `EmitUnencrypted`:
     - **Value (`DecryptionKeyRelease`)**: `integrity_fault` set; `released_key_report` is omitted.
 
 ---
