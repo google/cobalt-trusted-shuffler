@@ -33,6 +33,7 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | [`simple`](simple/) | Proof-of-concept identity transform. Buffers incoming blobs and forwards them. | Emits buffered blobs encrypted with key index 0 upon commit. | None (empty config) |
 | [`ingestion_verification`](ingestion_verification/) | Verifies runtime configuration, merges partial multiset fingerprints and HyperLogLog cardinality sketches, and evaluates device counts against privacy thresholds. | Emits an unencrypted `IngestionVerificationHeader` labelling the payload variant (`ingestion_result` or `integrity_fault`) for the orchestrator, and an encrypted `IngestionVerificationPayload` to the `kVerifiedIngestion` data node for `ThresholdFilter`. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto), [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`threshold_filter`](threshold_filter/) | Filters messages by approved partition thresholds from Ingestion Verification report, drops unapproved partitions, and emits encrypted message streams. | Emits messages encrypted (`EmitEncrypted`) to the `kFilteredMessages` data node with plaintext `MetricEpochKey` headers. Partitions below threshold are dropped completely. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
+| [`pre_padding`](pre_padding/) | Generates encrypted dummy padding messages for approved partitions so each partition's total message count is rounded up to a multiple of `batch_num`. | Emits padding messages encrypted (`EmitEncrypted`) to the `kPaddingMessages` data node with plaintext `MetricEpochKey` headers; emits `IntegrityFault` unencrypted on failure. | Record 0 `IngestionVerificationPayload` (`src/proto/ingestion.proto`) |
 | [`scatter_shuffle`](scatter_shuffle/) | Cryptographically shuffles batches of messages partitioned by `MetricEpochKey`, validates batch size invariants, assigns group IDs (`group_id = new_position % batch_num`), increments `shuffle_count`, and re-encrypts payloads. | Emits encrypted KV records (`ScatterShuffleHeader` with `group_id` and encrypted `ShuffledMessage`) via `EmitEncrypted`; emits `IntegrityFault` via `EmitUnencrypted` on validation failure. | Record 0 `IngestionVerificationPayload` (`src/proto/ingestion.proto`) |
 | [`encrypt_output`](encrypt_output/) | Encrypts shuffled messages for release using `RunContext.release_key` via `ReleaseEncrypter` and accumulates the partial multiset release fingerprint. | Emits streaming `EncryptedMessageOutput` unencrypted (payloads encrypted for release) and final `PartialReleaseReport` encrypted to the `kPartialReleaseReports` data node. | [`src/proto/run_context.proto`](../proto/run_context.proto), [`src/proto/release.proto`](../proto/release.proto) |
 | [`key_releaser`](key_releaser/) | Aggregates partial release multiset fingerprints from `encrypt_output` workers and verifies complete multiset equivalence against the canonical ingestion fingerprint before releasing the run's Tink AEAD `release_key`. | Emits unencrypted `DecryptionKeyRelease` (`ReleasedKeyReport` or `IntegrityFault`) via `EmitUnencrypted` on replica finalization. | Record 0 `IngestionVerificationPayload` (`src/proto/ingestion.proto`), Records 1..N `PartialReleaseReport` (`src/proto/release.proto`) |
@@ -121,7 +122,19 @@ The **`threshold_filter`** container filters incoming partitions against approve
 
 ---
 
-## 8. `scatter_shuffle`
+## 8. `pre_padding`
+
+The **`pre_padding`** container generates encrypted dummy padding messages for approved metric-epoch partitions before entering the two-pass shuffle.
+
+- **Purpose**: Computes `padding_count` for each approved partition using `ComputeBatchParametersForPartition` and generates `ShuffledMessage` records with `is_padding = true` so each partition's total message count is an exact multiple of `batch_num`.
+- **Configuration**: `IngestionVerificationPayload` on Record 0.
+- **Inputs**: `IngestionVerificationPayload` on Record 0 (`pre_padding` is a config-only generator stage and rejects any data records in `OnRecord`).
+- **Outputs**: Emits encrypted KV records (`MetricEpochKey` header and `ShuffledMessage` payload encrypted to `Node::kPaddingMessages`) via `EmitEncrypted` on finalization. Emits `IntegrityFault` via `EmitUnencrypted` on configuration or validation failure.
+- **Documentation**: See [`src/containers/pre_padding/README.md`](pre_padding/README.md).
+
+---
+
+## 9. `scatter_shuffle`
 
 The **`scatter_shuffle`** container is responsible for the scatter shuffle and group assignment phase (first pass) of the Trusted Shuffler two-pass shuffle.
 
@@ -133,7 +146,7 @@ The **`scatter_shuffle`** container is responsible for the scatter shuffle and g
 
 ---
 
-## 9. `encrypt_output`
+## 10. `encrypt_output`
 
 The **`encrypt_output`** container is responsible for output encryption and release fingerprinting in the Trusted Shuffler pipeline.
 
@@ -145,7 +158,7 @@ The **`encrypt_output`** container is responsible for output encryption and rele
 
 ---
 
-## 10. `key_releaser`
+## 11. `key_releaser`
 
 The **`key_releaser`** container performs cryptographic multiset fingerprint verification and decryption key release at the end of the pipeline.
 

@@ -92,6 +92,10 @@ if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/threshold_filter
   cp -Rp ./bazel-bin/src/containers/threshold_filter/* ${KOKORO_ARTIFACTS_DIR}/threshold_filter/.
 
+  log "Copying pre_padding container output to kokoro artifacts dir."
+  mkdir -p ${KOKORO_ARTIFACTS_DIR}/pre_padding
+  cp -Rp ./bazel-bin/src/containers/pre_padding/* ${KOKORO_ARTIFACTS_DIR}/pre_padding/.
+
   log "Copying scatter_shuffle container output to kokoro artifacts dir."
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/scatter_shuffle
   cp -Rp ./bazel-bin/src/containers/scatter_shuffle/* ${KOKORO_ARTIFACTS_DIR}/scatter_shuffle/.
