@@ -121,7 +121,7 @@ TEST(PrePaddingFnTest, EmitsPaddingMessagesForApprovedPartitions) {
   EXPECT_THAT(GetCounterValue(context, kUnencryptedOutputRecordCount), Eq(0));
 }
 
-TEST(PrePaddingFnTest, EmitsNoPaddingWhenPartitionEvenlyDividesBatchSize) {
+TEST(PrePaddingFnTest, EmitsNoPaddingWhenMessageCountEvenlyDividesBatchNum) {
   PrePaddingFn fn;
   FakeContext context;
   FakeDoContext do_context(context);
@@ -145,7 +145,7 @@ TEST(PrePaddingFnTest, EmitsNoPaddingWhenPartitionEvenlyDividesBatchSize) {
   EXPECT_THAT(context.Encrypted(), IsEmpty());
 }
 
-TEST(PrePaddingFnTest, EmitsAllRequiredPaddingMessagesInFinalize) {
+TEST(PrePaddingFnTest, EmitsPaddingMessagesWhenPartitionHasNonZeroRemainder) {
   PrePaddingFn fn;
   FakeContext context;
   FakeDoContext do_context(context);

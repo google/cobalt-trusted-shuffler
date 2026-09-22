@@ -31,7 +31,7 @@
 namespace cobalt::trusted_shuffler {
 
 // Generates encrypted dummy padding messages for approved partitions so each
-// partition's total message count is an exact multiple of target_batch_size.
+// partition's total message count is an exact multiple of batch_num.
 class PrePaddingFn
     : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
           EncryptsTo<Node::kPaddingMessages>,
