@@ -56,6 +56,34 @@ struct BatchParameters {
 absl::StatusOr<BatchParameters> ComputeBatchParametersForPartition(
     const VerifiedIngestionVerificationResult& result, const MetricEpochKey& partition_key);
 
+// Returns the gather group that the message at `position` of a shuffled scatter
+// batch belongs to.
+//
+// ScatterShuffle calls this to label each message it emits, and
+// ComputeExpectedGatherGroupSizeForPartition counts the messages a gather group
+// receives on the basis of the same rule, so that the two stages cannot drift
+// apart. Assignment cycles through the groups, which spreads a batch evenly and
+// keeps every gather group's share of a batch within one message of every
+// other's.
+//
+// `batch_num` must be positive.
+int32_t GatherGroupIdForPosition(int64_t position, int32_t batch_num);
+
+// Computes the expected number of messages that will be routed to a specific
+// gather group within a partition.
+//
+// GatherGroupIdForPosition cycles through the batch_num groups, so a gather
+// group receives this many messages from a single scatter batch of
+// actual_batch_size messages:
+// actual_batch_size / batch_num + (group_id < actual_batch_size % batch_num ? 1 : 0).
+// Every one of the batch_num scatter batches holds exactly actual_batch_size
+// messages, so the gather group receives batch_num times that number in total.
+//
+// Validates that group_id is in [0, batch_num).
+absl::StatusOr<int32_t> ComputeExpectedGatherGroupSizeForPartition(
+    const VerifiedIngestionVerificationResult& result, const MetricEpochKey& partition_key,
+    int32_t group_id);
+
 }  // namespace cobalt::trusted_shuffler
 
 #endif  // SRC_BATCHING_BATCH_CALCULATOR_H_

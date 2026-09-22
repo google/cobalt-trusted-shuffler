@@ -18,6 +18,7 @@
 #include <limits>
 
 #include "absl/algorithm/container.h"
+#include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "src/crypto/verify_ingestion_verification_payload.h"
@@ -86,6 +87,39 @@ absl::StatusOr<BatchParameters> ComputeBatchParametersForPartition(
 
   return ComputeBatchParameters(matching_entry->message_count(),
                                 result.run_context.run_config().target_batch_size());
+}
+
+int32_t GatherGroupIdForPosition(const int64_t position, const int32_t batch_num) {
+  ABSL_DCHECK_GT(batch_num, 0);
+  return static_cast<int32_t>(position % batch_num);
+}
+
+absl::StatusOr<int32_t> ComputeExpectedGatherGroupSizeForPartition(
+    const VerifiedIngestionVerificationResult& result, const MetricEpochKey& partition_key,
+    int32_t group_id) {
+  absl::StatusOr<BatchParameters> params =
+      ComputeBatchParametersForPartition(result, partition_key);
+  if (!params.ok()) {
+    return params.status();
+  }
+
+  const int32_t actual_batch_size = params->actual_batch_size;
+  const int32_t batch_num = params->batch_num;
+  if (group_id < 0 || group_id >= batch_num) {
+    return absl::InvalidArgumentError("group_id must be in [0, batch_num).");
+  }
+
+  // Closed form of the number of positions in [0, actual_batch_size) that
+  // GatherGroupIdForPosition maps to group_id, summed over the batch_num
+  // equally sized scatter batches.
+  const int32_t base_per_batch = actual_batch_size / batch_num;
+  const int32_t remainder_per_batch = actual_batch_size % batch_num;
+  const int64_t per_batch = base_per_batch + (group_id < remainder_per_batch ? 1 : 0);
+  const int64_t expected_group_size = batch_num * per_batch;
+  if (expected_group_size > std::numeric_limits<int32_t>::max()) {
+    return absl::OutOfRangeError("Computed expected gather group size exceeds int32_t max.");
+  }
+  return static_cast<int32_t>(expected_group_size);
 }
 
 }  // namespace cobalt::trusted_shuffler

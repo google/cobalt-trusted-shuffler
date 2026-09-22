@@ -24,6 +24,7 @@
 #include "cc/crypto/signing_key.h"
 #include "src/proto/config_constraints.pb.h"
 #include "src/proto/run_context.pb.h"
+#include "src/testing/integration/gather_shuffle_router.h"
 #include "src/testing/integration/ingest_uploads_router.h"
 #include "src/testing/integration/ingestion_verification_router.h"
 #include "src/testing/integration/pre_padding_router.h"
@@ -57,6 +58,10 @@ struct PipelineExecutionResult {
   // Encrypted ShuffledMessage records emitted by ScatterShuffle, keyed by
   // ScatterShuffleHeader. Unencrypted integrity fault records on failure.
   KVBlobStageOutputs scatter_shuffle_output;
+
+  // Encrypted ShuffledMessage records emitted by GatherShuffle after the second
+  // shuffling pass.
+  BlobStageOutputs gather_shuffle_output;
 };
 
 // Builds one input stream per IngestUploads shard from the SignedRunContext
@@ -92,6 +97,11 @@ using ScatterShuffleRouterFn = absl::AnyInvocable<absl::StatusOr<std::vector<KVC
     absl::Span<const EncryptedKVBlob> threshold_filter_messages,
     absl::Span<const EncryptedKVBlob> pre_padding_messages) const>;
 
+// Routes IngestionVerificationPayload and ScatterShuffle messages into GatherShuffle.
+using GatherShuffleRouterFn = absl::AnyInvocable<absl::StatusOr<std::vector<KVCollection>>(
+    const EncryptedBlob& verification_payload,
+    absl::Span<const EncryptedKVBlob> scatter_shuffle_messages) const>;
+
 // Holds routing and output-splitting functions used by ExecutePipeline to route
 // data between container stages. Defaults to the standard router implementations,
 // which tests can override to inject faults.
@@ -114,9 +124,12 @@ struct PipelineRouters {
   // Routes IngestionVerificationPayload, ThresholdFilter and PrePadding messages into
   // ScatterShuffle.
   ScatterShuffleRouterFn scatter_shuffle_router = RouteToScatterShuffle;
+
+  // Routes IngestionVerificationPayload and ScatterShuffle messages into GatherShuffle.
+  GatherShuffleRouterFn gather_shuffle_router = RouteToGatherShuffle;
 };
 
-// Executes the 6 currently implemented container stages end-to-end using the
+// Executes the 7 currently implemented container stages end-to-end using the
 // provided routing functions.
 absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     const PipelineRouters& routers, oak::crypto::SigningKeyHandle& signing_key,

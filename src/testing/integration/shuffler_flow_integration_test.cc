@@ -49,6 +49,33 @@ using ::testing::IsEmpty;
 using ::testing::Pair;
 using ::testing::SizeIs;
 using ::testing::UnorderedElementsAre;
+using ::testing::UnorderedElementsAreArray;
+
+// Returns the customer payloads ScatterShuffle emitted, checking each message
+// records the one shuffle pass it has been through.
+std::vector<std::string> ScatteredPayloads(absl::Span<const EncryptedKVBlob> blobs) {
+  std::vector<std::string> payloads;
+  for (const EncryptedKVBlob& blob : blobs) {
+    ShuffledMessage message;
+    EXPECT_TRUE(message.ParseFromString(blob.ciphertext()));
+    EXPECT_EQ(message.shuffle_count(), 1);
+    payloads.push_back(message.customer_message());
+  }
+  return payloads;
+}
+
+// Returns the customer payloads GatherShuffle emitted, checking each message
+// records both shuffle passes.
+std::vector<std::string> GatheredPayloads(absl::Span<const EncryptedBlob> blobs) {
+  std::vector<std::string> payloads;
+  for (const EncryptedBlob& blob : blobs) {
+    ShuffledMessage message;
+    EXPECT_TRUE(message.ParseFromString(blob.ciphertext()));
+    EXPECT_EQ(message.shuffle_count(), 2);
+    payloads.push_back(message.customer_message());
+  }
+  return payloads;
+}
 
 // Deterministic signing key implementation for testing.
 class TestSigningKey : public oak::crypto::SigningKeyHandle {
@@ -185,6 +212,13 @@ TEST(ShufflerFlowIntegrationTest, EndToEndSingleSessionFlowVerifiesIngestionAndF
 
   // 5. ScatterShuffle emitted 2 batches of actual_batch_size (2) = 4 records.
   EXPECT_THAT(result->scatter_shuffle_output.encrypted, SizeIs(4));
+
+  // 6. GatherShuffle emitted 2 gather groups of 2 = 4 records, holding the same
+  // messages ScatterShuffle emitted and nothing else.
+  EXPECT_THAT(result->gather_shuffle_output.encrypted, SizeIs(4));
+  EXPECT_THAT(
+      GatheredPayloads(result->gather_shuffle_output.encrypted),
+      UnorderedElementsAreArray(ScatteredPayloads(result->scatter_shuffle_output.encrypted)));
 }
 
 TEST(ShufflerFlowIntegrationTest, EndToEndMultipleMetricEpochKeysApprovesAllEligiblePartitions) {
@@ -282,6 +316,9 @@ TEST(ShufflerFlowIntegrationTest, EndToEndMultipleMetricEpochKeysApprovesAllElig
 
   // ScatterShuffle: 7 real + 1 padding = 8 records total across 4 batches of 2.
   EXPECT_THAT(result->scatter_shuffle_output.encrypted, SizeIs(8));
+
+  // GatherShuffle: 8 records total after second shuffle pass.
+  EXPECT_THAT(result->gather_shuffle_output.encrypted, SizeIs(8));
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineProcessesCheckpointsAcrossMultipleIngestUploadsShards) {
@@ -340,6 +377,9 @@ TEST(ShufflerFlowIntegrationTest, PipelineProcessesCheckpointsAcrossMultipleInge
 
   // ScatterShuffle emits actual_batch_size (4) records for the single approved partition.
   EXPECT_THAT(result->scatter_shuffle_output.encrypted, SizeIs(4));
+
+  // GatherShuffle emits 4 records for the single gather group.
+  EXPECT_THAT(result->gather_shuffle_output.encrypted, SizeIs(4));
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenSignedRunContextNotFirstInput) {
@@ -511,6 +551,9 @@ TEST(ShufflerFlowIntegrationTest,
 
   // ScatterShuffle emits actual_batch_size (2) records for the single approved partition.
   EXPECT_THAT(result->scatter_shuffle_output.encrypted, SizeIs(2));
+
+  // GatherShuffle emits 2 records.
+  EXPECT_THAT(result->gather_shuffle_output.encrypted, SizeIs(2));
 }
 
 TEST(ShufflerFlowIntegrationTest, ThresholdFilterFailsWhenVerificationPayloadNotFirstInput) {
@@ -636,6 +679,8 @@ TEST(ShufflerFlowIntegrationTest, OrchestratorDropsPartialReportCausesThresholdR
   EXPECT_THAT(baseline_result->pre_padding_output.encrypted, IsEmpty());
   // Baseline ScatterShuffle emitted 6 records (4 for Metric A + 2 for Metric B).
   EXPECT_THAT(baseline_result->scatter_shuffle_output.encrypted, SizeIs(6));
+  // Baseline GatherShuffle emitted 6 records.
+  EXPECT_THAT(baseline_result->gather_shuffle_output.encrypted, SizeIs(6));
 
   // Now drop Shard 1's partial report. Metric B (2 devices in Shard 0) still meets threshold 2,
   // whereas Metric A drops from 4 unique devices to 1 (below threshold 4) and is rejected.
@@ -662,6 +707,8 @@ TEST(ShufflerFlowIntegrationTest, OrchestratorDropsPartialReportCausesThresholdR
 
   // Faulted pipeline ScatterShuffle emitted 1 batch (Metric B only) of 2 records.
   EXPECT_THAT(result->scatter_shuffle_output.encrypted, SizeIs(2));
+  // Faulted pipeline GatherShuffle emitted 2 records.
+  EXPECT_THAT(result->gather_shuffle_output.encrypted, SizeIs(2));
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineTerminatesWhenIngestUploadsEmitsIntegrityFault) {
@@ -899,6 +946,186 @@ TEST(ShufflerFlowIntegrationTest,
 
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
               StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenGatherShuffleReceivesEmptyInput) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}}, 0, 10, 1);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_1",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_1",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.gather_shuffle_router = RouteToGatherShuffleWithEmptyInput;
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenGatherShuffleReceivesLateVerificationPayload) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}}, 0, 10, 1);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_1",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_1",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.gather_shuffle_router = RouteToGatherShuffleWithLateVerificationPayload;
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenGatherShuffleReceivesUnexpectedRecord) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}}, 0, 10, 1);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_1",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_1",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.gather_shuffle_router = RouteToGatherShuffleWithUnexpectedRecord;
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenGatherShuffleReceivesMixedGroup) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/2);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_1",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_1",
+      }),
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_2",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_2",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.gather_shuffle_router = RouteMixedGroupToGatherShuffle;
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(ShufflerFlowIntegrationTest, PipelineGathersPartitionWhoseGroupsAreMostlyEmpty) {
+  // target_batch_size 1 over 3 messages gives batch_num = 3 and
+  // actual_batch_size = 1: every scatter batch holds a single message, which is
+  // always at position 0 and so always lands in gather group 0. Gather groups 1
+  // and 2 are therefore expected to hold nothing at all (b/564506496).
+  //
+  // A replica raised for one of those empty groups could not tell which group
+  // it served and would fault, so this pins that the orchestrator routes by the
+  // messages it observes and raises a replica only for the group that has them.
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/1);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  std::vector<std::string> checkpoints;
+  for (int i = 0; i < 3; ++i) {
+    checkpoints.push_back(CreateCheckpointFromSpec({
+        .project_id = project_id,
+        .metric_id = metric_id,
+        .payload = absl::StrCat("payload_", i),
+        .event_time = "1970-01-01T00:00:00Z",
+        .privacy_id = absl::StrCat("device_", i),
+    }));
+  }
+
+  const absl::StatusOr<PipelineExecutionResult> result =
+      ExecutePipeline(PipelineRouters{}, signing_key, run_config, constraints, checkpoints);
+  ASSERT_THAT(result.status(), IsOk());
+
+  // No padding is needed because 3 messages divide evenly into 3 batches.
+  EXPECT_THAT(result->pre_padding_output.encrypted, IsEmpty());
+  EXPECT_THAT(result->scatter_shuffle_output.encrypted, SizeIs(3));
+
+  // The single non-empty gather group holds all 3 messages.
+  EXPECT_THAT(result->gather_shuffle_output.encrypted, SizeIs(3));
+  EXPECT_THAT(
+      GatheredPayloads(result->gather_shuffle_output.encrypted),
+      UnorderedElementsAreArray(ScatteredPayloads(result->scatter_shuffle_output.encrypted)));
 }
 
 }  // namespace

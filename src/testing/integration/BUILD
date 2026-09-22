@@ -174,12 +174,14 @@ cc_library(
     hdrs = ["pipeline_runner.h"],
     deps = [
         ":do_fn_runner",
+        ":gather_shuffle_router",
         ":ingest_uploads_router",
         ":ingestion_verification_router",
         ":pre_padding_router",
         ":records",
         ":threshold_filter_router",
         ":scatter_shuffle_router",
+        "//src/containers/gather_shuffle:gather_shuffle_fn",
         "//src/containers/ingest_uploads:ingest_uploads_fn",
         "//src/containers/ingestion_verification:ingestion_verification_fn",
         "//src/containers/run_context_initializer:run_context_initializer_fn",
@@ -202,6 +204,7 @@ cc_test(
     name = "shuffler_flow_integration_test",
     srcs = ["shuffler_flow_integration_test.cc"],
     deps = [
+        ":gather_shuffle_router",
         ":ingest_uploads_router",
         ":ingestion_verification_router",
         ":pipeline_runner",
@@ -265,6 +268,38 @@ cc_test(
         ":scatter_shuffle_router",
         "//src/testing:test_utils",
         "//src/proto:common_cc_proto",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@abseil-cpp//absl/status:statusor",
+        "@googletest//:gtest_main",
+        "@protobuf//:protobuf",
+    ],
+)
+
+cc_library(
+    name = "gather_shuffle_router",
+    srcs = ["gather_shuffle_router.cc"],
+    hdrs = ["gather_shuffle_router.h"],
+    deps = [
+        ":records",
+        "//src/proto:common_cc_proto",
+        "//src/proto:scatter_shuffle_cc_proto",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/types:span",
+        "@confidential-federated-compute//containers:session",
+    ],
+)
+
+cc_test(
+    name = "gather_shuffle_router_test",
+    srcs = ["gather_shuffle_router_test.cc"],
+    deps = [
+        ":gather_shuffle_router",
+        ":records",
+        "//src/proto:common_cc_proto",
+        "//src/proto:scatter_shuffle_cc_proto",
+        "//src/testing:test_utils",
+        "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/status:statusor",
         "@googletest//:gtest_main",

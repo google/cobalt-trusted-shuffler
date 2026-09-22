@@ -14,8 +14,10 @@
 
 #include "src/batching/batch_calculator.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "absl/log/absl_check.h"
 #include "absl/status/status.h"
@@ -234,6 +236,141 @@ TEST(BatchCalculatorTest, ComputeBatchParametersForPartitionSucceedsForApprovedP
       .padding_count = 1,
   };
   EXPECT_THAT(*params, Eq(expected));
+}
+
+TEST(BatchCalculatorTest, ComputeExpectedGatherGroupSizeRejectsInvalidGroupId) {
+  const MetricEpochKey key = CreateTestPartitionKey(1, 10, 100);
+  const VerifiedIngestionVerificationResult result = CreateTestVerifiedResult(
+      /*target_batch_size=*/100, {{.key = key, .message_count = 150}});
+
+  // batch_num = 2, valid group_id in [0, 2).
+  EXPECT_THAT(ComputeExpectedGatherGroupSizeForPartition(result, key, /*group_id=*/-1),
+              StatusIs(absl::StatusCode::kInvalidArgument, "group_id must be in [0, batch_num)."));
+  EXPECT_THAT(ComputeExpectedGatherGroupSizeForPartition(result, key, /*group_id=*/2),
+              StatusIs(absl::StatusCode::kInvalidArgument, "group_id must be in [0, batch_num)."));
+}
+
+TEST(BatchCalculatorTest, ComputeExpectedGatherGroupSizeEvenlyDivisibleBatchSize) {
+  const MetricEpochKey key = CreateTestPartitionKey(1, 10, 100);
+  // 150 messages, target_batch_size 100 -> batch_num = 2, padding = 0, actual_batch_size = 75.
+  // 75 % 2 = 1.
+  // Group 0 receives: 2 * (75/2 + 1) = 2 * 38 = 76.
+  // Group 1 receives: 2 * (75/2 + 0) = 2 * 37 = 74.
+  // Total = 76 + 74 = 150.
+  const VerifiedIngestionVerificationResult result = CreateTestVerifiedResult(
+      /*target_batch_size=*/100, {{.key = key, .message_count = 150}});
+
+  EXPECT_THAT(ComputeExpectedGatherGroupSizeForPartition(result, key, /*group_id=*/0),
+              absl_testing::IsOkAndHolds(76));
+  EXPECT_THAT(ComputeExpectedGatherGroupSizeForPartition(result, key, /*group_id=*/1),
+              absl_testing::IsOkAndHolds(74));
+}
+
+TEST(BatchCalculatorTest, ComputeExpectedGatherGroupSizeLargeBatchCountRegime) {
+  const MetricEpochKey key = CreateTestPartitionKey(1, 10, 100);
+  // 10 messages, target_batch_size 4 -> batch_num = 3, padding = 2, actual_batch_size = 4.
+  // 4 % 3 = 1.
+  // Group 0 receives: 3 * (4/3 + 1) = 3 * 2 = 6.
+  // Group 1 receives: 3 * (4/3 + 0) = 3 * 1 = 3.
+  // Group 2 receives: 3 * (4/3 + 0) = 3 * 1 = 3.
+  // Total = 6 + 3 + 3 = 12 = 10 + 2.
+  const VerifiedIngestionVerificationResult result = CreateTestVerifiedResult(
+      /*target_batch_size=*/4, {{.key = key, .message_count = 10}});
+
+  EXPECT_THAT(ComputeExpectedGatherGroupSizeForPartition(result, key, /*group_id=*/0),
+              absl_testing::IsOkAndHolds(6));
+  EXPECT_THAT(ComputeExpectedGatherGroupSizeForPartition(result, key, /*group_id=*/1),
+              absl_testing::IsOkAndHolds(3));
+  EXPECT_THAT(ComputeExpectedGatherGroupSizeForPartition(result, key, /*group_id=*/2),
+              absl_testing::IsOkAndHolds(3));
+}
+
+TEST(BatchCalculatorTest, GatherGroupIdForPositionCyclesThroughTheGroups) {
+  EXPECT_THAT(GatherGroupIdForPosition(/*position=*/0, /*batch_num=*/3), Eq(0));
+  EXPECT_THAT(GatherGroupIdForPosition(/*position=*/1, /*batch_num=*/3), Eq(1));
+  EXPECT_THAT(GatherGroupIdForPosition(/*position=*/2, /*batch_num=*/3), Eq(2));
+  EXPECT_THAT(GatherGroupIdForPosition(/*position=*/3, /*batch_num=*/3), Eq(0));
+  EXPECT_THAT(GatherGroupIdForPosition(/*position=*/4, /*batch_num=*/3), Eq(1));
+}
+
+TEST(BatchCalculatorTest, GatherGroupIdForPositionSendsEveryMessageToTheOnlyGroup) {
+  for (int64_t position = 0; position < 5; ++position) {
+    EXPECT_THAT(GatherGroupIdForPosition(position, /*batch_num=*/1), Eq(0));
+  }
+}
+
+TEST(BatchCalculatorTest, GatherGroupIdForPositionSpreadsABatchEvenlyAcrossGroups) {
+  // Every gather worker must receive a balanced share of each scatter worker's
+  // batch: no group may be owed more than one message more than another, and no
+  // message may be assigned to a group that does not exist.
+  for (const int32_t batch_num : {1, 2, 3, 7, 16}) {
+    for (const int32_t actual_batch_size : {1, 2, 5, 16, 100}) {
+      std::vector<int32_t> assigned_per_group(batch_num, 0);
+      for (int64_t position = 0; position < actual_batch_size; ++position) {
+        const int32_t group_id = GatherGroupIdForPosition(position, batch_num);
+        ASSERT_GE(group_id, 0);
+        ASSERT_LT(group_id, batch_num);
+        ++assigned_per_group[group_id];
+      }
+
+      const auto [fewest, most] =
+          std::minmax_element(assigned_per_group.begin(), assigned_per_group.end());
+      EXPECT_LE(*most - *fewest, 1)
+          << "batch_num=" << batch_num << " actual_batch_size=" << actual_batch_size;
+    }
+  }
+}
+
+TEST(BatchCalculatorTest, ExpectedGatherGroupSizeMatchesScatterGroupAssignment) {
+  // The closed form in ComputeExpectedGatherGroupSizeForPartition counts the
+  // messages GatherGroupIdForPosition hands each group. Rebuild that count from
+  // the assignment itself so the two cannot drift: changing how ScatterShuffle
+  // labels messages without reworking the count fails here.
+  struct PartitionSpec {
+    int32_t target_batch_size;
+    int64_t message_count;
+  };
+  const PartitionSpec partition_specs[] = {
+      {.target_batch_size = 1, .message_count = 1},
+      {.target_batch_size = 100, .message_count = 150},
+      {.target_batch_size = 4, .message_count = 10},
+      {.target_batch_size = 10, .message_count = 10},
+      {.target_batch_size = 7, .message_count = 100},
+      {.target_batch_size = 1, .message_count = 9},
+      {.target_batch_size = 64, .message_count = 1000},
+  };
+
+  for (const PartitionSpec& spec : partition_specs) {
+    const MetricEpochKey key = CreateTestPartitionKey(1, 10, 100);
+    const VerifiedIngestionVerificationResult result = CreateTestVerifiedResult(
+        spec.target_batch_size, {{.key = key, .message_count = spec.message_count}});
+    const absl::StatusOr<BatchParameters> params = ComputeBatchParametersForPartition(result, key);
+    ASSERT_THAT(params, IsOk());
+
+    // Every scatter batch holds actual_batch_size messages and labels them by
+    // position, so replaying one batch's assignment and scaling by batch_num
+    // gives each gather group's size.
+    std::vector<int32_t> assigned_per_group(params->batch_num, 0);
+    for (int64_t position = 0; position < params->actual_batch_size; ++position) {
+      ++assigned_per_group[GatherGroupIdForPosition(position, params->batch_num)];
+    }
+
+    int64_t total_gathered = 0;
+    for (int32_t group_id = 0; group_id < params->batch_num; ++group_id) {
+      const int32_t expected_group_size = params->batch_num * assigned_per_group[group_id];
+      EXPECT_THAT(ComputeExpectedGatherGroupSizeForPartition(result, key, group_id),
+                  absl_testing::IsOkAndHolds(expected_group_size))
+          << "target_batch_size=" << spec.target_batch_size
+          << " message_count=" << spec.message_count << " group_id=" << group_id;
+      total_gathered += expected_group_size;
+    }
+
+    // The gather groups together hold the padded partition, so no message is
+    // stranded in a group nobody expects.
+    EXPECT_THAT(total_gathered, Eq(spec.message_count + params->padding_count))
+        << "target_batch_size=" << spec.target_batch_size
+        << " message_count=" << spec.message_count;
+  }
 }
 
 }  // namespace

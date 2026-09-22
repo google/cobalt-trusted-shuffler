@@ -161,7 +161,8 @@ absl::Status ScatterShuffleFn::FinalizeReplica(google::protobuf::Any config, FnC
     return SignalIntegrityFault(context);
   }
   for (size_t new_position = 0; new_position < messages_.size(); ++new_position) {
-    const int32_t group_id = static_cast<int32_t>(new_position % batch_num);
+    const int32_t group_id =
+        GatherGroupIdForPosition(static_cast<int64_t>(new_position), batch_num);
     ShuffledMessage& message = messages_[new_position];
     message.set_group_id(group_id);
     message.set_shuffle_count(message.shuffle_count() + 1);

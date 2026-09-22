@@ -67,6 +67,10 @@ enum class Node {
   // Client messages assigned to a shuffle group, written by scatter_shuffle.
   kScatteredMessages = 9,
 
+  // Client and padding messages after the second-pass shuffle, written by
+  // gather_shuffle.
+  kGatheredMessages = 10,
+
   // TODO(b/563428525): Renumber these to their real node ids when their
   // containers are added to the access policy.
   //

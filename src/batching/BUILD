@@ -28,6 +28,7 @@ cc_library(
         "//src/proto:run_context_cc_proto",
         "//src/util:metric_epoch_key_utils",
         "@abseil-cpp//absl/algorithm:container",
+        "@abseil-cpp//absl/log:absl_check",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
     ],

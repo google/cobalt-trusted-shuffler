@@ -23,6 +23,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "cc/crypto/signing_key.h"
+#include "src/containers/gather_shuffle/gather_shuffle_fn.h"
 #include "src/containers/ingest_uploads/ingest_uploads_fn.h"
 #include "src/containers/ingestion_verification/ingestion_verification_fn.h"
 #include "src/containers/pre_padding/pre_padding_fn.h"
@@ -203,6 +204,27 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     result.scatter_shuffle_output.Append(*std::move(ss_out));
   }
 
+  // 7. GatherShuffle
+  // Replica requirement: Requires one replica per (MetricEpochKey, group_id)
+  // gather group (can use any number of replicas across the stage as long as
+  // each gather group is processed by its own unique replica).
+  // Output: payload only. Downstream EncryptOutputFn reads MetricEpochKey from
+  // the decrypted ShuffledMessage.
+  absl::StatusOr<std::vector<KVCollection>> gather_shards =
+      routers.gather_shuffle_router(verification_payload, result.scatter_shuffle_output.encrypted);
+  if (!gather_shards.ok()) {
+    return gather_shards.status();
+  }
+
+  for (const KVCollection& shard : *gather_shards) {
+    GatherShuffleFn gather_fn;
+    absl::StatusOr<BlobStageOutputs> gather_output =
+        DoFnRunner::RunReplicaWithBlobOutput(gather_fn, {.inputs = shard});
+    if (!gather_output.ok()) {
+      return gather_output.status();
+    }
+    result.gather_shuffle_output.Append(*std::move(gather_output));
+  }
   return result;
 }
 
