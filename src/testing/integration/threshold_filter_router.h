@@ -21,15 +21,15 @@
 
 namespace cobalt::trusted_shuffler::testing::integration {
 
-// Prepends IngestionVerificationPayload as Record 0 followed by un-keyed partition
+// Prepends IngestionVerificationPayload as Record 0 followed by un-keyed ingested
 // messages as Records 1..N for a ThresholdFilter session.
 absl::StatusOr<KVCollection> RouteToThresholdFilter(
-    const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> partition_messages);
+    const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> ingested_messages);
 
-// Fault-injection router that places partition messages before the
+// Fault-injection router that places ingested messages before the
 // IngestionVerificationPayload instead of as Record 0.
 absl::StatusOr<KVCollection> RouteToThresholdFilterWithLateVerificationPayload(
-    const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> partition_messages);
+    const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> ingested_messages);
 
 }  // namespace cobalt::trusted_shuffler::testing::integration
 

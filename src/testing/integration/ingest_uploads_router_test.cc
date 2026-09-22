@@ -161,8 +161,8 @@ TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsSeparatesReportsAndDropsM
   ASSERT_THAT(split->partial_reports, SizeIs(1));
   EXPECT_EQ(split->partial_reports[0].ciphertext(), "report_ciphertext");
 
-  ASSERT_THAT(split->partition_messages, SizeIs(1));
-  EXPECT_EQ(split->partition_messages[0].ciphertext(), "msg_ciphertext");
+  ASSERT_THAT(split->ingested_messages, SizeIs(1));
+  EXPECT_EQ(split->ingested_messages[0].ciphertext(), "msg_ciphertext");
 }
 
 TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsWithDroppedReportsDropsLastReport) {
@@ -184,8 +184,8 @@ TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsWithDroppedReportsDropsLa
   ASSERT_THAT(split.status(), IsOk());
   ASSERT_THAT(split->partial_reports, SizeIs(1));
   EXPECT_EQ(split->partial_reports[0].ciphertext(), "report_ciphertext_0");
-  ASSERT_THAT(split->partition_messages, SizeIs(1));
-  EXPECT_EQ(split->partition_messages[0].ciphertext(), "msg_ciphertext");
+  ASSERT_THAT(split->ingested_messages, SizeIs(1));
+  EXPECT_EQ(split->ingested_messages[0].ciphertext(), "msg_ciphertext");
 }
 
 TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsFailsOnInvalidHeaderKey) {

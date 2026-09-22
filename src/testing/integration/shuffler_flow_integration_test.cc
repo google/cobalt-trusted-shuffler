@@ -320,7 +320,7 @@ TEST(ShufflerFlowIntegrationTest, PipelineProcessesCheckpointsAcrossMultipleInge
   absl::StatusOr<IngestUploadsOutputs> split =
       SplitIngestUploadsOutputs(result->ingest_uploads_output);
   ASSERT_THAT(split.status(), IsOk());
-  EXPECT_THAT(split->partition_messages, SizeIs(4));
+  EXPECT_THAT(split->ingested_messages, SizeIs(4));
   EXPECT_THAT(split->partial_reports, SizeIs(2));
 
   // IngestionVerification processes both partial reports and approves the partition.
@@ -331,7 +331,7 @@ TEST(ShufflerFlowIntegrationTest, PipelineProcessesCheckpointsAcrossMultipleInge
   ASSERT_TRUE(iv_payload.has_success());
   EXPECT_EQ(iv_payload.success().threshold_report().approved_partitions_size(), 1);
 
-  // ThresholdFilter processes the 4 partition messages.
+  // ThresholdFilter processes the 4 ingested messages.
   EXPECT_THAT(result->threshold_filter_output.encrypted, SizeIs(4));
 
   // PrePadding emits 0 padding messages for the approved partition (count 4 with target 5 ->
@@ -538,7 +538,7 @@ TEST(ShufflerFlowIntegrationTest, ThresholdFilterFailsWhenVerificationPayloadNot
       }),
   };
 
-  // Fault-injection router that places partition messages before the IngestionVerificationPayload.
+  // Fault-injection router that places ingested messages before the IngestionVerificationPayload.
   const PipelineRouters routers{
       .threshold_filter_router = RouteToThresholdFilterWithLateVerificationPayload,
   };

@@ -29,7 +29,7 @@ using ::absl_testing::IsOk;
 using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
-TEST(ThresholdFilterRouterTest, PrependsVerificationPayloadAndPartitionMessages) {
+TEST(ThresholdFilterRouterTest, PrependsVerificationPayloadAndIngestedMessages) {
   const EncryptedBlob verification_payload("verification_payload_bytes");
   const std::vector<EncryptedBlob> messages = {
       EncryptedBlob("msg_1"),

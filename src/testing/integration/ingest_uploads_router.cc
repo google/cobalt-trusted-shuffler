@@ -107,7 +107,7 @@ absl::StatusOr<IngestUploadsOutputs> SplitIngestUploadsOutputs(
     } else if (header.has_partial_ingestion_report()) {
       split_outputs.partial_reports.push_back(record.DropKey());
     } else if (header.has_metric_epoch_key()) {
-      split_outputs.partition_messages.push_back(record.DropKey());
+      split_outputs.ingested_messages.push_back(record.DropKey());
     } else {
       return absl::InvalidArgumentError(
           "IngestMessagesHeader has neither partial_ingestion_report, metric_epoch_key, nor "

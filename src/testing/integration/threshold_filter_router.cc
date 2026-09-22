@@ -22,12 +22,12 @@
 namespace cobalt::trusted_shuffler::testing::integration {
 
 absl::StatusOr<KVCollection> RouteToThresholdFilter(
-    const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> partition_messages) {
+    const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> ingested_messages) {
   KVCollection inputs;
-  inputs.reserve(1 + partition_messages.size());
+  inputs.reserve(1 + ingested_messages.size());
   inputs.push_back(verification_payload.ToKV());
 
-  for (const EncryptedBlob& msg : partition_messages) {
+  for (const EncryptedBlob& msg : ingested_messages) {
     inputs.push_back(msg.ToKV());
   }
 
@@ -35,10 +35,10 @@ absl::StatusOr<KVCollection> RouteToThresholdFilter(
 }
 
 absl::StatusOr<KVCollection> RouteToThresholdFilterWithLateVerificationPayload(
-    const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> partition_messages) {
+    const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> ingested_messages) {
   KVCollection inputs;
-  inputs.reserve(1 + partition_messages.size());
-  for (const EncryptedBlob& msg : partition_messages) {
+  inputs.reserve(1 + ingested_messages.size());
+  for (const EncryptedBlob& msg : ingested_messages) {
     inputs.push_back(msg.ToKV());
   }
   inputs.push_back(verification_payload.ToKV());

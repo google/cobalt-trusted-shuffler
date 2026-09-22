@@ -32,7 +32,7 @@ struct IngestUploadsOutputs {
 
   // Encrypted client messages destined for ThresholdFilter, with the
   // IngestMessagesHeader routing key stripped.
-  std::vector<EncryptedBlob> partition_messages;
+  std::vector<EncryptedBlob> ingested_messages;
 };
 
 // Builds a single IngestUploads session input stream by prepending
@@ -58,7 +58,7 @@ absl::StatusOr<std::vector<KVCollection>> RouteToTwoShardIngestUploadsWithSecond
 
 // Unpacks each IngestMessagesHeader emitted by IngestUploads and separates outputs into:
 // 1. partial_reports: records whose header holds a PartialIngestionReport.
-// 2. partition_messages: records whose header holds a MetricEpochKey.
+// 2. ingested_messages: records whose header holds a MetricEpochKey.
 // Both streams strip the IngestMessagesHeader routing key. Returns
 // FailedPreconditionError if any record header reports an IntegrityFault.
 absl::StatusOr<IngestUploadsOutputs> SplitIngestUploadsOutputs(

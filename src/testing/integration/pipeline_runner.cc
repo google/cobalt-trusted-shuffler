@@ -69,10 +69,10 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
   // 2. IngestUploads
   // Replica requirement: Can use any number of replicas. Client upload
   // checkpoints can be partitioned across arbitrary parallel replicas, with
-  // each replica emitting partition messages and one PartialIngestionReport for
+  // each replica emitting ingested messages and one PartialIngestionReport for
   // its assigned shard.
   // Output: key plus payload. The host reads the IngestMessagesHeader to tell
-  // partition messages from partial ingestion reports.
+  // ingested messages from partial ingestion reports.
   absl::StatusOr<std::vector<KVCollection>> ingest_shards =
       routers.ingest_uploads_router(signed_run_context, raw_checkpoints);
   if (!ingest_shards.ok()) {
@@ -89,7 +89,7 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
     result.ingest_uploads_output.Append(*std::move(ingest_out));
   }
 
-  // Separate IngestUploads outputs into PartialIngestionReports and partition messages.
+  // Separate IngestUploads outputs into PartialIngestionReports and ingested messages.
   absl::StatusOr<IngestUploadsOutputs> split_outputs =
       routers.ingest_uploads_output_splitter(result.ingest_uploads_output);
   if (!split_outputs.ok()) {
@@ -146,12 +146,12 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
   // 4. ThresholdFilter
   // Replica requirement: Can use any number of replicas. Each replica receives
   // the shared IngestionVerificationPayload configuration record and independently
-  // filters its assigned subset of partition messages. Here we execute a single
-  // replica over all partition messages.
+  // filters its assigned subset of ingested messages. Here we execute a single
+  // replica over all ingested messages.
   // Output: key plus payload. ThresholdFilterFn forwards each surviving record
   // with its MetricEpochKey so the host can group by partition.
   absl::StatusOr<KVCollection> tf_inputs =
-      routers.threshold_filter_router(verification_payload, split_outputs->partition_messages);
+      routers.threshold_filter_router(verification_payload, split_outputs->ingested_messages);
   if (!tf_inputs.ok()) {
     return tf_inputs.status();
   }

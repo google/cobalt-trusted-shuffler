@@ -40,7 +40,7 @@ struct PipelineExecutionResult {
   // Encrypted SignedRunContext payload emitted by RunContextInitializer.
   BlobStageOutputs run_context_initializer_output;
 
-  // Encrypted partition messages and partial ingestion reports emitted across
+  // Encrypted ingested messages and partial ingestion reports emitted across
   // all IngestUploads shards, each carrying its IngestMessagesHeader key.
   KVBlobStageOutputs ingest_uploads_output;
 
@@ -65,7 +65,7 @@ using IngestUploadsRouterFn = absl::AnyInvocable<absl::StatusOr<std::vector<KVCo
     const EncryptedBlob& signed_run_context, absl::Span<const std::string> raw_checkpoints) const>;
 
 // Reads the IngestMessagesHeader on each IngestUploads output to separate
-// partial ingestion reports from partition messages.
+// partial ingestion reports from ingested messages.
 using IngestUploadsOutputSplitterFn = absl::AnyInvocable<absl::StatusOr<IngestUploadsOutputs>(
     const KVBlobStageOutputs& ingest_output) const>;
 
@@ -76,9 +76,9 @@ using IngestionVerificationRouterFn = absl::AnyInvocable<absl::StatusOr<KVCollec
                                                              const>;
 
 // Builds the input stream for a ThresholdFilter session from the
-// IngestionVerificationPayload and the partition messages assigned to it.
+// IngestionVerificationPayload and the ingested messages assigned to it.
 using ThresholdFilterRouterFn = absl::AnyInvocable<absl::StatusOr<KVCollection>(
-    const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> partition_messages)
+    const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> ingested_messages)
                                                        const>;
 
 // Builds the input stream for a PrePadding session from the IngestionVerificationPayload.
@@ -99,13 +99,13 @@ struct PipelineRouters {
   // Routes SignedRunContext and raw upload checkpoints into one or more IngestUploads shards.
   IngestUploadsRouterFn ingest_uploads_router = RouteToIngestUploads;
 
-  // Demultiplexes IngestUploads outputs into partial reports and partition messages.
+  // Demultiplexes IngestUploads outputs into partial reports and ingested messages.
   IngestUploadsOutputSplitterFn ingest_uploads_output_splitter = SplitIngestUploadsOutputs;
 
   // Routes SignedRunContext and partial reports into the IngestionVerification session.
   IngestionVerificationRouterFn ingestion_verification_router = RouteToIngestionVerification;
 
-  // Routes IngestionVerificationPayload and partition messages into the ThresholdFilter session.
+  // Routes IngestionVerificationPayload and ingested messages into the ThresholdFilter session.
   ThresholdFilterRouterFn threshold_filter_router = RouteToThresholdFilter;
 
   // Routes IngestionVerificationPayload into the PrePadding session.
