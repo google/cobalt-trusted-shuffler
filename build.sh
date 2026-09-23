@@ -100,6 +100,10 @@ if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/scatter_shuffle
   cp -Rp ./bazel-bin/src/containers/scatter_shuffle/* ${KOKORO_ARTIFACTS_DIR}/scatter_shuffle/.
 
+  log "Copying gather_shuffle container output to kokoro artifacts dir."
+  mkdir -p ${KOKORO_ARTIFACTS_DIR}/gather_shuffle
+  cp -Rp ./bazel-bin/src/containers/gather_shuffle/* ${KOKORO_ARTIFACTS_DIR}/gather_shuffle/.
+
   log "Copying encrypt_output container output to kokoro artifacts dir."
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/encrypt_output
   cp -Rp ./bazel-bin/src/containers/encrypt_output/* ${KOKORO_ARTIFACTS_DIR}/encrypt_output/.

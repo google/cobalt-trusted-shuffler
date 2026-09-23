@@ -35,6 +35,7 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | [`threshold_filter`](threshold_filter/) | Filters messages by approved partition thresholds from Ingestion Verification report, drops unapproved partitions, and emits encrypted message streams. | Emits messages encrypted (`EmitEncrypted`) to the `kFilteredMessages` data node with plaintext `MetricEpochKey` headers. Partitions below threshold are dropped completely. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`pre_padding`](pre_padding/) | Generates encrypted dummy padding messages for approved partitions so each partition's total message count is rounded up to a multiple of `batch_num`. | Emits padding messages encrypted (`EmitEncrypted`) to the `kPaddingMessages` data node with plaintext `MetricEpochKey` headers; emits `IntegrityFault` unencrypted on failure. | Record 0 `IngestionVerificationPayload` (`src/proto/ingestion.proto`) |
 | [`scatter_shuffle`](scatter_shuffle/) | Cryptographically shuffles batches of messages partitioned by `MetricEpochKey`, validates batch size invariants, assigns group IDs (`group_id = new_position % batch_num`), increments `shuffle_count`, and re-encrypts payloads. | Emits encrypted KV records (`ScatterShuffleHeader` with `group_id` and encrypted `ShuffledMessage`) via `EmitEncrypted`; emits `IntegrityFault` via `EmitUnencrypted` on validation failure. | Record 0 `IngestionVerificationPayload` (`src/proto/ingestion.proto`) |
+| [`gather_shuffle`](gather_shuffle/) | Performs the second pass of the two-pass cryptographic shuffle on per-partition gather groups, validates group size and `shuffle_count == 1`, increments `shuffle_count` to 2, and re-encrypts payloads. | Emits keyless encrypted `ShuffledMessage` records to the `kGatheredMessages` data node via `EmitEncrypted`; emits `IntegrityFault` via `EmitUnencrypted` on validation failure. | Record 0 `IngestionVerificationPayload` (`src/proto/ingestion.proto`) |
 | [`encrypt_output`](encrypt_output/) | Encrypts shuffled messages for release using `RunContext.release_key` via `ReleaseEncrypter` and accumulates the partial multiset release fingerprint. | Emits streaming `EncryptedMessageOutput` unencrypted (payloads encrypted for release) and final `PartialReleaseReport` encrypted to the `kPartialReleaseReports` data node. | [`src/proto/run_context.proto`](../proto/run_context.proto), [`src/proto/release.proto`](../proto/release.proto) |
 | [`key_releaser`](key_releaser/) | Aggregates partial release multiset fingerprints from `encrypt_output` workers and verifies complete multiset equivalence against the canonical ingestion fingerprint before releasing the run's Tink AEAD `release_key`. | Emits unencrypted `DecryptionKeyRelease` (`ReleasedKeyReport` or `IntegrityFault`) via `EmitUnencrypted` on replica finalization. | Record 0 `IngestionVerificationPayload` (`src/proto/ingestion.proto`), Records 1..N `PartialReleaseReport` (`src/proto/release.proto`) |
 
@@ -146,7 +147,19 @@ The **`scatter_shuffle`** container is responsible for the scatter shuffle and g
 
 ---
 
-## 10. `encrypt_output`
+## 10. `gather_shuffle`
+
+The **`gather_shuffle`** container is responsible for the second pass of the Trusted Shuffler two-pass cryptographic shuffle.
+
+- **Purpose**: Validates that all messages in the replica belong to the same approved `(MetricEpochKey, group_id)` gather group, have `shuffle_count == 1`, and match `expected_group_size`, then performs a cryptographic shuffle, increments `shuffle_count` to 2, and re-encrypts payloads to `Node::kGatheredMessages`.
+- **Configuration**: Dynamic configuration via `IngestionVerificationPayload` on Record 0; computes expected gather group sizes using `//src/batching:batch_calculator`.
+- **Inputs**: Record 0 is `IngestionVerificationPayload`. Records 1..N are `ShuffledMessage` records belonging to a single `(MetricEpochKey, group_id)` gather group.
+- **Outputs**: Emits keyless encrypted `ShuffledMessage` records to `Node::kGatheredMessages` via `EmitEncrypted` upon finalization. Emits `IntegrityFault` via `EmitUnencrypted` upon validation or group size failure.
+- **Documentation**: See [`src/containers/gather_shuffle/README.md`](gather_shuffle/README.md).
+
+---
+
+## 11. `encrypt_output`
 
 The **`encrypt_output`** container is responsible for output encryption and release fingerprinting in the Trusted Shuffler pipeline.
 
@@ -158,7 +171,7 @@ The **`encrypt_output`** container is responsible for output encryption and rele
 
 ---
 
-## 11. `key_releaser`
+## 12. `key_releaser`
 
 The **`key_releaser`** container performs cryptographic multiset fingerprint verification and decryption key release at the end of the pipeline.
 
