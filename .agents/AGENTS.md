@@ -157,6 +157,7 @@ Define necessary schemas according to their scope:
      - Increment the `"input_record-dropped"` counter on dropped or invalid records.
      - Increment the `"encrypted_output_record-count"` counter any time `EmitEncrypted` is called.
      - Increment the `"unencrypted_output_record-count"` counter any time `EmitUnencrypted` is called.
+     - Increment the `"integrity_fault-count"` counter any time an integrity fault is signaled or emitted.
 2. **`foo_bar_transform.h` / `foo_bar_transform.cc`**:
    - Subclass `confidential_federated_compute::fns::FnFactory`.
    - Provide factory function:

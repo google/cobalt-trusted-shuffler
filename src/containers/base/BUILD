@@ -84,3 +84,35 @@ cc_test(
         "@protobuf//:protobuf",
     ],
 )
+
+cc_library(
+    name = "integrity_fault",
+    hdrs = ["integrity_fault.h"],
+    deps = [
+        ":counter_names",
+        ":with_outputs",
+        "//src/proto:common_cc_proto",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/strings",
+        "@confidential-federated-compute//containers/fns:fns",
+        "@protobuf//:protobuf",
+    ],
+)
+
+cc_test(
+    name = "integrity_fault_test",
+    srcs = ["integrity_fault_test.cc"],
+    deps = [
+        ":counter_names",
+        ":integrity_fault",
+        "//src/proto:common_cc_proto",
+        "//src/proto:release_cc_proto",
+        "//src/proto:scatter_shuffle_cc_proto",
+        "//src/testing:fake_context",
+        "@abseil-cpp//absl/status",
+        "@abseil-cpp//absl/status:status_matchers",
+        "@googletest//:gtest_main",
+        "@protobuf//:protobuf",
+    ],
+)
