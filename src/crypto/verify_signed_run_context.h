@@ -50,9 +50,13 @@ absl::Status VerifyRunContext(const RunContext& run_context);
 
 // Verifies a SignedRunContext:
 // - `serialized_run_context` must not be empty.
-// - `signature` must not be empty.
-//   TODO(b/559232555): Verify the cryptographic signature on
-//   `serialized_run_context` using the Oak container signing public key.
+// - `signature` must not be empty and must be a valid 64-byte IEEE P1363 ECDSA
+//   P-256 signature.
+// - `endorsed_evidence` must not be empty and must contain valid Oak attestation
+//   evidence bearing the P-256 ECDSA signing public key (measured into the DICE
+//   event log under ContainerLayerData).
+// - Verifies the signature over `serialized_run_context` using Tink PublicKeyVerify
+//   against the extracted signing public key.
 // - Parses the serialized bytes into a RunContext proto.
 // - Verifies all fields in the RunContext (recursively).
 // Returns the verified RunContext, or an error status on failure.

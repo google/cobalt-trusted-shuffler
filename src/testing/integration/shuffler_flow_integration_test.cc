@@ -81,11 +81,18 @@ std::vector<std::string> GatheredPayloads(absl::Span<const EncryptedBlob> blobs)
 // Deterministic signing key implementation for testing.
 class TestSigningKey : public oak::crypto::SigningKeyHandle {
  public:
-  absl::StatusOr<oak::crypto::v1::Signature> Sign(absl::string_view /*message*/) override {
+  TestSigningKey() : key_(&cobalt::trusted_shuffler::testing::GetDefaultTestSigningKey()) {}
+  explicit TestSigningKey(const cobalt::trusted_shuffler::testing::TestSigningKey* key)
+      : key_(key) {}
+
+  absl::StatusOr<oak::crypto::v1::Signature> Sign(absl::string_view message) override {
     oak::crypto::v1::Signature sig;
-    sig.set_signature("test_signature_bytes");
+    sig.set_signature(key_->Sign(message));
     return sig;
   }
+
+ private:
+  const cobalt::trusted_shuffler::testing::TestSigningKey* key_;
 };
 
 struct UploadSpec {

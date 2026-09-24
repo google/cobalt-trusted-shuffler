@@ -38,6 +38,7 @@
 #include "src/proto/release.pb.h"
 #include "src/proto/run_context.pb.h"
 #include "src/testing/fake_context.h"
+#include "src/testing/test_utils.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -94,10 +95,7 @@ SignedRunContext CreateSignedRunContext(absl::string_view run_id) {
   metric->set_project_id(1);
   metric->set_metric_id(2);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature("valid-signature");
-  return signed_context;
+  return testing::CreateValidSignedRunContext(run_context);
 }
 
 std::string ExtractReleaseKey(const SignedRunContext& signed_context) {

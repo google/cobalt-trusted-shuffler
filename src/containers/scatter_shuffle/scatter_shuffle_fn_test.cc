@@ -36,6 +36,7 @@
 #include "src/proto/run_context.pb.h"
 #include "src/proto/scatter_shuffle.pb.h"
 #include "src/testing/fake_context.h"
+#include "src/testing/test_utils.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -82,9 +83,7 @@ IngestionVerificationResult CreateIngestionVerificationResult(
   metric_identifier->set_project_id(spec.project_id);
   metric_identifier->set_metric_id(spec.metric_id);
 
-  SignedRunContext* const signed_run_context = result.mutable_signed_run_context();
-  signed_run_context->set_serialized_run_context(run_context.SerializeAsString());
-  signed_run_context->set_signature("fake_signature");
+  *result.mutable_signed_run_context() = testing::CreateValidSignedRunContext(run_context);
 
   result.mutable_threshold_report()->set_run_id(std::string(spec.run_id));
   MetricEpochKey* const approved_partition =

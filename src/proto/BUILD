@@ -27,6 +27,9 @@ cc_proto_library(
 proto_library(
     name = "run_context_proto",
     srcs = ["run_context.proto"],
+    deps = [
+        "@oak//proto/session:messages_proto",
+    ],
 )
 
 cc_proto_library(

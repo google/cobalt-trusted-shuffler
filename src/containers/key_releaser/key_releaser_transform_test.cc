@@ -38,6 +38,7 @@
 #include "src/proto/run_context.pb.h"
 #include "src/testing/fake_context.h"
 #include "src/testing/fake_keys.h"
+#include "src/testing/test_utils.h"
 #include "tink/aead/aead_config.h"
 
 namespace cobalt::trusted_shuffler {
@@ -99,9 +100,7 @@ TEST_F(KeyReleaserTransformTest, FnFactoryCreatedFnExecutesLifecycleAndReleasesK
   metric_id->set_project_id(1);
   metric_id->set_metric_id(2);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature("valid-signature");
+  SignedRunContext signed_context = testing::CreateValidSignedRunContext(run_context);
 
   MultisetFingerprint ingestion_fp(Stage::STAGE_INGESTION, /*is_partial=*/false, run_context,
                                    MultisetFingerprint::kFingerprintSize);

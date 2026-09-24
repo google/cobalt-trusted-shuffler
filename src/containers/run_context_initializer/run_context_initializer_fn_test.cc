@@ -14,21 +14,32 @@
 
 #include "src/containers/run_context_initializer/run_context_initializer_fn.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/status/status.h"
 #include "absl/status/status_matchers.h"
+#include "cc/containers/sdk/orchestrator_client.h"
 #include "cc/crypto/signing_key.h"
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
+#include "google/protobuf/empty.pb.h"
+#include "grpcpp/channel.h"
+#include "grpcpp/create_channel.h"
+#include "grpcpp/server.h"
+#include "grpcpp/server_builder.h"
 #include "gtest/gtest.h"
+#include "proto/containers/interfaces.grpc.pb.h"
+#include "proto/session/messages.pb.h"
 #include "src/containers/base/counter_names.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/run_context.pb.h"
 #include "src/testing/fake_context.h"
+#include "src/testing/fake_keys.h"
+#include "src/testing/test_utils.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -45,13 +56,52 @@ using ::testing::SizeIs;
 
 inline constexpr int kRunContextKeyIndex = 0;
 
-class TestSigningKey : public oak::crypto::SigningKeyHandle {
+class FakeOrchestratorService final : public oak::containers::Orchestrator::Service {
  public:
-  absl::StatusOr<oak::crypto::v1::Signature> Sign(absl::string_view message) override {
-    oak::crypto::v1::Signature sig;
-    sig.set_signature("test_signature_bytes");
-    return sig;
+  FakeOrchestratorService() : status_(grpc::Status::OK) {}
+  explicit FakeOrchestratorService(oak::session::v1::EndorsedEvidence evidence)
+      : evidence_(std::move(evidence)), status_(grpc::Status::OK) {}
+
+  grpc::Status GetEndorsedEvidence(grpc::ServerContext* context,
+                                   const google::protobuf::Empty* request,
+                                   oak::session::v1::EndorsedEvidence* response) override {
+    if (!status_.ok()) {
+      return status_;
+    }
+    *response = evidence_;
+    return grpc::Status::OK;
   }
+
+  void SetEvidence(oak::session::v1::EndorsedEvidence evidence) {
+    evidence_ = std::move(evidence);
+    status_ = grpc::Status::OK;
+  }
+
+  void SetStatus(grpc::Status status) { status_ = std::move(status); }
+
+ private:
+  oak::session::v1::EndorsedEvidence evidence_;
+  grpc::Status status_;
+};
+
+class FakeOrchestratorServer {
+ public:
+  explicit FakeOrchestratorServer(oak::session::v1::EndorsedEvidence evidence)
+      : service_(std::move(evidence)) {
+    grpc::ServerBuilder builder;
+    builder.RegisterService(&service_);
+    server_ = builder.BuildAndStart();
+    client_ = std::make_unique<oak::containers::sdk::OrchestratorClient>(
+        server_->InProcessChannel(grpc::ChannelArguments()));
+  }
+
+  FakeOrchestratorService& Service() { return service_; }
+  const oak::containers::sdk::OrchestratorClient* Client() const { return client_.get(); }
+
+ private:
+  FakeOrchestratorService service_;
+  std::unique_ptr<grpc::Server> server_;
+  std::unique_ptr<oak::containers::sdk::OrchestratorClient> client_;
 };
 
 class FailingSigningKey : public oak::crypto::SigningKeyHandle {
@@ -79,8 +129,9 @@ google::protobuf::Any ToAny(const RunConfig& config) {
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnInvalidInput) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   google::protobuf::Any invalid_config;
@@ -91,8 +142,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnInvalidInput) {
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnEmptyMetricIdentifiers) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   RunConfig config = CreateValidRunConfig();
@@ -103,8 +155,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnEmptyMetricIdentifiers
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnZeroProjectId) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   RunConfig config = CreateValidRunConfig();
@@ -115,8 +168,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnZeroProjectId) {
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeProjectId) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   RunConfig config = CreateValidRunConfig();
@@ -127,8 +181,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeProjectId) {
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnZeroMetricId) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   RunConfig config = CreateValidRunConfig();
@@ -140,8 +195,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnZeroMetricId) {
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeMetricId) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   RunConfig config = CreateValidRunConfig();
@@ -153,8 +209,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeMetricId) {
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnDuplicateMetricIdentifiers) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   RunConfig config = CreateValidRunConfig();
@@ -167,8 +224,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnDuplicateMetricIdentif
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeMinEpochIndex) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   RunConfig config = CreateValidRunConfig();
@@ -180,8 +238,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeMinEpochIndex)
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnInvalidEpochRange) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   RunConfig config = CreateValidRunConfig();
@@ -193,8 +252,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnInvalidEpochRange) {
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaSucceedsWhenMinEqualsMaxEpochIndex) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   RunConfig config = CreateValidRunConfig();
@@ -205,8 +265,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaSucceedsWhenMinEqualsMaxEpoch
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnZeroTargetBatchSize) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   RunConfig config = CreateValidRunConfig();
@@ -217,8 +278,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnZeroTargetBatchSize) {
 }
 
 TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeTargetBatchSize) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
 
   RunConfig config = CreateValidRunConfig();
@@ -229,8 +291,9 @@ TEST(RunContextInitializerFnTest, InitializeReplicaFailsOnNegativeTargetBatchSiz
 }
 
 TEST(RunContextInitializerFnTest, DoIncrementsInputRecordCount) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::FakeSigningKey key_handle;
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
   FakeDoContext do_context(context);
 
@@ -238,9 +301,22 @@ TEST(RunContextInitializerFnTest, DoIncrementsInputRecordCount) {
   EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
 }
 
+TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnNullOrchestratorClient) {
+  testing::FakeSigningKey key_handle;
+  RunContextInitializerFn fn(&key_handle, /*orchestrator_client=*/nullptr);
+  testing::FakeContext context;
+  FakeFnContext fn_context(context);
+
+  ASSERT_THAT(fn.InitializeReplica(ToAny(CreateValidRunConfig()), context), IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context),
+              StatusIs(absl::StatusCode::kInternal));
+}
+
 TEST(RunContextInitializerFnTest, FinalizeReplicaFailsWithoutInitializeReplica) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::TestSigningKey signing_key;
+  testing::TestSigningKeyHandle key_handle(&signing_key);
+  FakeOrchestratorServer orchestrator(signing_key.EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
   FakeFnContext fn_context(context);
 
@@ -249,7 +325,8 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaFailsWithoutInitializeReplica) 
 }
 
 TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnNullSigningKey) {
-  RunContextInitializerFn fn(nullptr);
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(nullptr, orchestrator.Client());
   testing::FakeContext context;
   FakeFnContext fn_context(context);
 
@@ -260,7 +337,8 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnNullSigningKey) {
 
 TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnSigningError) {
   FailingSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  FakeOrchestratorServer orchestrator(testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
   FakeFnContext fn_context(context);
 
@@ -269,9 +347,26 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnSigningError) {
               StatusIs(absl::StatusCode::kInternal));
 }
 
+TEST(RunContextInitializerFnTest, FinalizeReplicaFailsOnOrchestratorEvidenceError) {
+  testing::TestSigningKey signing_key;
+  testing::TestSigningKeyHandle key_handle(&signing_key);
+  FakeOrchestratorServer orchestrator(signing_key.EndorsedEvidence());
+  orchestrator.Service().SetStatus(
+      grpc::Status(grpc::StatusCode::UNAVAILABLE, "Orchestrator unavailable"));
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
+  testing::FakeContext context;
+  FakeFnContext fn_context(context);
+
+  ASSERT_THAT(fn.InitializeReplica(ToAny(CreateValidRunConfig()), context), IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context),
+              StatusIs(absl::StatusCode::kUnavailable));
+}
+
 TEST(RunContextInitializerFnTest, FinalizeReplicaEmitsSignedRunContextWithKeyIndex0) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn(&key_handle);
+  testing::TestSigningKey signing_key;
+  testing::TestSigningKeyHandle key_handle(&signing_key);
+  FakeOrchestratorServer orchestrator(signing_key.EndorsedEvidence());
+  RunContextInitializerFn fn(&key_handle, orchestrator.Client());
   testing::FakeContext context;
   FakeFnContext fn_context(context);
 
@@ -295,7 +390,8 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaEmitsSignedRunContextWithKeyInd
 
   SignedRunContext signed_run_context;
   ASSERT_TRUE(signed_run_context.ParseFromString(output_kv.data));
-  EXPECT_THAT(signed_run_context.signature(), Eq("test_signature_bytes"));
+  EXPECT_THAT(signed_run_context.signature(), Not(IsEmpty()));
+  EXPECT_TRUE(signed_run_context.has_endorsed_evidence());
 
   absl::StatusOr<RunContext> verified_run_context = VerifySignedRunContext(signed_run_context);
   ASSERT_THAT(verified_run_context, IsOk());
@@ -321,9 +417,11 @@ TEST(RunContextInitializerFnTest, FinalizeReplicaEmitsSignedRunContextWithKeyInd
 }
 
 TEST(RunContextInitializerFnTest, GeneratesUniqueCryptoRandomKeysPerCall) {
-  TestSigningKey key_handle;
-  RunContextInitializerFn fn1(&key_handle);
-  RunContextInitializerFn fn2(&key_handle);
+  testing::TestSigningKey signing_key;
+  testing::TestSigningKeyHandle key_handle(&signing_key);
+  FakeOrchestratorServer orchestrator(signing_key.EndorsedEvidence());
+  RunContextInitializerFn fn1(&key_handle, orchestrator.Client());
+  RunContextInitializerFn fn2(&key_handle, orchestrator.Client());
   testing::FakeContext context1;
   testing::FakeContext context2;
 

@@ -59,6 +59,9 @@ absl::Status RunContextInitializerFn::FinalizeReplica(google::protobuf::Any conf
   if (signing_key_handle_ == nullptr) {
     return absl::InternalError("SigningKeyHandle is null");
   }
+  if (orchestrator_client_ == nullptr) {
+    return absl::InternalError("OrchestratorClient is null");
+  }
 
   absl::StatusOr<std::string> run_id = GenerateRunId();
   if (!run_id.ok()) {
@@ -89,9 +92,16 @@ absl::Status RunContextInitializerFn::FinalizeReplica(google::protobuf::Any conf
     return signature.status();
   }
 
+  absl::StatusOr<oak::session::v1::EndorsedEvidence> endorsed_evidence =
+      orchestrator_client_->GetEndorsedEvidence();
+  if (!endorsed_evidence.ok()) {
+    return endorsed_evidence.status();
+  }
+
   SignedRunContext signed_run_context;
   signed_run_context.set_serialized_run_context(serialized_run_context);
   signed_run_context.set_signature(signature->signature());
+  *signed_run_context.mutable_endorsed_evidence() = std::move(*endorsed_evidence);
 
   context.IncrementCounter(kEncryptedOutputRecordCount);
   EmitEncrypted(context, std::move(config), signed_run_context).IgnoreError();

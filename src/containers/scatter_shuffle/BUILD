@@ -89,6 +89,7 @@ cc_test(
         "//src/proto:run_context_cc_proto",
         "//src/proto:scatter_shuffle_cc_proto",
         "//src/testing:fake_context",
+        "//src/testing:test_utils",
         "@abseil-cpp//absl/log:absl_check",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",

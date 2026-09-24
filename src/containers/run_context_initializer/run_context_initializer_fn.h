@@ -20,6 +20,7 @@
 #include <string>
 
 #include "absl/status/status.h"
+#include "cc/containers/sdk/orchestrator_client.h"
 #include "cc/crypto/signing_key.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/pipeline_nodes.h"
@@ -37,8 +38,9 @@ class RunContextInitializerFn
           EncryptsTo<Node::kRunContext>,
           EncryptedKV<google::protobuf::Any, SignedRunContext, Node::kRunContext>> {
  public:
-  explicit RunContextInitializerFn(oak::crypto::SigningKeyHandle* signing_key_handle)
-      : signing_key_handle_(signing_key_handle) {}
+  RunContextInitializerFn(oak::crypto::SigningKeyHandle* signing_key_handle,
+                          const oak::containers::sdk::OrchestratorClient* orchestrator_client)
+      : signing_key_handle_(signing_key_handle), orchestrator_client_(orchestrator_client) {}
 
   ~RunContextInitializerFn() override = default;
 
@@ -53,6 +55,7 @@ class RunContextInitializerFn
   using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
 
   oak::crypto::SigningKeyHandle* signing_key_handle_;
+  const oak::containers::sdk::OrchestratorClient* orchestrator_client_;
   std::optional<RunConfig> run_config_;
 };
 
