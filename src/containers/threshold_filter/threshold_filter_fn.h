@@ -56,9 +56,6 @@ class ThresholdFilterFn
 
   ~ThresholdFilterFn() override = default;
 
-  // Finalizes the replica, verifying that configuration was successfully received.
-  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
-
   // Accessors.
   const std::optional<cobalt::trusted_shuffler::RunContext>& RunContext() const {
     return run_context_;
@@ -82,6 +79,9 @@ class ThresholdFilterFn
 
   // Ingests incoming customer data records (Records 1..N) from partition grouping.
   absl::Status OnRecord(const ShuffledMessage& shuffled_message, DoContext& context) override;
+
+  // Finalizes the replica, verifying that configuration was successfully received.
+  absl::Status OnFinalize(google::protobuf::Any config, FnContext& context) override;
 
  private:
   using FnContext = confidential_federated_compute::fns::Fn::FnContext;

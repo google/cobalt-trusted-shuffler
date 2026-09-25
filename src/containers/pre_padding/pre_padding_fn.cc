@@ -28,10 +28,6 @@ namespace cobalt::trusted_shuffler {
 absl::Status PrePaddingFn::OnConfig(const IngestionVerificationPayload& config,
                                     DoContext& context) {
   context.IncrementCounter(kInputConfigCount);
-  if (is_finalized_) {
-    context.IncrementCounter(kInputConfigInvalid);
-    return absl::FailedPreconditionError("Replica is already finalized.");
-  }
   if (fault_handler_.HasFault()) {
     return fault_handler_.SignalFault(*this, context).ToStatus();
   }
@@ -48,9 +44,6 @@ absl::Status PrePaddingFn::OnConfig(const IngestionVerificationPayload& config,
 absl::Status PrePaddingFn::OnRecord(const ShuffledMessage& /*input*/, DoContext& context) {
   context.IncrementCounter(kInputRecordCount);
   context.IncrementCounter(kInputRecordDropped);
-  if (is_finalized_) {
-    return absl::FailedPreconditionError("Replica is already finalized.");
-  }
   if (fault_handler_.HasFault()) {
     return fault_handler_.SignalFault(*this, context).ToStatus();
   }
@@ -59,12 +52,7 @@ absl::Status PrePaddingFn::OnRecord(const ShuffledMessage& /*input*/, DoContext&
       .ToStatus();
 }
 
-absl::Status PrePaddingFn::FinalizeReplica(google::protobuf::Any /*config*/, FnContext& context) {
-  if (is_finalized_) {
-    return absl::FailedPreconditionError("Replica is already finalized.");
-  }
-  is_finalized_ = true;
-
+absl::Status PrePaddingFn::OnFinalize(google::protobuf::Any /*config*/, FnContext& context) {
   if (fault_handler_.HasFault()) {
     return fault_handler_.SignalFault(*this, context).ToStatus();
   }

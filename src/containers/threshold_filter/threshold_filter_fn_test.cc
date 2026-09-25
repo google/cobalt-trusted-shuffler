@@ -475,10 +475,21 @@ TEST(ThresholdFilterFnTest, OnConfigRejectsWhenAlreadyFaulted) {
   EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 }
 
-TEST(ThresholdFilterFnTest, FinalizeFailsWithoutConfig) {
+TEST(ThresholdFilterFnTest, FinalizeSucceedsWhenDoIsNeverCalled) {
   FakeContext context;
   ThresholdFilterFn fn;
 
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  EXPECT_THAT(context.Unencrypted(), IsEmpty());
+}
+
+TEST(ThresholdFilterFnTest, FinalizeFailsWhenConfigIsInvalid) {
+  FakeContext context;
+  ThresholdFilterFn fn;
+
+  EXPECT_THAT(fn.Do(KV(google::protobuf::Any(), ""), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }

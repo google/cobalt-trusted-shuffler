@@ -72,6 +72,29 @@ TEST(EncryptOutputRouterTest, DistributesMessagesAcrossTwoShardsWithVerification
   EXPECT_EQ((*shards)[1][1].data, "msg_1");
 }
 
+TEST(EncryptOutputRouterTest, ReturnsEmptyShardWhenNoGatheredMessagesProvided) {
+  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const absl::StatusOr<std::vector<KVCollection>> shards =
+      RouteToEncryptOutput(verification_payload, /*gathered_messages=*/{});
+  ASSERT_THAT(shards, IsOk());
+  ASSERT_THAT(*shards, SizeIs(1));
+  EXPECT_THAT((*shards)[0], IsEmpty());
+}
+
+TEST(EncryptOutputRouterTest, TwoShardRouterLeavesSecondShardEmptyWhenSingleMessageProvided) {
+  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const std::vector<EncryptedBlob> messages = {EncryptedBlob("msg_0")};
+
+  const absl::StatusOr<std::vector<KVCollection>> shards =
+      RouteToTwoShardEncryptOutput(verification_payload, messages);
+  ASSERT_THAT(shards, IsOk());
+  ASSERT_THAT(*shards, SizeIs(2));
+  ASSERT_THAT((*shards)[0], SizeIs(2));
+  EXPECT_EQ((*shards)[0][0].data, "verification_payload_bytes");
+  EXPECT_EQ((*shards)[0][1].data, "msg_0");
+  EXPECT_THAT((*shards)[1], IsEmpty());
+}
+
 TEST(EncryptOutputRouterTest, EmptyInputRouterReturnsSingleEmptyShard) {
   const EncryptedBlob verification_payload("verification_payload_bytes");
   const std::vector<EncryptedBlob> messages = {EncryptedBlob("msg_0")};

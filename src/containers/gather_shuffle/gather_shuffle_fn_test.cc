@@ -466,10 +466,21 @@ TEST(GatherShuffleFnTest, RejectsInvalidVerificationPayload) {
   EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 }
 
-TEST(GatherShuffleFnTest, FinalizeFailsWhenConfigWasNeverReceived) {
+TEST(GatherShuffleFnTest, FinalizeSucceedsWhenDoIsNeverCalled) {
   GatherShuffleFn fn;
   FakeContext context;
 
+  EXPECT_THAT(fn.FinalizeReplica(PackToAny(IngestionVerificationPayload()), context), IsOk());
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  EXPECT_THAT(context.Unencrypted(), IsEmpty());
+}
+
+TEST(GatherShuffleFnTest, FinalizeFailsWhenConfigIsInvalid) {
+  GatherShuffleFn fn;
+  FakeContext context;
+
+  EXPECT_THAT(fn.Do(GatherShuffleFn::KV(""), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(fn.FinalizeReplica(PackToAny(IngestionVerificationPayload()), context),
               StatusIs(absl::StatusCode::kFailedPrecondition,
                        HasSubstr("Configuration was not established")));

@@ -101,5 +101,13 @@ TEST(KeyReleaserRouterTest, FailsWhenDecryptionKeyReleaseContainsIntegrityFault)
       StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
+TEST(KeyReleaserRouterTest, FailsWhenKeyReleaserEmitsNoOutput) {
+  BlobStageOutputs key_releaser_output;
+
+  EXPECT_THAT(
+      DecryptAndRouteReleasedMessages(key_releaser_output, /*encrypted_message_outputs=*/{}),
+      StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
 }  // namespace
 }  // namespace cobalt::trusted_shuffler::testing::integration

@@ -662,10 +662,20 @@ TEST_F(KeyReleaserFnTest, NonPartialFingerprintInReportTriggersIntegrityFault) {
   ASSERT_THAT(context.Unencrypted(), SizeIs(1));
 }
 
-TEST_F(KeyReleaserFnTest, FinalizeWithoutRecord0EmitsIntegrityFault) {
+TEST_F(KeyReleaserFnTest, FinalizeSucceedsWhenDoIsNeverCalled) {
   KeyReleaserFn fn;
   FakeCombinedContext context;
 
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  EXPECT_THAT(context.Unencrypted(), IsEmpty());
+}
+
+TEST_F(KeyReleaserFnTest, FinalizeAfterInvalidConfigEmitsIntegrityFault) {
+  KeyReleaserFn fn;
+  FakeCombinedContext context;
+
+  EXPECT_THAT(fn.Do(KeyReleaserFn::KV(""), context), StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(
       fn.FinalizeReplica(google::protobuf::Any(), context),
       StatusIs(absl::StatusCode::kFailedPrecondition,
@@ -676,8 +686,7 @@ TEST_F(KeyReleaserFnTest, DoubleFinalizeReturnsFailedPrecondition) {
   KeyReleaserFn fn;
   FakeCombinedContext context;
 
-  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kFailedPrecondition, "Replica is already finalized."));
 }
@@ -686,8 +695,7 @@ TEST_F(KeyReleaserFnTest, DoAfterFinalizeReturnsFailedPrecondition) {
   KeyReleaserFn fn;
   FakeCombinedContext context;
 
-  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
 
   const absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
   ASSERT_THAT(release_key, IsOk());

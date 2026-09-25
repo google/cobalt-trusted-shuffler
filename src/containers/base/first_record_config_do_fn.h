@@ -64,6 +64,9 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
   // Intercepts input records and executes the configuration state machine.
   // Final to prevent subclasses from inadvertently bypassing configuration checks.
   absl::Status Do(KV input, DoContext& context) final {
+    if (is_finalized_) {
+      return absl::FailedPreconditionError("Replica is already finalized.");
+    }
     if (config_failure_.has_value()) {
       return absl::FailedPreconditionError(absl::StrCat(
           "Configuration failed on first record; cannot process records: ", *config_failure_));
@@ -104,8 +107,32 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
     }
   }
 
+  // Intercepts replica finalization and returns OkStatus when Do() was never called.
+  // Final to prevent subclasses from inadvertently bypassing unconfigured replica checks.
+  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) final {
+    if (is_finalized_) {
+      return absl::FailedPreconditionError("Replica is already finalized.");
+    }
+    if (!HasConfig() && !HasConfigFailure()) {
+      is_finalized_ = true;
+      return absl::OkStatus();
+    }
+    absl::Status status = OnFinalize(std::move(config), context);
+    if (status.ok()) {
+      is_finalized_ = true;
+    }
+    return status;
+  }
+
   // Returns true if configuration was successfully received, parsed, and validated.
   bool HasConfig() const { return config_.has_value(); }
+
+  // Returns true if the first record arrived and failed to parse or validate as
+  // configuration.
+  bool HasConfigFailure() const { return config_failure_.has_value(); }
+
+  // Returns true if the replica has been successfully finalized.
+  bool IsFinalized() const { return is_finalized_; }
 
   // Returns the parsed configuration proto if established, or std::nullopt.
   const std::optional<ConfigProto>& Config() const { return config_; }
@@ -119,9 +146,15 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
   // has succeeded.
   virtual absl::Status OnRecord(const RecordType& record, DoContext& context) = 0;
 
+  // Hook invoked during FinalizeReplica when Do() was called at least once.
+  virtual absl::Status OnFinalize(google::protobuf::Any config, FnContext& context) {
+    return absl::OkStatus();
+  }
+
  private:
   std::optional<ConfigProto> config_;
   std::optional<std::string> config_failure_;
+  bool is_finalized_ = false;
 };
 
 template <typename ConfigProto, typename RecordType>

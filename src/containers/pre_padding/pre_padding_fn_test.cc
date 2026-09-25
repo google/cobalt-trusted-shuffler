@@ -206,13 +206,27 @@ TEST(PrePaddingFnTest, RejectsAnyTrailingRecordsAndEmitsIntegrityFault) {
   ExpectIntegrityFaultEmitted(context);
 }
 
-TEST(PrePaddingFnTest, FinalizeReplicaReturnsErrorAndEmitsIntegrityFaultWhenNoConfigPresent) {
+TEST(PrePaddingFnTest, FinalizeReplicaSucceedsWhenDoIsNeverCalled) {
   PrePaddingFn fn;
   FakeContext context;
   FakeDoContext do_context(context);
 
   IngestionVerificationPayload empty_payload;
 
+  EXPECT_THAT(fn.FinalizeReplica(PackToAny(empty_payload), do_context), IsOk());
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  EXPECT_THAT(context.Unencrypted(), IsEmpty());
+}
+
+TEST(PrePaddingFnTest, FinalizeReplicaReturnsErrorAndEmitsIntegrityFaultWhenConfigIsInvalid) {
+  PrePaddingFn fn;
+  FakeContext context;
+  FakeDoContext do_context(context);
+
+  IngestionVerificationPayload empty_payload;
+
+  EXPECT_THAT(fn.Do(PrePaddingFn::KV(""), do_context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(fn.FinalizeReplica(PackToAny(empty_payload), do_context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 

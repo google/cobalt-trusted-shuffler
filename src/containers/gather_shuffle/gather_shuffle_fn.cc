@@ -121,7 +121,7 @@ absl::Status GatherShuffleFn::OnRecord(const ShuffledMessage& input, DoContext& 
   return absl::OkStatus();
 }
 
-absl::Status GatherShuffleFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
+absl::Status GatherShuffleFn::OnFinalize(google::protobuf::Any config, FnContext& context) {
   if (fault_handler_.HasFault()) {
     return fault_handler_.SignalFault(*this, context).ToStatus();
   }

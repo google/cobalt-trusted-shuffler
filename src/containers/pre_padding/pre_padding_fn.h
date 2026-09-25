@@ -42,21 +42,18 @@ class PrePaddingFn
   PrePaddingFn() = default;
   ~PrePaddingFn() override = default;
 
-  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
-
   bool HasIntegrityFault() const { return fault_handler_.HasFault(); }
-  bool IsFinalized() const { return is_finalized_; }
 
  protected:
   absl::Status OnConfig(const IngestionVerificationPayload& config, DoContext& context) override;
   absl::Status OnRecord(const ShuffledMessage& input, DoContext& context) override;
+  absl::Status OnFinalize(google::protobuf::Any config, FnContext& context) override;
 
  private:
   // Verified run context, approved partitions, and canonical ingestion fingerprint
   // unpacked from Record 0.
   std::optional<VerifiedIngestionVerificationResult> verified_result_;
 
-  bool is_finalized_ = false;
   IntegrityFaultHandler<NoKey> fault_handler_;
 };
 

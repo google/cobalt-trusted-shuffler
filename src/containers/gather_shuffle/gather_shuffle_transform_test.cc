@@ -114,7 +114,7 @@ TEST(GatherShuffleTransformTest, FnFactoryCreatedFnExecutesLifecycleAndEmitsShuf
   }
 }
 
-TEST(GatherShuffleTransformTest, FnFactoryCreatedFnEmitsIntegrityFaultWhenNoConfigProvided) {
+TEST(GatherShuffleTransformTest, FnFactoryCreatedFnFinalizeReplicaSucceedsWhenDoIsNeverCalled) {
   const GatherShuffleFnFactory factory;
   absl::StatusOr<std::unique_ptr<Fn>> fn_or = factory.CreateFn();
   ASSERT_THAT(fn_or, IsOk());
@@ -122,6 +122,22 @@ TEST(GatherShuffleTransformTest, FnFactoryCreatedFnEmitsIntegrityFaultWhenNoConf
 
   FakeCombinedContext context;
   ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  EXPECT_THAT(context.Unencrypted(), IsEmpty());
+}
+
+TEST(GatherShuffleTransformTest, FnFactoryCreatedFnEmitsIntegrityFaultWhenConfigIsInvalid) {
+  const GatherShuffleFnFactory factory;
+  absl::StatusOr<std::unique_ptr<Fn>> fn_or = factory.CreateFn();
+  ASSERT_THAT(fn_or, IsOk());
+  std::unique_ptr<Fn> fn = std::move(*fn_or);
+  auto* const do_fn = dynamic_cast<DoFn*>(fn.get());
+  ASSERT_NE(do_fn, nullptr);
+
+  FakeCombinedContext context;
+  ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(do_fn->Do(DoFn::KV(""), context), StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 

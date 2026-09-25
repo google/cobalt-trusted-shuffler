@@ -56,9 +56,6 @@ class IngestUploadsFn
 
   IngestUploadsFn() = default;
 
-  // Finalizes this Fn replica, building and emitting the PartialIngestionReport.
-  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
-
   bool IsMetricAllowed(const int32_t project_id, const int32_t metric_id) const;
   bool IsEpochInBounds(Epoch epoch) const;
 
@@ -70,6 +67,9 @@ class IngestUploadsFn
 
   // Ingests incoming client log records on records 1..N.
   absl::Status OnRecord(const std::string& record_data, DoContext& context) override;
+
+  // Finalizes this Fn replica, building and emitting the PartialIngestionReport.
+  absl::Status OnFinalize(google::protobuf::Any config, FnContext& context) override;
 
  private:
   using FnContext = confidential_federated_compute::fns::Fn::FnContext;

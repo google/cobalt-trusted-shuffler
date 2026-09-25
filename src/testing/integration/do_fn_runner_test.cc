@@ -136,5 +136,18 @@ TEST(DoFnRunnerTest, FinalizeReplicaFailsDiscardsEmittedOutputs) {
   EXPECT_TRUE(do_fn.finalize_called());
 }
 
+TEST(DoFnRunnerTest, EmptyInputStreamRunsInitializeAndFinalizeWithoutCallingDo) {
+  FakeLifecycleDoFn do_fn({});
+  const absl::StatusOr<BlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = {}});
+
+  ASSERT_TRUE(result.ok());
+  EXPECT_TRUE(do_fn.init_called());
+  EXPECT_EQ(do_fn.do_call_count(), 0);
+  EXPECT_TRUE(do_fn.finalize_called());
+  EXPECT_EQ(result->unencrypted.size(), 1);
+  EXPECT_EQ(result->unencrypted[0].plaintext(), "finalize_summary");
+}
+
 }  // namespace
 }  // namespace cobalt::trusted_shuffler::testing::integration

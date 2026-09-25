@@ -705,10 +705,23 @@ TEST_F(EncryptOutputFnTest, ProcessPaddingMessageDoesNotEmitAndIsIgnored) {
   EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
 }
 
-TEST_F(EncryptOutputFnTest, FinalizeReplicaBeforeConfigTriggersFault) {
+TEST_F(EncryptOutputFnTest, FinalizeReplicaWhenDoIsNeverCalledSucceeds) {
   EncryptOutputFn fn;
   FakeContext context;
 
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  EXPECT_THAT(context.Unencrypted(), IsEmpty());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition, "Replica is already finalized."));
+}
+
+TEST_F(EncryptOutputFnTest, FinalizeReplicaAfterInvalidConfigTriggersFault) {
+  EncryptOutputFn fn;
+  FakeContext context;
+
+  EXPECT_THAT(fn.Do(EncryptOutputFn::KV(""), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(
       fn.FinalizeReplica(google::protobuf::Any(), context),
       StatusIs(absl::StatusCode::kFailedPrecondition,
@@ -883,11 +896,14 @@ TEST_F(EncryptOutputFnTest, FinalizeReplicaAfterConfigFaultRejectsWithGenericInt
 }
 
 TEST_F(EncryptOutputFnTest,
-       FinalizeReplicaBeforeConfigThenSubsequentFinalizeRejectsWithGenericIntegrityFault) {
+       FinalizeReplicaAfterInvalidConfigThenSubsequentFinalizeRejectsWithGenericIntegrityFault) {
   EncryptOutputFn fn;
   FakeContext context;
 
-  // First FinalizeReplica before config logs/returns specific fault reason.
+  EXPECT_THAT(fn.Do(EncryptOutputFn::KV(""), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+
+  // First FinalizeReplica after invalid config logs/returns specific fault reason.
   EXPECT_THAT(
       fn.FinalizeReplica(google::protobuf::Any(), context),
       StatusIs(absl::StatusCode::kFailedPrecondition,

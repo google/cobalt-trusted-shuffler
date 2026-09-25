@@ -47,11 +47,7 @@ class KeyReleaserFn
   KeyReleaserFn() = default;
   ~KeyReleaserFn() override = default;
 
-  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
-
   bool HasIntegrityFault() const { return has_integrity_fault_; }
-
-  bool IsFinalized() const { return is_finalized_; }
 
   const std::optional<cobalt::trusted_shuffler::RunContext>& RunContext() const {
     return run_context_;
@@ -66,6 +62,8 @@ class KeyReleaserFn
 
   absl::Status OnRecord(const PartialReleaseReport& report, DoContext& context) override;
 
+  absl::Status OnFinalize(google::protobuf::Any config, FnContext& context) override;
+
  private:
   absl::Status EmitIntegrityFault(absl::string_view reason, FnContext& context);
 
@@ -74,9 +72,6 @@ class KeyReleaserFn
 
   // Ensures at most one DecryptionKeyRelease record is emitted across the replica lifecycle.
   bool has_emitted_output_ = false;
-
-  // Tracks whether FinalizeReplica has already been invoked.
-  bool is_finalized_ = false;
 
   // Verified RunContext unpacked from the Record 0 IngestionVerificationPayload.
   std::optional<cobalt::trusted_shuffler::RunContext> run_context_;
