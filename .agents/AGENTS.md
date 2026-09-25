@@ -227,7 +227,7 @@ When ready for production release, failing to update Kokoro will cause builds an
    cp -Rp ./bazel-bin/src/containers/foo_bar/* ${KOKORO_ARTIFACTS_DIR}/foo_bar/.
    ```
 2. **`kokoro/rbe/presubmit.cfg` & `kokoro/rbe/continuous.cfg`**:
-   Add fileset artifact destination:
+   Add fileset artifact destination (keep the list of `fileset_artifacts` entries alphabetized by `name`):
    ```protobuf
    fileset_artifacts {
      name: "foo_bar"
@@ -327,6 +327,6 @@ Before completing a task or submitting a change:
 - [ ] Tests verify that confidential data is emitted via `EmitEncrypted`/`EmitReleasable` and never `EmitUnencrypted`.
 - [ ] Tests avoid backdoor constructors, using `InitializeReplica` and designated initializers.
 - [ ] Container `README.md` and `src/containers/README.md` updated.
-- [ ] If container is production-ready, `build.sh` and Kokoro configs updated; if WIP, kept excluded from Kokoro with `TODO(b/...)` comments.
+- [ ] If container is production-ready, `build.sh` and Kokoro configs updated (keeping `fileset_artifacts` alphabetized by `name`); if WIP, kept excluded from Kokoro with `TODO(b/...)` comments.
 - [ ] `git restore MODULE.bazel.lock` run if the lockfile was modified unintentionally.
 - [ ] All code formatted with `.clang-format` and license header included.
