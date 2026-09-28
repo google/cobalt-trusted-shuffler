@@ -63,10 +63,6 @@ class ScatterShuffleFn
   ScatterShuffleFn();
   ~ScatterShuffleFn() override = default;
 
-  // Finalizes the replica session: validates batch size, cryptographically shuffles,
-  // assigns group IDs, increments shuffle_count, and emits re-encrypted records.
-  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
-
   // Accessor for testing and inspection.
   const std::optional<BatchParameters>& CurrentBatchParameters() const { return batch_parameters_; }
 
@@ -78,6 +74,10 @@ class ScatterShuffleFn
   // Ingests incoming batch messages (records 1..N), validating invariants and establishing batch
   // parameters.
   absl::Status OnRecord(const ShuffledMessage& message, DoContext& context) override;
+
+  // Finalizes the replica session: validates batch size, cryptographically shuffles,
+  // assigns group IDs, increments shuffle_count, and emits re-encrypted records.
+  absl::Status OnFinalize(google::protobuf::Any config, FnContext& context) override;
 
  private:
   using FnContext = confidential_federated_compute::fns::Fn::FnContext;

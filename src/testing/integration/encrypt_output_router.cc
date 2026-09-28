@@ -29,6 +29,9 @@ namespace cobalt::trusted_shuffler::testing::integration {
 
 absl::StatusOr<std::vector<KVCollection>> RouteToEncryptOutput(
     const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> gathered_messages) {
+  if (gathered_messages.empty()) {
+    return std::vector<KVCollection>{{}};
+  }
   KVCollection shard;
   shard.reserve(1 + gathered_messages.size());
   shard.push_back(verification_payload.ToKV());
@@ -41,11 +44,12 @@ absl::StatusOr<std::vector<KVCollection>> RouteToEncryptOutput(
 absl::StatusOr<std::vector<KVCollection>> RouteToTwoShardEncryptOutput(
     const EncryptedBlob& verification_payload, absl::Span<const EncryptedBlob> gathered_messages) {
   std::vector<KVCollection> shards(2);
-  shards[0].push_back(verification_payload.ToKV());
-  shards[1].push_back(verification_payload.ToKV());
-
   for (size_t i = 0; i < gathered_messages.size(); ++i) {
-    shards[i % 2].push_back(gathered_messages[i].ToKV());
+    KVCollection& shard = shards[i % 2];
+    if (shard.empty()) {
+      shard.push_back(verification_payload.ToKV());
+    }
+    shard.push_back(gathered_messages[i].ToKV());
   }
   return shards;
 }

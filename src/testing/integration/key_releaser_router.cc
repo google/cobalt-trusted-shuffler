@@ -77,6 +77,9 @@ absl::StatusOr<KVCollection> RouteToKeyReleaserWithLateVerificationPayload(
 absl::StatusOr<absl::flat_hash_map<MetricEpochKey, std::vector<std::string>>>
 DecryptAndRouteReleasedMessages(const BlobStageOutputs& key_releaser_output,
                                 absl::Span<const UnencryptedBlob> encrypted_message_outputs) {
+  if (key_releaser_output.unencrypted.empty()) {
+    return absl::FailedPreconditionError("KeyReleaserFn did not emit a DecryptionKeyRelease.");
+  }
   if (key_releaser_output.unencrypted.size() != 1) {
     return absl::InternalError(
         absl::StrCat("Expected KeyReleaserFn to emit exactly 1 unencrypted "

@@ -67,10 +67,6 @@ class IngestionVerificationFn
   // Logs the project id, metric id, and threshold combinations from config constraints.
   absl::Status InitializeReplica(google::protobuf::Any config, Context& context) override;
 
-  // Evaluates unique device counts against reporting thresholds, constructs
-  // canonical fingerprint and threshold report, and emits dual verification output.
-  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
-
   const TrustedShufflerConfigConstraints& ConfigConstraints() const { return config_constraints_; }
 
  protected:
@@ -81,6 +77,10 @@ class IngestionVerificationFn
 
   // Ingests incoming PartialIngestionReport records from IngestUploads workers.
   absl::Status OnRecord(const PartialIngestionReport& report, DoContext& context) override;
+
+  // Evaluates unique device counts against reporting thresholds, constructs
+  // canonical fingerprint and threshold report, and emits dual verification output.
+  absl::Status OnFinalize(google::protobuf::Any config, FnContext& context) override;
 
  private:
   using FnContext = confidential_federated_compute::fns::Fn::FnContext;

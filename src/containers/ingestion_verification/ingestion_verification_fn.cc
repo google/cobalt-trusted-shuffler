@@ -131,8 +131,7 @@ absl::Status IngestionVerificationFn::OnRecord(const PartialIngestionReport& rep
   return absl::OkStatus();
 }
 
-absl::Status IngestionVerificationFn::FinalizeReplica(google::protobuf::Any config,
-                                                      FnContext& context) {
+absl::Status IngestionVerificationFn::OnFinalize(google::protobuf::Any config, FnContext& context) {
   if (fault_handler_.HasFault()) {
     return fault_handler_.SignalFault(*this, context).ToStatus();
   }

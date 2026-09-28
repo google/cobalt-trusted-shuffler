@@ -133,7 +133,7 @@ absl::Status IngestUploadsFn::OnRecord(const std::string& record_data, DoContext
   return absl::OkStatus();
 }
 
-absl::Status IngestUploadsFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
+absl::Status IngestUploadsFn::OnFinalize(google::protobuf::Any config, FnContext& context) {
   if (!multiset_fingerprint_.has_value()) {
     return absl::FailedPreconditionError(
         "RunContext configuration was not received before FinalizeReplica");

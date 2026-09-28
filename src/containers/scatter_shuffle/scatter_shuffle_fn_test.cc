@@ -653,10 +653,21 @@ TEST(ScatterShuffleFnTest, RejectsInvalidTargetBatchSize) {
                        "IntegrityFault: Failed to verify SignedRunContext."));
 }
 
-TEST(ScatterShuffleFnTest, RejectsFinalizeWithoutConfig) {
+TEST(ScatterShuffleFnTest, FinalizeSucceedsWhenDoIsNeverCalled) {
   FakeContext context;
   ScatterShuffleFn fn;
 
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  EXPECT_THAT(context.Unencrypted(), IsEmpty());
+}
+
+TEST(ScatterShuffleFnTest, RejectsFinalizeWhenConfigIsInvalid) {
+  FakeContext context;
+  ScatterShuffleFn fn;
+
+  EXPECT_THAT(fn.Do(ScatterShuffleFn::KV(""), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(
       fn.FinalizeReplica(google::protobuf::Any(), context),
       StatusIs(absl::StatusCode::kFailedPrecondition,

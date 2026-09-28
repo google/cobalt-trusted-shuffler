@@ -262,7 +262,7 @@ void ExpectIntegrityFaultEmitted(const FakeContext& context) {
   EXPECT_THAT(context.Encrypted(), IsEmpty());
 }
 
-TEST(IngestionVerificationFnTest, FinalizeReplicaWithoutConfigEmitsIntegrityFault) {
+TEST(IngestionVerificationFnTest, FinalizeReplicaSucceedsWhenDoIsNeverCalled) {
   const MetricThresholdSpec specs[] = {
       {.project_id = 1001, .metric_id = 2, .threshold = 50},
   };
@@ -271,6 +271,22 @@ TEST(IngestionVerificationFnTest, FinalizeReplicaWithoutConfigEmitsIntegrityFaul
   FakeContext context;
 
   ASSERT_THAT(fn.InitializeReplica(google::protobuf::Any(), context), IsOk());
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  EXPECT_THAT(context.Unencrypted(), IsEmpty());
+}
+
+TEST(IngestionVerificationFnTest, FinalizeReplicaAfterInvalidConfigEmitsIntegrityFault) {
+  const MetricThresholdSpec specs[] = {
+      {.project_id = 1001, .metric_id = 2, .threshold = 50},
+  };
+  const auto constraints = CreateConfigConstraints(specs);
+  IngestionVerificationFn fn(constraints);
+  FakeContext context;
+
+  ASSERT_THAT(fn.InitializeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(""), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 

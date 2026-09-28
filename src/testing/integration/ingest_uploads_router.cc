@@ -33,6 +33,9 @@ namespace {
 
 KVCollection BuildShardInputs(const EncryptedBlob& signed_run_context,
                               absl::Span<const std::string> checkpoints) {
+  if (checkpoints.empty()) {
+    return KVCollection{};
+  }
   KVCollection inputs;
   inputs.reserve(1 + checkpoints.size());
   inputs.push_back(signed_run_context.ToKV());

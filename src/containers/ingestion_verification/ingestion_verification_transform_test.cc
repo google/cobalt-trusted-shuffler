@@ -255,7 +255,7 @@ TEST(IngestionVerificationTransformTest, FnFactoryCreatedFnExecutesLifecycleAndE
 }
 
 TEST(IngestionVerificationTransformTest,
-     FnFactoryCreatedFnEmitsIntegrityFaultWhenNoConfigProvided) {
+     FnFactoryCreatedFnFinalizeReplicaSucceedsWhenDoIsNeverCalled) {
   const auto factory_or = ProvideFnFactory({{.project_id = 1001, .metric_id = 2, .threshold = 10}});
   ASSERT_THAT(factory_or, IsOk());
 
@@ -265,6 +265,25 @@ TEST(IngestionVerificationTransformTest,
 
   FakeContext context;
   ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
+  ASSERT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+  EXPECT_THAT(context.Unencrypted(), IsEmpty());
+}
+
+TEST(IngestionVerificationTransformTest, FnFactoryCreatedFnEmitsIntegrityFaultWhenConfigIsInvalid) {
+  const auto factory_or = ProvideFnFactory({{.project_id = 1001, .metric_id = 2, .threshold = 10}});
+  ASSERT_THAT(factory_or, IsOk());
+
+  auto fn_or = (*factory_or)->CreateFn();
+  ASSERT_THAT(fn_or, IsOk());
+  std::unique_ptr<Fn> fn = std::move(fn_or.value());
+  auto* do_fn = dynamic_cast<confidential_federated_compute::fns::DoFn*>(fn.get());
+  ASSERT_NE(do_fn, nullptr);
+
+  FakeContext context;
+  ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(do_fn->Do(confidential_federated_compute::fns::DoFn::KV(""), context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 

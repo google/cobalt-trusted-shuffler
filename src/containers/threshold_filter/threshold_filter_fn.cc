@@ -115,7 +115,7 @@ absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message
   return absl::OkStatus();
 }
 
-absl::Status ThresholdFilterFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
+absl::Status ThresholdFilterFn::OnFinalize(google::protobuf::Any config, FnContext& context) {
   if (!HasConfig()) {
     return absl::FailedPreconditionError(
         "ThresholdFilterFn::FinalizeReplica called before IngestionVerificationPayload "

@@ -81,10 +81,6 @@ absl::Status ValidatePartialReleaseFingerprint(
 absl::Status KeyReleaserFn::OnConfig(const IngestionVerificationPayload& config,
                                      DoContext& context) {
   context.IncrementCounter(kInputConfigCount);
-  if (is_finalized_) {
-    context.IncrementCounter(kInputConfigInvalid);
-    return absl::FailedPreconditionError("Replica is already finalized.");
-  }
   if (has_integrity_fault_) {
     context.IncrementCounter(kInputConfigInvalid);
     return EmitIntegrityFault("Replica previously encountered an integrity fault.", context);
@@ -121,9 +117,6 @@ absl::Status KeyReleaserFn::OnConfig(const IngestionVerificationPayload& config,
 
 absl::Status KeyReleaserFn::OnRecord(const PartialReleaseReport& report, DoContext& context) {
   context.IncrementCounter(kInputRecordCount);
-  if (is_finalized_) {
-    return absl::FailedPreconditionError("Replica is already finalized.");
-  }
   if (has_integrity_fault_) {
     return EmitIntegrityFault("Replica previously encountered an integrity fault.", context);
   }
@@ -156,12 +149,7 @@ absl::Status KeyReleaserFn::EmitIntegrityFault(absl::string_view reason, FnConte
   return absl::FailedPreconditionError(reason);
 }
 
-absl::Status KeyReleaserFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
-  if (is_finalized_) {
-    return absl::FailedPreconditionError("Replica is already finalized.");
-  }
-  is_finalized_ = true;
-
+absl::Status KeyReleaserFn::OnFinalize(google::protobuf::Any config, FnContext& context) {
   if (!HasConfig() || has_integrity_fault_ || !multiset_fingerprint_.has_value() ||
       !canonical_fingerprint_.has_value()) {
     return EmitIntegrityFault(

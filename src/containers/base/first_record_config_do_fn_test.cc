@@ -91,11 +91,13 @@ TEST(FirstRecordConfigDoFnTest, IngestsConfigOnRecordZeroAndRoutesSubsequentReco
   FakeDoContext do_context(context);
 
   EXPECT_FALSE(fn.HasConfig());
+  EXPECT_FALSE(fn.HasConfigFailure());
 
   RunConfig config = CreateValidConfig(101, 202, 50);
   EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV(config.SerializeAsString()), do_context), IsOk());
 
   EXPECT_TRUE(fn.HasConfig());
+  EXPECT_FALSE(fn.HasConfigFailure());
   ASSERT_TRUE(fn.Config().has_value());
   EXPECT_THAT(fn.Config()->target_batch_size(), Eq(50));
 
@@ -121,6 +123,7 @@ TEST(FirstRecordConfigDoFnTest, FailsOnEmptyFirstRecordAndRejectsSubsequentRecor
   EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV(""), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_FALSE(fn.HasConfig());
+  EXPECT_TRUE(fn.HasConfigFailure());
 
   // One-shot semantics: subsequent records are rejected.
   ShuffledMessage msg = CreateMessage("run1", 1, 1, "payload");
@@ -137,6 +140,7 @@ TEST(FirstRecordConfigDoFnTest, FailsOnCorruptedConfigProtoAndRejectsSubsequentR
   EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV("\xff\xff\xff\xff"), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_FALSE(fn.HasConfig());
+  EXPECT_TRUE(fn.HasConfigFailure());
 
   // One-shot semantics: subsequent records are rejected.
   ShuffledMessage msg = CreateMessage("run1", 1, 1, "payload");
@@ -153,6 +157,7 @@ TEST(FirstRecordConfigDoFnTest, OnConfigFailureRejectsSubsequentRecords) {
   EXPECT_THAT(fn.Do(TestFirstRecordDoFn::KV(config.SerializeAsString()), do_context),
               StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_FALSE(fn.HasConfig());
+  EXPECT_TRUE(fn.HasConfigFailure());
 
   // One-shot semantics: subsequent records (even if valid config) are rejected.
   RunConfig valid_config = CreateValidConfig(101, 202, 50);
@@ -231,6 +236,81 @@ TEST(FirstRecordConfigDoFnTest, RoutesRawStringRecordsWithoutProtobufParsing) {
   EXPECT_THAT(fn.Do(TestRawBytesFirstRecordDoFn::KV(raw_checkpoint_bytes), do_context), IsOk());
   ASSERT_THAT(fn.ReceivedPayloads(), SizeIs(1));
   EXPECT_THAT(fn.ReceivedPayloads()[0], Eq(raw_checkpoint_bytes));
+}
+
+class TestFinalizableFirstRecordDoFn : public FirstRecordConfigDoFn<RunConfig, ShuffledMessage> {
+ public:
+  int OnFinalizeCallCount() const { return on_finalize_call_count_; }
+
+ protected:
+  absl::Status OnConfig(const RunConfig& config, DoContext& /*context*/) override {
+    if (config.target_batch_size() <= 0) {
+      return absl::InvalidArgumentError("Invalid target_batch_size");
+    }
+    return absl::OkStatus();
+  }
+
+  absl::Status OnRecord(const ShuffledMessage& /*record*/, DoContext& /*context*/) override {
+    return absl::OkStatus();
+  }
+
+  absl::Status OnFinalize(google::protobuf::Any /*config*/, FnContext& /*context*/) override {
+    ++on_finalize_call_count_;
+    if (!HasConfig()) {
+      return absl::FailedPreconditionError("Config was not established before FinalizeReplica.");
+    }
+    return absl::OkStatus();
+  }
+
+ private:
+  int on_finalize_call_count_ = 0;
+};
+
+TEST(FirstRecordConfigDoFnTest, FinalizeReplicaSucceedsWithoutCallingOnFinalizeWhenDoNeverCalled) {
+  TestFinalizableFirstRecordDoFn fn;
+  FakeContext context;
+  FakeDoContext do_context(context);
+
+  EXPECT_FALSE(fn.IsFinalized());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), do_context), IsOk());
+  EXPECT_TRUE(fn.IsFinalized());
+  EXPECT_THAT(fn.OnFinalizeCallCount(), Eq(0));
+
+  // Subsequent FinalizeReplica and Do calls are rejected once finalized.
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), do_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  RunConfig config = CreateValidConfig(101, 202, 50);
+  EXPECT_THAT(fn.Do(TestFinalizableFirstRecordDoFn::KV(config.SerializeAsString()), do_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+}
+
+TEST(FirstRecordConfigDoFnTest, FinalizeReplicaDelegatesToOnFinalizeWhenConfigFailed) {
+  TestFinalizableFirstRecordDoFn fn;
+  FakeContext context;
+  FakeDoContext do_context(context);
+
+  EXPECT_THAT(fn.Do(TestFinalizableFirstRecordDoFn::KV(""), do_context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_TRUE(fn.HasConfigFailure());
+
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), do_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(fn.OnFinalizeCallCount(), Eq(1));
+  EXPECT_FALSE(fn.IsFinalized());
+}
+
+TEST(FirstRecordConfigDoFnTest, FinalizeReplicaDelegatesToOnFinalizeWhenConfigured) {
+  TestFinalizableFirstRecordDoFn fn;
+  FakeContext context;
+  FakeDoContext do_context(context);
+
+  RunConfig config = CreateValidConfig(101, 202, 50);
+  ASSERT_THAT(fn.Do(TestFinalizableFirstRecordDoFn::KV(config.SerializeAsString()), do_context),
+              IsOk());
+
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), do_context), IsOk());
+  EXPECT_THAT(fn.OnFinalizeCallCount(), Eq(1));
+  EXPECT_TRUE(fn.IsFinalized());
 }
 
 }  // namespace

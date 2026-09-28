@@ -1389,7 +1389,7 @@ TEST(ShufflerFlowIntegrationTest,
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
-TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenKeyReleaserReceivesEmptyInput) {
+TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenKeyReleaserDoesNotEmitDecryptionKeyRelease) {
   const int32_t project_id = 1001;
   const int32_t metric_id = 2;
   TestSigningKey signing_key;
@@ -1413,7 +1413,8 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenKeyReleaserReceivesEmptyInput
   routers.key_releaser_router = RouteToKeyReleaserWithEmptyInput;
 
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
-              StatusIs(absl::StatusCode::kFailedPrecondition));
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "KeyReleaserFn did not emit a DecryptionKeyRelease."));
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenKeyReleaserReceivesLateVerificationPayload) {
@@ -1441,6 +1442,109 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenKeyReleaserReceivesLateVerifi
 
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
               StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(ShufflerFlowIntegrationTest,
+     PipelineSucceedsWithZeroOutputRecordsWhenAllUploadsAreFilteredAtIngestion) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/5, /*batch_size=*/2);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+
+  // Every checkpoint is invalid or out of epoch bounds, so IngestUploads emits
+  // 0 ingested messages and 1 partial report with an empty fingerprint.
+  // Downstream ThresholdFilter and EncryptOutput replicas receive empty input
+  // streams where Do is never called and FinalizeReplica succeeds as a no-op.
+  const std::vector<std::string> checkpoints = {
+      "malformed_checkpoint_bytes",
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "out_of_bounds_epoch_payload",
+          .event_time = "1970-01-21T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+  };
+
+  absl::StatusOr<PipelineExecutionResult> result =
+      ExecutePipeline(PipelineRouters{}, signing_key, run_config, constraints, checkpoints);
+  ASSERT_THAT(result, IsOk());
+
+  EXPECT_THAT(result->ingest_uploads_output.encrypted, SizeIs(1));
+  EXPECT_THAT(result->threshold_filter_output.encrypted, IsEmpty());
+  EXPECT_THAT(result->pre_padding_output.encrypted, IsEmpty());
+  EXPECT_THAT(result->scatter_shuffle_output.encrypted, IsEmpty());
+  EXPECT_THAT(result->gather_shuffle_output.encrypted, IsEmpty());
+  EXPECT_THAT(result->encrypt_output_output.unencrypted, IsEmpty());
+  EXPECT_THAT(result->encrypt_output_output.encrypted, IsEmpty());
+  EXPECT_THAT(result->released_customer_messages, IsEmpty());
+}
+
+TEST(ShufflerFlowIntegrationTest,
+     PipelineSucceedsWhenMultiShardStagesHaveIdleReplicasWhereDoIsNeverCalled) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/1);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+  };
+
+  PipelineRouters routers;
+  // With 1 checkpoint, RouteToTwoShardIngestUploads and RouteToTwoShardEncryptOutput
+  // each produce one active shard and one empty shard (KVCollection{}) where Do is
+  // never called. Append an idle empty shard to ScatterShuffle and GatherShuffle as well.
+  routers.ingest_uploads_router = RouteToTwoShardIngestUploads;
+  routers.scatter_shuffle_router = [](const EncryptedBlob& verification_payload,
+                                      int32_t target_batch_size,
+                                      absl::Span<const EncryptedKVBlob> threshold_filter_messages,
+                                      absl::Span<const EncryptedKVBlob> pre_padding_messages)
+      -> absl::StatusOr<std::vector<KVCollection>> {
+    absl::StatusOr<std::vector<KVCollection>> batches = RouteToScatterShuffle(
+        verification_payload, target_batch_size, threshold_filter_messages, pre_padding_messages);
+    if (!batches.ok()) {
+      return batches.status();
+    }
+    batches->push_back(KVCollection{});
+    return batches;
+  };
+  routers.gather_shuffle_router = [](const EncryptedBlob& verification_payload,
+                                     absl::Span<const EncryptedKVBlob> scatter_shuffle_messages)
+      -> absl::StatusOr<std::vector<KVCollection>> {
+    absl::StatusOr<std::vector<KVCollection>> groups =
+        RouteToGatherShuffle(verification_payload, scatter_shuffle_messages);
+    if (!groups.ok()) {
+      return groups.status();
+    }
+    groups->push_back(KVCollection{});
+    return groups;
+  };
+  routers.encrypt_output_router = RouteToTwoShardEncryptOutput;
+
+  absl::StatusOr<PipelineExecutionResult> result =
+      ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints);
+  ASSERT_THAT(result, IsOk());
+
+  const MetricEpochKey partition =
+      CreateMetricEpochKey({.project_id = project_id, .metric_id = metric_id, .epoch_index = 0});
+  ASSERT_TRUE(result->released_customer_messages.contains(partition));
+  EXPECT_THAT(result->released_customer_messages.at(partition), UnorderedElementsAre("payload_0"));
 }
 
 }  // namespace

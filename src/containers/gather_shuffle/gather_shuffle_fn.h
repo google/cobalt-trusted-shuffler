@@ -51,13 +51,12 @@ class GatherShuffleFn
   GatherShuffleFn() = default;
   ~GatherShuffleFn() override = default;
 
-  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
-
   bool HasIntegrityFault() const { return fault_handler_.HasFault(); }
 
  protected:
   absl::Status OnConfig(const IngestionVerificationPayload& config, DoContext& context) override;
   absl::Status OnRecord(const ShuffledMessage& input, DoContext& context) override;
+  absl::Status OnFinalize(google::protobuf::Any config, FnContext& context) override;
 
  private:
   IntegrityFaultHandler<NoKey> fault_handler_;

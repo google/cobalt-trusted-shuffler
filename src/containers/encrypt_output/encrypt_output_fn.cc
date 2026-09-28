@@ -76,9 +76,6 @@ absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, DoContext
   if (fault_handler_.HasFault()) {
     return fault_handler_.SignalFault(*this, context).ToStatus();
   }
-  if (is_finalized_) {
-    return absl::FailedPreconditionError("Replica is already finalized.");
-  }
 
   if (message.shuffle_count() != 2) {
     return fault_handler_.SignalFault("Message shuffle_count must be exactly 2.", *this, context)
@@ -126,20 +123,15 @@ absl::Status EncryptOutputFn::OnRecord(const ShuffledMessage& message, DoContext
   return absl::OkStatus();
 }
 
-absl::Status EncryptOutputFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
+absl::Status EncryptOutputFn::OnFinalize(google::protobuf::Any config, FnContext& context) {
   if (fault_handler_.HasFault()) {
     return fault_handler_.SignalFault(*this, context).ToStatus();
   }
-  if (is_finalized_) {
-    return absl::FailedPreconditionError("Replica is already finalized.");
-  }
-  if (!HasConfig() || !Config().has_value()) {
+  if (!HasConfig()) {
     return fault_handler_
         .SignalFault("Configuration was not established before FinalizeReplica.", *this, context)
         .ToStatus();
   }
-
-  is_finalized_ = true;
 
   // Emit the partial release fingerprint encrypted for the downstream key
   // release verification stage. The untrusted orchestrator collects these

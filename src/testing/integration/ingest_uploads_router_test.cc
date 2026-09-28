@@ -113,6 +113,21 @@ TEST(IngestUploadsRouterTest, RouteToTwoShardIngestUploadsSplitsCheckpointsAcros
   EXPECT_EQ((*result)[1][2].data, "cp_3");
 }
 
+TEST(IngestUploadsRouterTest,
+     RouteToTwoShardIngestUploadsLeavesIdleShardEmptyWhenSingleCheckpointProvided) {
+  const EncryptedBlob signed_run_context("ctx_ciphertext");
+  const std::vector<std::string> checkpoints = {"cp_1"};
+
+  const absl::StatusOr<std::vector<KVCollection>> result =
+      RouteToTwoShardIngestUploads(signed_run_context, checkpoints);
+  ASSERT_THAT(result.status(), IsOk());
+  ASSERT_THAT(*result, SizeIs(2));
+  EXPECT_THAT((*result)[0], IsEmpty());
+  ASSERT_THAT((*result)[1], SizeIs(2));
+  EXPECT_EQ((*result)[1][0].data, "ctx_ciphertext");
+  EXPECT_EQ((*result)[1][1].data, "cp_1");
+}
+
 TEST(IngestUploadsRouterTest, RouteToIngestUploadsWithLateRunContextPlacesRunContextLast) {
   const EncryptedBlob signed_run_context("ctx_ciphertext");
   const std::vector<std::string> checkpoints = {"cp_1"};

@@ -455,5 +455,27 @@ TEST(IngestUploadsFnTest, DropsCorruptedRecordPayload) {
   EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
 }
 
+TEST(IngestUploadsFnTest, FinalizeReplicaSucceedsWhenDoIsNeverCalled) {
+  testing::FakeContext context;
+  testing::FakeFnContext fn_context(context);
+  IngestUploadsFn fn;
+
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context), IsOk());
+  EXPECT_THAT(context.Encrypted(), SizeIs(0));
+}
+
+TEST(IngestUploadsFnTest, FinalizeReplicaFailsAfterInvalidConfig) {
+  testing::FakeContext context;
+  testing::FakeDoContext do_context(context);
+  testing::FakeFnContext fn_context(context);
+  IngestUploadsFn fn;
+
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(""), do_context),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(context.Encrypted(), SizeIs(0));
+}
+
 }  // namespace
 }  // namespace cobalt::trusted_shuffler

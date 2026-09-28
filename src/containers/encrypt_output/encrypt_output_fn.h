@@ -66,10 +66,6 @@ class EncryptOutputFn
   EncryptOutputFn();
   ~EncryptOutputFn() override = default;
 
-  // Finalizes the replica by emitting PartialReleaseReport encrypted for the
-  // downstream key release verification stage.
-  absl::Status FinalizeReplica(google::protobuf::Any config, FnContext& context) override;
-
  protected:
   // Hook invoked for Record 0 containing IngestionVerificationPayload.
   absl::Status OnConfig(const IngestionVerificationPayload& ingestion_verification_payload,
@@ -78,8 +74,11 @@ class EncryptOutputFn
   // Hook invoked for all subsequent records (records 1..N).
   absl::Status OnRecord(const ShuffledMessage& message, DoContext& context) override;
 
+  // Finalizes the replica by emitting PartialReleaseReport encrypted for the
+  // downstream key release verification stage.
+  absl::Status OnFinalize(google::protobuf::Any config, FnContext& context) override;
+
  private:
-  bool is_finalized_ = false;
   std::optional<ReleaseEncrypter> release_encrypter_;
   std::string run_id_;
   std::optional<MultisetFingerprint> fingerprint_;

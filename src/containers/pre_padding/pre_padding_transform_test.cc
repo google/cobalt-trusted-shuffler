@@ -104,7 +104,7 @@ TEST(PrePaddingTransformTest, FnFactoryCreatedFnExecutesLifecycleAndEmitsPadding
   EXPECT_THAT(padding_msg.metric_epoch_key().epoch_index(), Eq(50));
 }
 
-TEST(PrePaddingTransformTest, FnFactoryCreatedFnEmitsIntegrityFaultWhenNoConfigProvided) {
+TEST(PrePaddingTransformTest, FnFactoryCreatedFnFinalizeReplicaSucceedsWhenDoIsNeverCalled) {
   const PrePaddingFnFactory factory;
   absl::StatusOr<std::unique_ptr<Fn>> fn_or = factory.CreateFn();
   ASSERT_THAT(fn_or, IsOk());
@@ -112,6 +112,22 @@ TEST(PrePaddingTransformTest, FnFactoryCreatedFnEmitsIntegrityFaultWhenNoConfigP
 
   FakeCombinedContext context;
   ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(context.Encrypted(), SizeIs(0));
+  EXPECT_THAT(context.Unencrypted(), SizeIs(0));
+}
+
+TEST(PrePaddingTransformTest, FnFactoryCreatedFnEmitsIntegrityFaultWhenConfigIsInvalid) {
+  const PrePaddingFnFactory factory;
+  absl::StatusOr<std::unique_ptr<Fn>> fn_or = factory.CreateFn();
+  ASSERT_THAT(fn_or, IsOk());
+  std::unique_ptr<Fn> fn = std::move(*fn_or);
+  auto* const do_fn = dynamic_cast<DoFn*>(fn.get());
+  ASSERT_NE(do_fn, nullptr);
+
+  FakeCombinedContext context;
+  ASSERT_THAT(fn->InitializeReplica(google::protobuf::Any(), context), IsOk());
+  EXPECT_THAT(do_fn->Do(DoFn::KV(""), context), StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(fn->FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
 

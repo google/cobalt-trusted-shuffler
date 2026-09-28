@@ -120,7 +120,7 @@ absl::Status ScatterShuffleFn::OnRecord(const ShuffledMessage& message, DoContex
   return absl::OkStatus();
 }
 
-absl::Status ScatterShuffleFn::FinalizeReplica(google::protobuf::Any config, FnContext& context) {
+absl::Status ScatterShuffleFn::OnFinalize(google::protobuf::Any config, FnContext& context) {
   if (!HasConfig() || !verified_result_.has_value()) {
     return fault_handler_
         .SignalFault("Configuration was not established before FinalizeReplica.", *this, context)
