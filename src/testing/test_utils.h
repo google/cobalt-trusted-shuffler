@@ -163,8 +163,8 @@ inline ShuffledMessage CreateShuffledMessage(const ShuffledMessageSpec& spec) {
   return msg;
 }
 
-// Builds an IngestionVerificationPayload containing a ThresholdReport with approved partitions
-// and the signed run context.
+// Builds an IngestionVerificationPayload containing a ThresholdReport with approved partitions,
+// the signed run context, and a canonical ingestion fingerprint with no partition entries.
 inline IngestionVerificationPayload CreateThresholdReportPayload(
     absl::string_view run_id, absl::Span<const MetricEpochSpec> approved_specs,
     const SignedRunContext& signed_run_context) {
@@ -179,6 +179,10 @@ inline IngestionVerificationPayload CreateThresholdReportPayload(
     partition->set_epoch_index(spec.epoch_index);
   }
   *success->mutable_signed_run_context() = signed_run_context;
+  auto* fingerprint = success->mutable_canonical_fingerprint();
+  fingerprint->set_run_id(std::string(run_id));
+  fingerprint->set_stage_id(cobalt::trusted_shuffler::STAGE_INGESTION);
+  fingerprint->set_is_partial(false);
   return payload;
 }
 

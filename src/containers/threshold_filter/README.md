@@ -33,11 +33,7 @@ In the Trusted Shuffler architecture:
 
 The container uses `FirstRecordConfigDoFn<IngestionVerificationPayload>`:
 - **`IngestionVerificationPayload`** ([`src/proto/ingestion.proto`](../../proto/ingestion.proto)):
-  - Ingested on record 0 as the single configuration record via `FirstRecordConfigDoFn::OnConfig`:
-    - Contains `IngestionVerificationResult` which holds `SignedRunContext` and `ThresholdReport`.
-    - Extracts `SignedRunContext` and verifies cryptographic signature and runtime parameters (`run_id`, `run_hash_key`, `metric_identifiers`, epoch range, batch size) via `VerifySignedRunContext`.
-    - Verifies that `ThresholdReport.run_id == RunContext.run_id`.
-    - Caches the set of `approved_partitions`.
+  - Ingested on record 0 as the single configuration record via `FirstRecordConfigDoFn::OnConfig`, validated via `VerifyIngestionVerificationPayload` to obtain the `VerifiedIngestionVerificationResult`, from which it caches `run_context` and `approved_partitions`.
 
 ---
 
@@ -47,7 +43,7 @@ The container uses `FirstRecordConfigDoFn<IngestionVerificationPayload>`:
 
 1. **Record 0: Configuration (`IngestionVerificationPayload`)**:
    - Ingests and verifies the execution configuration proto and approved partition report.
-   - If `integrity_fault` is present, or if `run_id` mismatches, or if `signed_run_context` fails verification, returns an error and halts processing under one-shot failure semantics.
+   - If `IngestionVerificationPayload` validation fails, the container emits a single unencrypted `IntegrityFault` message (`src/proto/common.proto`) and returns `FAILED_PRECONDITION`.
 
 2. **Records 1..N: Grouped Messages Stream (from Partition Grouping `GroupByMetricEpochKey`)**:
    - **Key**: Stripped/empty (or optional `MetricEpochKey` header).

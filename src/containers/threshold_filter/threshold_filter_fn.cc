@@ -33,38 +33,21 @@
 
 namespace cobalt::trusted_shuffler {
 
-using ::cobalt::trusted_shuffler::RunContext;
-using ::cobalt::trusted_shuffler::SignedRunContext;
-
 absl::Status ThresholdFilterFn::OnConfig(const IngestionVerificationPayload& config,
                                          DoContext& context) {
   context.IncrementCounter(kInputConfigCount);
-  if (fault_handler_.HasFault() || config.has_integrity_fault()) {
+  absl::StatusOr<VerifiedIngestionVerificationResult> verified_result =
+      VerifyIngestionVerificationPayload(config);
+  if (!verified_result.ok()) {
     context.IncrementCounter(kInputConfigInvalid);
-    return fault_handler_
-        .SignalFault("Ingestion verification failed with integrity fault.", *this, context)
+    return fault_handler_.SignalFault(verified_result.status().message(), *this, context)
         .ToStatus();
   }
 
-  if (!config.has_success()) {
-    context.IncrementCounter(kInputConfigInvalid);
-    return absl::InvalidArgumentError(
-        "IngestionVerificationPayload must contain either success (threshold_report) or "
-        "integrity_fault.");
-  }
-
-  absl::StatusOr<VerifiedIngestionVerificationResult> verified_result =
-      VerifyIngestionVerificationResult(config.success());
-  if (!verified_result.ok()) {
-    context.IncrementCounter(kInputConfigInvalid);
-    return verified_result.status();
-  }
-
   run_context_ = std::move(verified_result->run_context);
-  signed_run_context_ = config.success().signed_run_context();
   approved_partitions_ = std::move(verified_result->approved_partitions);
   has_verification_report_ = true;
-  LOG(INFO) << "SignedRunContext received and validated in OnConfig.";
+  LOG(INFO) << "IngestionVerificationPayload received and validated in OnConfig.";
 
   return absl::OkStatus();
 }

@@ -38,9 +38,8 @@ namespace cobalt::trusted_shuffler {
 //
 // Inside a confidential TEE enclave:
 // - Record 0: Ingests IngestionVerificationPayload via FirstRecordConfigDoFn::OnConfig().
-//   Extracts SignedRunContext from IngestionVerificationResult, verifies the cryptographic
-//   signature and runtime parameters, validates the run ID against ThresholdReport, and
-//   populates approved partitions that met the device threshold.
+//   Validates it via VerifyIngestionVerificationPayload and caches the verified RunContext and
+//   approved partitions that met the device threshold.
 // - Records 1..N: Ingests ShuffledMessages from partition grouping via OnRecord().
 //   Validates that the message run_id matches RunContext and shuffle_count is 0.
 //   Forwards ShuffledMessages matching approved partitions encrypted to the kFilteredMessages
@@ -59,9 +58,6 @@ class ThresholdFilterFn
   // Accessors.
   const std::optional<cobalt::trusted_shuffler::RunContext>& RunContext() const {
     return run_context_;
-  }
-  const std::optional<cobalt::trusted_shuffler::SignedRunContext>& SignedRunContext() const {
-    return signed_run_context_;
   }
   const std::optional<IngestionVerificationPayload>& VerificationPayload() const {
     return Config();
@@ -88,7 +84,6 @@ class ThresholdFilterFn
   using DoContext = confidential_federated_compute::fns::DoFn::DoContext;
 
   std::optional<cobalt::trusted_shuffler::RunContext> run_context_;
-  std::optional<cobalt::trusted_shuffler::SignedRunContext> signed_run_context_;
   absl::flat_hash_set<MetricEpochKey> approved_partitions_;
   IntegrityFaultHandler<IntegrityFault> fault_handler_;
   bool has_verification_report_ = false;

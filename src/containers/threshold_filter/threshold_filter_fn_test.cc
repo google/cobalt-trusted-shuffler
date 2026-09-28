@@ -61,6 +61,12 @@ KV CreateMessageKV(const MetricEpochKey& key, const ShuffledMessage& msg) {
   return KV(std::move(any_key), msg.SerializeAsString());
 }
 
+void ExpectIntegrityFaultEmitted(const FakeContext& context) {
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  IntegrityFault fault;
+  EXPECT_TRUE(context.Unencrypted().at(0).key.UnpackTo(&fault));
+}
+
 TEST(ThresholdFilterFnTest, InitializeReplicaReturnsOk) {
   FakeContext context;
   ThresholdFilterFn fn;
@@ -80,7 +86,6 @@ TEST(ThresholdFilterFnTest, ConfigSucceedsWithValidVerificationPayload) {
   ASSERT_THAT(fn.Do(CreateVerificationKV(report_payload), context), IsOk());
   EXPECT_TRUE(fn.HasConfig());
   EXPECT_TRUE(fn.HasVerificationReport());
-  EXPECT_TRUE(fn.SignedRunContext().has_value());
   EXPECT_TRUE(fn.RunContext().has_value());
   EXPECT_TRUE(fn.VerificationPayload().has_value());
   EXPECT_EQ(fn.ApprovedPartitionCount(), 1);
@@ -131,9 +136,7 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithIntegrityFault) {
   auto fault_payload = CreateIntegrityFaultPayload();
   EXPECT_THAT(fn.Do(CreateVerificationKV(fault_payload), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
-  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
-  IntegrityFault fault;
-  EXPECT_TRUE(context.Unencrypted().at(0).key.UnpackTo(&fault));
+  ExpectIntegrityFaultEmitted(context);
 
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
@@ -158,8 +161,9 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithMissingSignedRunContext) {
   success->mutable_threshold_report()->set_run_id(std::string(kTestRunId));
 
   EXPECT_THAT(fn.Do(CreateVerificationKV(payload), context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_FALSE(fn.HasConfig());
+  ExpectIntegrityFaultEmitted(context);
 }
 
 TEST(ThresholdFilterFnTest, ConfigFailsWithMissingThresholdReport) {
@@ -174,8 +178,9 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithMissingThresholdReport) {
   *success->mutable_signed_run_context() = signed_context;
 
   EXPECT_THAT(fn.Do(CreateVerificationKV(payload), context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_FALSE(fn.HasConfig());
+  ExpectIntegrityFaultEmitted(context);
 }
 
 TEST(ThresholdFilterFnTest, ConfigFailsWithEmptySignatureOnSignedRunContext) {
@@ -191,8 +196,9 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithEmptySignatureOnSignedRunContext) {
       kTestRunId, {{.project_id = 10, .metric_id = 1, .epoch_index = 150}}, signed_context);
 
   EXPECT_THAT(fn.Do(CreateVerificationKV(report_payload), context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_FALSE(fn.HasConfig());
+  ExpectIntegrityFaultEmitted(context);
 }
 
 TEST(ThresholdFilterFnTest, ConfigFailsWithInvalidRunContext) {
@@ -207,8 +213,9 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithInvalidRunContext) {
       "short_id", {{.project_id = 10, .metric_id = 1, .epoch_index = 150}}, signed_context);
 
   EXPECT_THAT(fn.Do(CreateVerificationKV(report_payload), context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_FALSE(fn.HasConfig());
+  ExpectIntegrityFaultEmitted(context);
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
@@ -227,6 +234,7 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithRunIdMismatch) {
   EXPECT_THAT(fn.Do(CreateVerificationKV(report_payload), context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_FALSE(fn.HasConfig());
+  ExpectIntegrityFaultEmitted(context);
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
@@ -241,8 +249,26 @@ TEST(ThresholdFilterFnTest, ConfigFailsWithInvalidApprovedPartitionBounds) {
       kTestRunId, {{.project_id = 0, .metric_id = 1, .epoch_index = 150}}, signed_context);
 
   EXPECT_THAT(fn.Do(CreateVerificationKV(report_payload), context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_FALSE(fn.HasConfig());
+  ExpectIntegrityFaultEmitted(context);
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
+}
+
+TEST(ThresholdFilterFnTest, ConfigFailsWithMissingCanonicalFingerprint) {
+  FakeContext context;
+  ThresholdFilterFn fn;
+
+  RunContext run_context = CreateValidRunContext({{10, 1}}, 100, 200, 50);
+  SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
+  auto report_payload = CreateThresholdReportPayload(
+      kTestRunId, {{.project_id = 10, .metric_id = 1, .epoch_index = 150}}, signed_context);
+  report_payload.mutable_success()->clear_canonical_fingerprint();
+
+  EXPECT_THAT(fn.Do(CreateVerificationKV(report_payload), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_FALSE(fn.HasConfig());
+  ExpectIntegrityFaultEmitted(context);
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
 }
 
@@ -445,32 +471,6 @@ TEST(ThresholdFilterFnTest, OnRecordRejectsWhenAlreadyFaulted) {
       .shuffle_count = 0,
   });
   EXPECT_THAT(fn.Do(KV(valid_msg.SerializeAsString()), context),
-              StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
-}
-
-class TestThresholdFilterFn : public ThresholdFilterFn {
- public:
-  using ThresholdFilterFn::OnConfig;
-};
-
-TEST(ThresholdFilterFnTest, OnConfigRejectsWhenAlreadyFaulted) {
-  FakeContext context;
-  TestThresholdFilterFn fn;
-
-  // Trigger an integrity fault on the first config.
-  auto fault_payload = CreateIntegrityFaultPayload();
-  EXPECT_THAT(fn.OnConfig(fault_payload, context), StatusIs(absl::StatusCode::kFailedPrecondition));
-  EXPECT_THAT(context.Unencrypted(), SizeIs(1));
-
-  // Verify that subsequent OnConfig call rejects because fault_handler_.HasFault() is true; fault
-  // is emitted at most once.
-  RunContext run_context = CreateValidRunContext({{10, 1}}, 100, 200, 50);
-  SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
-  auto report_payload = CreateThresholdReportPayload(
-      kTestRunId, {{.project_id = 10, .metric_id = 1, .epoch_index = 150}}, signed_context);
-
-  EXPECT_THAT(fn.OnConfig(report_payload, context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(context.Unencrypted(), SizeIs(1));
 }
