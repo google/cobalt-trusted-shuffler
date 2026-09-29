@@ -30,3 +30,14 @@ It parses client device uploads (`TrustedShufflerUpload` as well as `ClientPaylo
 
 - **`Node::kIngestedMessages`** (access policy node 2): Used for emitted encrypted messages.
 - **`Node::kPartialIngestionReports`** (access policy node 3): Used for emitted partial ingestion reports.
+
+---
+
+## Integrity Faults
+
+If the `SignedRunContext` on record 0 fails verification, or configuration was never established
+before finalization, the container emits a single **unencrypted** record keyed by an
+`IngestMessagesHeader` with `integrity_fault` set and an empty `IntegrityFault` payload, increments
+`integrity_fault-count`, and aborts the session with `FAILED_PRECONDITION`. No `ShuffledMessage` or
+`PartialIngestionReport` is emitted for a faulted replica. The fault record never contains
+`run_id`, `run_hash_key`, `release_key`, or any client data.

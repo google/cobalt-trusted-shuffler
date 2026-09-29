@@ -440,8 +440,10 @@ TEST(ShufflerFlowIntegrationTest,
       .ingestion_verification_router = RouteToIngestionVerificationWithLateRunContext,
   };
 
+  // The first partial ingestion report parses as a SignedRunContext but fails verification, so
+  // ingestion_verification signals an integrity fault.
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenSecondShardAbortsInMultiShardStage) {

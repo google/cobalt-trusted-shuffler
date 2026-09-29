@@ -65,14 +65,12 @@ absl::Status IngestionVerificationFn::InitializeReplica(google::protobuf::Any co
 absl::Status IngestionVerificationFn::OnConfig(
     const cobalt::trusted_shuffler::SignedRunContext& signed_run_context, DoContext& context) {
   context.IncrementCounter(kInputConfigCount);
-  if (fault_handler_.HasFault()) {
-    return fault_handler_.SignalFault(*this, context).ToStatus();
-  }
   const absl::StatusOr<RunContext> verified_run_context =
       VerifySignedRunContext(signed_run_context);
   if (!verified_run_context.ok()) {
     context.IncrementCounter(kInputConfigInvalid);
-    return verified_run_context.status();
+    return fault_handler_.SignalFault(verified_run_context.status().message(), *this, context)
+        .ToStatus();
   }
   run_id_ = verified_run_context->run_id();
   multiset_fingerprint_.emplace(Stage::STAGE_INGESTION, /*is_partial=*/false, *verified_run_context,

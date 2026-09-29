@@ -35,13 +35,21 @@
 
 namespace cobalt::trusted_shuffler {
 
+IngestUploadsFn::IngestUploadsFn()
+    : fault_handler_([]() {
+        IngestMessagesHeader header;
+        header.mutable_integrity_fault();
+        return header;
+      }()) {}
+
 absl::Status IngestUploadsFn::OnConfig(const SignedRunContext& signed_run_context,
                                        DoContext& context) {
   context.IncrementCounter(kInputConfigCount);
   absl::StatusOr<RunContext> verified_run_context = VerifySignedRunContext(signed_run_context);
   if (!verified_run_context.ok()) {
     context.IncrementCounter(kInputConfigInvalid);
-    return verified_run_context.status();
+    return fault_handler_.SignalFault(verified_run_context.status().message(), *this, context)
+        .ToStatus();
   }
   run_context_ = *std::move(verified_run_context);
   allowed_metric_identifiers_.clear();
@@ -134,9 +142,14 @@ absl::Status IngestUploadsFn::OnRecord(const std::string& record_data, DoContext
 }
 
 absl::Status IngestUploadsFn::OnFinalize(google::protobuf::Any config, FnContext& context) {
+  if (fault_handler_.HasFault()) {
+    return fault_handler_.SignalFault(*this, context).ToStatus();
+  }
   if (!multiset_fingerprint_.has_value()) {
-    return absl::FailedPreconditionError(
-        "RunContext configuration was not received before FinalizeReplica");
+    return fault_handler_
+        .SignalFault("RunContext configuration was not established before FinalizeReplica.", *this,
+                     context)
+        .ToStatus();
   }
   PartialIngestionReport report;
   *report.mutable_partial_fingerprint() = multiset_fingerprint_->Build();

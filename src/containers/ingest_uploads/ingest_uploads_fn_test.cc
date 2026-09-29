@@ -255,8 +255,9 @@ TEST(IngestUploadsFnTest, FailsOnMissingRunConfig) {
   signed_context.set_signature("test_signature");
 
   EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), do_context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
+  EXPECT_TRUE(fn.HasIntegrityFault());
 }
 
 TEST(IngestUploadsFnTest, FailsOnEmptyMetricIdentifiers) {
@@ -277,8 +278,9 @@ TEST(IngestUploadsFnTest, FailsOnEmptyMetricIdentifiers) {
   signed_context.set_signature("test_signature");
 
   EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), do_context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
+  EXPECT_TRUE(fn.HasIntegrityFault());
 }
 
 TEST(IngestUploadsFnTest, FailsOnEmptySignature) {
@@ -292,8 +294,40 @@ TEST(IngestUploadsFnTest, FailsOnEmptySignature) {
   signed_context.clear_signature();
 
   EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), do_context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
+  EXPECT_TRUE(fn.HasIntegrityFault());
+}
+
+TEST(IngestUploadsFnTest, EmitsSingleIntegrityFaultOnInvalidSignedRunContext) {
+  testing::FakeContext context;
+  testing::FakeDoContext do_context(context);
+  testing::FakeFnContext fn_context(context);
+  IngestUploadsFn fn;
+
+  SignedRunContext signed_context = CreateValidSignedRunContext(
+      /*project_id=*/1, /*metric_id=*/100, kTestRunId, /*min_epoch_index=*/0,
+      /*max_epoch_index=*/10);
+  signed_context.clear_signature();
+
+  EXPECT_THAT(fn.Do(IngestUploadsFn::KV(signed_context.SerializeAsString()), do_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(fn.Do(CreateBlobRecord("checkpoint_data"), do_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+
+  // Exactly one fault is emitted unencrypted, keyed by an IngestMessagesHeader with
+  // integrity_fault set, and no confidential data is emitted.
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  IngestMessagesHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), IngestMessagesHeader::kIntegrityFault);
+  IntegrityFault fault;
+  ASSERT_TRUE(fault.ParseFromString(context.Unencrypted()[0].data));
+  EXPECT_THAT(context.Encrypted(), SizeIs(0));
+  EXPECT_THAT(context.GetCounters().at(std::string(kIntegrityFaultCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kUnencryptedOutputRecordCount)), Eq(1));
 }
 
 TEST(IngestUploadsFnTest, AllowsOnlyEpochZeroWhenMinAndMaxEpochAreZero) {
@@ -475,6 +509,11 @@ TEST(IngestUploadsFnTest, FinalizeReplicaFailsAfterInvalidConfig) {
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), fn_context),
               StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_THAT(context.Encrypted(), SizeIs(0));
+  EXPECT_TRUE(fn.HasIntegrityFault());
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  IngestMessagesHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), IngestMessagesHeader::kIntegrityFault);
 }
 
 }  // namespace

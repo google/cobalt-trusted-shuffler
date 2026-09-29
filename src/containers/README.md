@@ -27,7 +27,7 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | Container | Role & Purpose | Data Visibility & Emission | Protos / Config |
 | :--- | :--- | :--- | :--- |
 | [`run_context_initializer`](run_context_initializer/) | Bootstraps the pipeline execution. Validates `RunConfig`, generates cryptographically secure `run_id`, `run_hash_key`, and `release_key`, and signs the `RunContext`. | Emits encrypted `SignedRunContext` to the `kRunContext` data node for downstream TEE stages. | [`src/proto/run_context.proto`](../proto/run_context.proto) |
-| [`ingest_uploads`](ingest_uploads/) | Ingests device uploads, validates metric identifiers and epoch bounds against `SignedRunContext`, and updates HyperLogLog cardinality sketches and `MultisetFingerprint`. | Emits encrypted `ShuffledMessage` records to the `kIngestedMessages` data node and `PartialIngestionReport` outputs to `kPartialIngestionReports`. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
+| [`ingest_uploads`](ingest_uploads/) | Ingests device uploads, validates metric identifiers and epoch bounds against `SignedRunContext`, and updates HyperLogLog cardinality sketches and `MultisetFingerprint`. | Emits encrypted `ShuffledMessage` records to the `kIngestedMessages` data node and `PartialIngestionReport` outputs to `kPartialIngestionReports`; emits `IntegrityFault` (keyed by `IngestMessagesHeader`) via `EmitUnencrypted` on configuration failure. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`message_counter`](message_counter/) | Counts incoming messages while forwarding them. Outputs a final count summary report. | Emits messages encrypted (`OutputKey.type = MESSAGE`) and final `CountReport` unencrypted (`OutputKey.type = REPORT`). | [`src/proto/message_counter/`](../proto/message_counter/) |
 | [`releaser`](releaser/) | Unconditionally releases messages passed from upstream confidential stages. | Emits messages unencrypted via `EmitUnencrypted` at the pipeline's privacy/release boundary. | None (empty config) |
 | [`simple`](simple/) | Proof-of-concept identity transform. Buffers incoming blobs and forwards them. | Emits buffered blobs encrypted with key index 0 upon commit. | None (empty config) |
@@ -57,6 +57,7 @@ The **`run_context_initializer`** container is executed **first** in the pipelin
 The **`ingest_uploads`** container is responsible for the First Ingestion Stage of device uploads in the Trusted Shuffler.
 
 - **Purpose**: Parses client device uploads (`TrustedShufflerUpload` and `ClientPayload` input envelopes), validates metric identifiers and epoch bounds against `SignedRunContext`, updates per-partition HyperLogLog (`HllSketch`) sketches and `MultisetFingerprint`, and emits encrypted `ShuffledMessage` records and `PartialIngestionReport` outputs.
+- **Outputs**: Emits encrypted `ShuffledMessage` records to `Node::kIngestedMessages` and `PartialIngestionReport` to `Node::kPartialIngestionReports` via `EmitEncrypted`. Emits `IntegrityFault` (keyed by `IngestMessagesHeader`) via `EmitUnencrypted` on configuration failure.
 - **Documentation**: See [`src/containers/ingest_uploads/README.md`](ingest_uploads/README.md).
 
 ---

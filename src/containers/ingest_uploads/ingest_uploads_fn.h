@@ -26,7 +26,9 @@
 #include "absl/container/flat_hash_set.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/integrity_fault.h"
 #include "src/containers/base/pipeline_nodes.h"
+#include "src/containers/base/with_outputs.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/ingestion.pb.h"
@@ -44,22 +46,25 @@ namespace cobalt::trusted_shuffler {
 //   and initializes multiset fingerprinting for the run.
 // - Records 1..N: Ingests client log upload checkpoints via OnRecord(), validates metric/epoch,
 //   updates HLL sketches and multiset fingerprint, and emits encrypted ShuffledMessage records.
+// On configuration verification failure, emits an unencrypted IntegrityFault keyed by an
+// IngestMessagesHeader with integrity_fault set, and aborts the session.
 class IngestUploadsFn
     : public FirstRecordConfigDoFn<SignedRunContext, std::string>::WithOutputs<
           EncryptsTo<Node::kIngestedMessages, Node::kPartialIngestionReports>,
           EncryptedKV<IngestMessagesHeader, ShuffledMessage, Node::kIngestedMessages>,
-          EncryptedKV<IngestMessagesHeader, PartialIngestionReport,
-                      Node::kPartialIngestionReports>> {
+          EncryptedKV<IngestMessagesHeader, PartialIngestionReport, Node::kPartialIngestionReports>,
+          UnencryptedKV<IngestMessagesHeader, IntegrityFault>> {
  public:
   // Project ID, Metric ID, and Epoch Index tuple identifying a data partition.
   using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;
 
-  IngestUploadsFn() = default;
+  IngestUploadsFn();
 
   bool IsMetricAllowed(const int32_t project_id, const int32_t metric_id) const;
   bool IsEpochInBounds(Epoch epoch) const;
 
   const RunContext& GetRunContext() const { return run_context_; }
+  bool HasIntegrityFault() const { return fault_handler_.HasFault(); }
 
  protected:
   // Ingests SignedRunContext on record 0 and initializes session state.
@@ -79,6 +84,7 @@ class IngestUploadsFn
   absl::flat_hash_set<std::pair<int32_t, int32_t>> allowed_metric_identifiers_;
   std::optional<MultisetFingerprint> multiset_fingerprint_;
   std::map<MetricEpochTuple, HllSketch> sketches_;
+  IntegrityFaultHandler<IngestMessagesHeader> fault_handler_;
 };
 
 }  // namespace cobalt::trusted_shuffler

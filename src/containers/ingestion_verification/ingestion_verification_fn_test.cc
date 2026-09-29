@@ -207,7 +207,17 @@ TEST(IngestionVerificationFnTest, CorruptedOrInvalidSignedRunContextPayloadRetur
   EXPECT_FALSE(fn.HasConfig());
 }
 
-TEST(IngestionVerificationFnTest, CorruptedInnerRunContextReturnsError) {
+void ExpectIntegrityFaultEmitted(const FakeContext& context) {
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  IngestionVerificationHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_TRUE(header.has_integrity_fault());
+  IntegrityFault fault;
+  EXPECT_TRUE(fault.ParseFromString(context.Unencrypted()[0].data));
+  EXPECT_THAT(context.Encrypted(), IsEmpty());
+}
+
+TEST(IngestionVerificationFnTest, CorruptedInnerRunContextEmitsIntegrityFault) {
   const MetricThresholdSpec specs[] = {
       {.project_id = 1001, .metric_id = 2, .threshold = 50},
   };
@@ -221,12 +231,13 @@ TEST(IngestionVerificationFnTest, CorruptedInnerRunContextReturnsError) {
   signed_context.set_signature("valid_signature");
 
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(signed_context.SerializeAsString()), context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_FALSE(fn.HasConfig());
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
+  ExpectIntegrityFaultEmitted(context);
 }
 
-TEST(IngestionVerificationFnTest, InvalidRunContextInSignedRunContextReturnsError) {
+TEST(IngestionVerificationFnTest, InvalidRunContextInSignedRunContextEmitsIntegrityFault) {
   const MetricThresholdSpec specs[] = {
       {.project_id = 1001, .metric_id = 2, .threshold = 50},
   };
@@ -237,9 +248,16 @@ TEST(IngestionVerificationFnTest, InvalidRunContextInSignedRunContextReturnsErro
   SignedRunContext signed_context = CreateValidSignedRunContext(1001, 2, "");
 
   EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(signed_context.SerializeAsString()), context),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kFailedPrecondition));
   EXPECT_FALSE(fn.HasConfig());
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigInvalid)), Eq(1));
+  ExpectIntegrityFaultEmitted(context);
+
+  // Finalization does not re-emit the fault.
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+  ExpectIntegrityFaultEmitted(context);
+  EXPECT_THAT(context.GetCounters().at(std::string(kIntegrityFaultCount)), Eq(1));
 }
 
 TEST(IngestionVerificationFnTest, ConfigConstraintsAccessor) {
@@ -250,16 +268,6 @@ TEST(IngestionVerificationFnTest, ConfigConstraintsAccessor) {
   IngestionVerificationFn fn(constraints);
   EXPECT_THAT(fn.ConfigConstraints().metric_thresholds(),
               ElementsAre(EquivToProto(constraints.metric_thresholds(0))));
-}
-
-void ExpectIntegrityFaultEmitted(const FakeContext& context) {
-  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
-  IngestionVerificationHeader header;
-  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
-  EXPECT_TRUE(header.has_integrity_fault());
-  IntegrityFault fault;
-  EXPECT_TRUE(fault.ParseFromString(context.Unencrypted()[0].data));
-  EXPECT_THAT(context.Encrypted(), IsEmpty());
 }
 
 TEST(IngestionVerificationFnTest, FinalizeReplicaSucceedsWhenDoIsNeverCalled) {
