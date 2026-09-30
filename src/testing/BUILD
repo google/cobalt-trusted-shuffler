@@ -40,6 +40,20 @@ cc_library(
 )
 
 cc_library(
+    name = "fake_orchestrator",
+    testonly = True,
+    hdrs = ["fake_orchestrator.h"],
+    deps = [
+        "@grpc//:grpc++",
+        "@oak//cc/containers/sdk:orchestrator_client",
+        "@oak//proto/containers:interfaces_cc_grpc",
+        "@oak//proto/session:messages_cc_proto",
+        "@protobuf//:protobuf",
+    ],
+)
+
+
+cc_library(
     name = "matchers",
     testonly = True,
     hdrs = ["matchers.h"],
@@ -65,8 +79,20 @@ cc_library(
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/strings",
         "@abseil-cpp//absl/types:span",
+        "@oak//cc/crypto:signing_key",
+        "@oak//proto/attestation:eventlog_cc_proto",
+        "@oak//proto/attestation:verification_cc_proto",
+        "@oak//proto/crypto:crypto_cc_proto",
+        "@oak//proto/session:messages_cc_proto",
         "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/core:tensor",
         "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/protocol:federated_compute_checkpoint_builder",
+        "@protobuf//:protobuf",
+        "@tink_cc//tink:cleartext_keyset_handle",
+        "@tink_cc//tink:keyset_handle",
+        "@tink_cc//tink:public_key_sign",
+        "@tink_cc//tink/config:global_registry",
+        "@tink_cc//tink/signature:signature_config",
+        "@tink_cc//tink/signature:signature_key_templates",
     ],
 )
 

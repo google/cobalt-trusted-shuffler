@@ -40,6 +40,7 @@
 #include "src/sketch/hll_sketch.h"
 #include "src/testing/fake_context.h"
 #include "src/testing/matchers.h"
+#include "src/testing/test_utils.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -95,10 +96,13 @@ SignedRunContext CreateValidSignedRunContext(int32_t project_id, int32_t metric_
   metric->set_project_id(project_id);
   metric->set_metric_id(metric_id);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::move(signature_value));
-  return signed_context;
+  if (signature_value.empty()) {
+    SignedRunContext signed_context;
+    signed_context.set_serialized_run_context(run_context.SerializeAsString());
+    signed_context.set_signature("");
+    return signed_context;
+  }
+  return testing::CreateValidSignedRunContext(run_context);
 }
 
 struct PartitionSpec {
@@ -171,7 +175,7 @@ TEST(IngestionVerificationFnTest, SuccessfulConfigUnpackFollowedByDataRecords) {
 
   EXPECT_TRUE(fn.HasConfig());
   ASSERT_TRUE(fn.Config().has_value());
-  EXPECT_THAT(fn.Config()->signature(), Eq("valid_signature_bytes"));
+  EXPECT_THAT(fn.Config()->signature(), Eq(signed_context.signature()));
 
   // Records 1..N: Ingests valid client data records (PartialIngestionReport)
   const PartitionSpec partition_specs[] = {

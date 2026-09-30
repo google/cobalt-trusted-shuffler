@@ -18,24 +18,26 @@
 #include <memory>
 
 #include "absl/status/statusor.h"
+#include "cc/containers/sdk/orchestrator_client.h"
 #include "cc/crypto/signing_key.h"
 #include "containers/fns/confidential_transform_server.h"
 #include "containers/fns/fn_factory.h"
 
 namespace cobalt::trusted_shuffler {
 
-class RunContextInitializerFnFactory
-    : public confidential_federated_compute::fns::FnFactory {
+class RunContextInitializerFnFactory : public confidential_federated_compute::fns::FnFactory {
  public:
-  explicit RunContextInitializerFnFactory(
-      oak::crypto::SigningKeyHandle* signing_key_handle)
-      : signing_key_handle_(signing_key_handle) {}
+  RunContextInitializerFnFactory(
+      oak::crypto::SigningKeyHandle* signing_key_handle,
+      const oak::containers::sdk::OrchestratorClient* orchestrator_client)
+      : signing_key_handle_(signing_key_handle), orchestrator_client_(orchestrator_client) {}
 
-  absl::StatusOr<std::unique_ptr<confidential_federated_compute::fns::Fn>>
-  CreateFn() const override;
+  absl::StatusOr<std::unique_ptr<confidential_federated_compute::fns::Fn>> CreateFn()
+      const override;
 
  private:
   oak::crypto::SigningKeyHandle* signing_key_handle_;
+  const oak::containers::sdk::OrchestratorClient* orchestrator_client_;
 };
 
 // Creates a RunContextInitializerTransform service (instance of
@@ -43,7 +45,8 @@ class RunContextInitializerFnFactory
 std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform>
 CreateRunContextInitializerTransform(
     std::unique_ptr<oak::crypto::SigningKeyHandle> signing_key_handle,
-    std::unique_ptr<oak::crypto::EncryptionKeyHandle> encryption_key_handle);
+    std::unique_ptr<oak::crypto::EncryptionKeyHandle> encryption_key_handle,
+    std::shared_ptr<const oak::containers::sdk::OrchestratorClient> orchestrator_client);
 
 }  // namespace cobalt::trusted_shuffler
 

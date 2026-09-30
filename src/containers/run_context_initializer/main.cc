@@ -38,16 +38,18 @@ void RunServer() {
   LogContainerStartup("Run Context Initializer");
   std::string server_address("[::]:8080");
 
+  auto orchestrator_client = std::make_shared<const OrchestratorClient>();
   std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform> service =
       CreateRunContextInitializerTransform(std::make_unique<InstanceSigningKeyHandle>(),
-                                           std::make_unique<InstanceEncryptionKeyHandle>());
+                                           std::make_unique<InstanceEncryptionKeyHandle>(),
+                                           orchestrator_client);
   ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(service.get());
   std::unique_ptr<Server> server = builder.BuildAndStart();
   LOG(INFO) << "Run Context Initializer Transform Server listening on " << server_address;
 
-  CHECK_OK(OrchestratorClient().NotifyAppReady());
+  CHECK_OK(orchestrator_client->NotifyAppReady());
   server->Wait();
 }
 

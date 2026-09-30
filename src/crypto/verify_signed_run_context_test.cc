@@ -24,9 +24,14 @@
 #include "absl/strings/string_view.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "proto/attestation/eventlog.pb.h"
+#include "proto/attestation/evidence.pb.h"
+#include "proto/attestation/verification.pb.h"
+#include "proto/session/messages.pb.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/crypto/secure_random.h"
 #include "src/proto/run_context.pb.h"
+#include "src/testing/test_utils.h"
 #include "tink/aead/aead_key_templates.h"
 #include "tink/config/global_registry.h"
 #include "tink/insecure_secret_key_access.h"
@@ -43,8 +48,6 @@ using ::absl_testing::StatusIs;
 using ::testing::Eq;
 using ::testing::IsEmpty;
 using ::testing::Not;
-
-constexpr absl::string_view kValidSignature = "valid_test_signature";
 
 RunConfig CreateValidRunConfig() {
   RunConfig config;
@@ -71,12 +74,36 @@ RunContext CreateValidRunContext() {
   return context;
 }
 
+oak::session::v1::EndorsedEvidence CreateEndorsedEvidenceWithSigningKey(
+    absl::string_view signing_key_bytes) {
+  oak::attestation::v1::ContainerLayerData container_layer_data;
+  container_layer_data.set_signing_public_key(std::string(signing_key_bytes));
+  google::protobuf::Any any;
+  any.PackFrom(container_layer_data);
+  oak::attestation::v1::Event event;
+  event.set_tag("ORCHESTRATOR");
+  *event.mutable_event() = any;
+
+  oak::session::v1::EndorsedEvidence evidence;
+  oak::attestation::v1::Event stage0_event;
+  stage0_event.set_tag("Stage0");
+  oak::attestation::v1::Event system_event;
+  system_event.set_tag("stage1");
+
+  evidence.mutable_evidence()->mutable_event_log()->add_encoded_events(
+      stage0_event.SerializeAsString());
+  evidence.mutable_evidence()->mutable_event_log()->add_encoded_events(
+      system_event.SerializeAsString());
+  evidence.mutable_evidence()->mutable_event_log()->add_encoded_events(event.SerializeAsString());
+  return evidence;
+}
+
+SignedRunContext CreateValidSignedRunContext(const RunContext& run_context) {
+  return testing::CreateValidSignedRunContext(run_context);
+}
+
 SignedRunContext CreateValidSignedRunContext() {
-  const RunContext run_context = CreateValidRunContext();
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
-  return signed_context;
+  return CreateValidSignedRunContext(CreateValidRunContext());
 }
 
 TEST(VerifySignedRunContextTest, ValidSignedRunContextSucceeds) {
@@ -104,19 +131,118 @@ TEST(VerifySignedRunContextTest, EmptySignatureReturnsInvalidArgument) {
 }
 
 TEST(VerifySignedRunContextTest, EmptySerializedRunContextReturnsInvalidArgument) {
-  SignedRunContext signed_context;
-  signed_context.set_signature(std::string(kValidSignature));
+  SignedRunContext signed_context = CreateValidSignedRunContext();
   signed_context.clear_serialized_run_context();
 
-  const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
+}
 
-  EXPECT_THAT(validated_context, StatusIs(absl::StatusCode::kInvalidArgument));
+TEST(VerifySignedRunContextTest, MissingEndorsedEvidenceReturnsInvalidArgument) {
+  SignedRunContext signed_context = CreateValidSignedRunContext();
+  signed_context.clear_endorsed_evidence();
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(VerifySignedRunContextTest, EmptyEvidenceInEndorsedEvidenceReturnsInvalidArgument) {
+  SignedRunContext signed_context = CreateValidSignedRunContext();
+  signed_context.mutable_endorsed_evidence()->clear_evidence();
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(VerifySignedRunContextTest, NoSigningKeyInEvidenceReturnsInvalidArgument) {
+  SignedRunContext signed_context = CreateValidSignedRunContext();
+  signed_context.mutable_endorsed_evidence()->mutable_evidence()->clear_event_log();
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(VerifySignedRunContextTest, InvalidSignatureLengthReturnsInvalidArgument) {
+  SignedRunContext signed_context = CreateValidSignedRunContext();
+  signed_context.set_signature(std::string(63, 'x'));
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
+
+  signed_context.set_signature(std::string(65, 'x'));
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(VerifySignedRunContextTest, CorruptedSignatureReturnsInvalidArgument) {
+  SignedRunContext signed_context = CreateValidSignedRunContext();
+  std::string corrupted_sig = signed_context.signature();
+  corrupted_sig[0] ^= 0xFF;
+  signed_context.set_signature(corrupted_sig);
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(VerifySignedRunContextTest, MismatchedKeyReturnsInvalidArgument) {
+  testing::TestSigningKey key1;
+  testing::TestSigningKey key2;
+  const RunContext run_context = CreateValidRunContext();
+
+  SignedRunContext signed_context;
+  signed_context.set_serialized_run_context(run_context.SerializeAsString());
+  signed_context.set_signature(key1.Sign(signed_context.serialized_run_context()));
+  *signed_context.mutable_endorsed_evidence() = key2.EndorsedEvidence();
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(VerifySignedRunContextTest, ExtractPublicKeyWithMultipleEventsSucceeds) {
+  testing::TestSigningKey signing_key;
+  oak::session::v1::EndorsedEvidence endorsed_evidence;
+
+  // Add an unrelated event first.
+  oak::attestation::v1::Event unrelated_event;
+  unrelated_event.set_tag("unrelated-event-tag");
+  unrelated_event.mutable_event()->set_value("some-data");
+  endorsed_evidence.mutable_evidence()->mutable_event_log()->add_encoded_events(
+      unrelated_event.SerializeAsString());
+
+  // Add a malformed event string (should be skipped gracefully).
+  endorsed_evidence.mutable_evidence()->mutable_event_log()->add_encoded_events(
+      "not-a-valid-serialized-event-proto");
+
+  // Add the valid signing public key event.
+  oak::attestation::v1::ContainerLayerData layer_data;
+  layer_data.set_signing_public_key(signing_key.UncompressedPublicKeyBytes());
+  google::protobuf::Any any;
+  any.PackFrom(layer_data);
+  oak::attestation::v1::Event key_event;
+  key_event.set_tag("ORCHESTRATOR");
+  *key_event.mutable_event() = any;
+  endorsed_evidence.mutable_evidence()->mutable_event_log()->add_encoded_events(
+      key_event.SerializeAsString());
+
+  const RunContext run_context = CreateValidRunContext();
+  SignedRunContext signed_context;
+  signed_context.set_serialized_run_context(run_context.SerializeAsString());
+  signed_context.set_signature(signing_key.Sign(signed_context.serialized_run_context()));
+  *signed_context.mutable_endorsed_evidence() = endorsed_evidence;
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), IsOk());
+}
+
+TEST(VerifySignedRunContextTest, InvalidPublicPointNotOnCurveReturnsInvalidArgument) {
+  oak::session::v1::EndorsedEvidence endorsed_evidence =
+      CreateEndorsedEvidenceWithSigningKey(std::string(64, '\0'));
+
+  SignedRunContext signed_context;
+  signed_context.set_serialized_run_context("dummy");
+  signed_context.set_signature(std::string(64, 's'));
+  *signed_context.mutable_endorsed_evidence() = endorsed_evidence;
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(VerifySignedRunContextTest, CorruptedSerializedRunContextReturnsInvalidArgument) {
   SignedRunContext signed_context;
-  signed_context.set_signature(std::string(kValidSignature));
   signed_context.set_serialized_run_context("invalid_not_a_proto_stream");
+  signed_context.set_signature(
+      testing::GetDefaultTestSigningKey().Sign(signed_context.serialized_run_context()));
+  *signed_context.mutable_endorsed_evidence() =
+      testing::GetDefaultTestSigningKey().EndorsedEvidence();
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -127,9 +253,7 @@ TEST(VerifySignedRunContextTest, EmptyRunIdReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.clear_run_id();
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -140,9 +264,7 @@ TEST(VerifySignedRunContextTest, ShortRunIdReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.set_run_id(std::string(kRunIdByteLength - 1, 'x'));
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -153,9 +275,7 @@ TEST(VerifySignedRunContextTest, LongRunIdReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.set_run_id(std::string(kRunIdByteLength + 1, 'x'));
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -166,9 +286,7 @@ TEST(VerifySignedRunContextTest, EmptyRunHashKeyReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.clear_run_hash_key();
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -179,9 +297,7 @@ TEST(VerifySignedRunContextTest, ShortRunHashKeyReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.set_run_hash_key(std::string(kRunHashKeyByteLength - 1, 'y'));
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -192,9 +308,7 @@ TEST(VerifySignedRunContextTest, LongRunHashKeyReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.set_run_hash_key(std::string(kRunHashKeyByteLength + 1, 'y'));
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -205,9 +319,7 @@ TEST(VerifySignedRunContextTest, MissingRunConfigReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.clear_run_config();
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -218,9 +330,7 @@ TEST(VerifySignedRunContextTest, EmptyMetricIdentifiersReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.mutable_run_config()->clear_metric_identifiers();
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -231,9 +341,7 @@ TEST(VerifySignedRunContextTest, ZeroProjectIdReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.mutable_run_config()->mutable_metric_identifiers(0)->set_project_id(0);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -244,9 +352,7 @@ TEST(VerifySignedRunContextTest, NegativeProjectIdReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.mutable_run_config()->mutable_metric_identifiers(0)->set_project_id(-10);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -257,9 +363,7 @@ TEST(VerifySignedRunContextTest, ZeroMetricIdReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.mutable_run_config()->mutable_metric_identifiers(0)->set_metric_id(0);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -270,9 +374,7 @@ TEST(VerifySignedRunContextTest, NegativeMetricIdReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.mutable_run_config()->mutable_metric_identifiers(0)->set_metric_id(-5);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -286,9 +388,7 @@ TEST(VerifySignedRunContextTest, DuplicateMetricIdentifiersReturnsInvalidArgumen
   dup->set_project_id(101);
   dup->set_metric_id(202);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -307,9 +407,7 @@ TEST(VerifySignedRunContextTest, MultipleDistinctMetricIdentifiersSucceeds) {
   third->set_project_id(102);
   third->set_metric_id(202);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -322,9 +420,7 @@ TEST(VerifySignedRunContextTest, NegativeMinEpochIndexReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.mutable_run_config()->set_min_epoch_index(-1);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -336,9 +432,7 @@ TEST(VerifySignedRunContextTest, MaxEpochLessThanMinEpochReturnsInvalidArgument)
   run_context.mutable_run_config()->set_min_epoch_index(20);
   run_context.mutable_run_config()->set_max_epoch_index(19);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -350,9 +444,7 @@ TEST(VerifySignedRunContextTest, MinEpochEqualsMaxEpochSucceeds) {
   run_context.mutable_run_config()->set_min_epoch_index(15);
   run_context.mutable_run_config()->set_max_epoch_index(15);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -366,9 +458,7 @@ TEST(VerifySignedRunContextTest, ZeroTargetBatchSizeReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.mutable_run_config()->set_target_batch_size(0);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -379,9 +469,7 @@ TEST(VerifySignedRunContextTest, NegativeTargetBatchSizeReturnsInvalidArgument) 
   RunContext run_context = CreateValidRunContext();
   run_context.mutable_run_config()->set_target_batch_size(-5);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -410,9 +498,7 @@ TEST(VerifySignedRunContextTest, EmptyReleaseKeyReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.clear_release_key();
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -423,9 +509,7 @@ TEST(VerifySignedRunContextTest, RawKeyInsteadOfTinkKeysetReturnsInvalidArgument
   RunContext run_context = CreateValidRunContext();
   run_context.set_release_key(std::string(32, 'x'));
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -436,9 +520,7 @@ TEST(VerifySignedRunContextTest, CorruptedReleaseKeyReturnsInvalidArgument) {
   RunContext run_context = CreateValidRunContext();
   run_context.set_release_key("not a valid serialized tink keyset");
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   const absl::StatusOr<RunContext> validated_context = VerifySignedRunContext(signed_context);
 
@@ -459,9 +541,7 @@ TEST(VerifySignedRunContextTest, WrongKeyTemplateReleaseKeyReturnsInvalidArgumen
   run_context.set_release_key(
       std::string(crypto::tink::util::SecretDataAsStringView(*tink_prefix_serialized)));
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature(std::string(kValidSignature));
+  const SignedRunContext signed_context = CreateValidSignedRunContext(run_context);
 
   EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
 }
@@ -482,6 +562,90 @@ TEST(VerifySignedRunContextTest, StandaloneVerifyRunConfig) {
   RunConfig invalid_config = valid_config;
   invalid_config.set_target_batch_size(0);
   EXPECT_THAT(VerifyRunConfig(invalid_config), StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(VerifySignedRunContextTest, ExtractPublicKeyFromContainerLayerDataSucceeds) {
+  testing::TestSigningKey signing_key;
+  const oak::session::v1::EndorsedEvidence endorsed_evidence =
+      signing_key.CreateEndorsedEvidenceWithContainerLayerData();
+
+  const RunContext run_context = CreateValidRunContext();
+  SignedRunContext signed_context;
+  signed_context.set_serialized_run_context(run_context.SerializeAsString());
+  signed_context.set_signature(signing_key.Sign(signed_context.serialized_run_context()));
+  *signed_context.mutable_endorsed_evidence() = endorsed_evidence;
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), IsOk());
+}
+
+TEST(VerifySignedRunContextTest, ValidSignedRunContextWith65ByteUncompressedKeySucceeds) {
+  testing::TestSigningKey signing_key;
+  oak::session::v1::EndorsedEvidence endorsed_evidence =
+      CreateEndorsedEvidenceWithSigningKey(signing_key.UncompressedPublicKeyBytes());
+
+  const RunContext run_context = CreateValidRunContext();
+  SignedRunContext signed_context;
+  signed_context.set_serialized_run_context(run_context.SerializeAsString());
+  signed_context.set_signature(signing_key.Sign(signed_context.serialized_run_context()));
+  *signed_context.mutable_endorsed_evidence() = endorsed_evidence;
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), IsOk());
+}
+
+TEST(VerifySignedRunContextTest, ValidSignedRunContextWith64ByteKeySucceeds) {
+  testing::TestSigningKey signing_key;
+  oak::session::v1::EndorsedEvidence endorsed_evidence =
+      CreateEndorsedEvidenceWithSigningKey(signing_key.PublicKeyBytes());
+
+  const RunContext run_context = CreateValidRunContext();
+  SignedRunContext signed_context;
+  signed_context.set_serialized_run_context(run_context.SerializeAsString());
+  signed_context.set_signature(signing_key.Sign(signed_context.serialized_run_context()));
+  *signed_context.mutable_endorsed_evidence() = endorsed_evidence;
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), IsOk());
+}
+
+TEST(VerifySignedRunContextTest, Invalid65ByteKeyInvalidHeaderReturnsInvalidArgument) {
+  testing::TestSigningKey signing_key;
+  std::string invalid_65 = signing_key.UncompressedPublicKeyBytes();
+  invalid_65[0] = '\x05';  // Invalid SEC1 header for uncompressed point.
+
+  oak::session::v1::EndorsedEvidence endorsed_evidence =
+      CreateEndorsedEvidenceWithSigningKey(invalid_65);
+
+  SignedRunContext signed_context;
+  signed_context.set_serialized_run_context(CreateValidRunContext().SerializeAsString());
+  signed_context.set_signature(signing_key.Sign(signed_context.serialized_run_context()));
+  *signed_context.mutable_endorsed_evidence() = endorsed_evidence;
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(VerifySignedRunContextTest, InvalidKeyLengthReturnsInvalidArgument) {
+  testing::TestSigningKey signing_key;
+
+  // 32-byte public key (invalid length)
+  oak::session::v1::EndorsedEvidence evidence_32 =
+      CreateEndorsedEvidenceWithSigningKey(std::string(32, 'k'));
+
+  SignedRunContext signed_context;
+  signed_context.set_serialized_run_context(CreateValidRunContext().SerializeAsString());
+  signed_context.set_signature(signing_key.Sign(signed_context.serialized_run_context()));
+  *signed_context.mutable_endorsed_evidence() = evidence_32;
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
+
+  // 66-byte public key (invalid length)
+  oak::session::v1::EndorsedEvidence evidence_66;
+  oak::attestation::v1::Event event_66;
+  event_66.set_tag("oak-signing-public-key:ecdsa-p256");
+  event_66.mutable_event()->set_value(std::string(66, 'k'));
+  evidence_66.mutable_evidence()->mutable_event_log()->add_encoded_events(
+      event_66.SerializeAsString());
+  *signed_context.mutable_endorsed_evidence() = evidence_66;
+
+  EXPECT_THAT(VerifySignedRunContext(signed_context), StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 }  // namespace

@@ -23,8 +23,15 @@
 #include <vector>
 
 #include "absl/log/check.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "cc/crypto/signing_key.h"
+#include "google/protobuf/io/coded_stream.h"
+#include "google/protobuf/io/zero_copy_stream_impl_lite.h"
+#include "proto/attestation/eventlog.pb.h"
+#include "proto/attestation/verification.pb.h"
+#include "proto/session/messages.pb.h"
 #include "src/crypto/release_encrypter.h"
 #include "src/crypto/verify_signed_run_context.h"
 #include "src/proto/common.pb.h"
@@ -35,6 +42,12 @@
 #include "tensorflow_federated/cc/core/impl/aggregation/core/tensor.h"
 #include "tensorflow_federated/cc/core/impl/aggregation/protocol/checkpoint_builder.h"
 #include "tensorflow_federated/cc/core/impl/aggregation/protocol/federated_compute_checkpoint_builder.h"
+#include "tink/cleartext_keyset_handle.h"
+#include "tink/config/global_registry.h"
+#include "tink/keyset_handle.h"
+#include "tink/public_key_sign.h"
+#include "tink/signature/signature_config.h"
+#include "tink/signature/signature_key_templates.h"
 
 namespace cobalt::trusted_shuffler::testing {
 
@@ -51,6 +64,136 @@ inline std::string PadRunId(absl::string_view prefix) {
     padded.resize(kRunIdByteLength, '0');
   }
   return padded;
+}
+
+class TestSigningKey {
+ public:
+  TestSigningKey() {
+    CHECK_OK(crypto::tink::SignatureConfig::Register());
+    auto keyset_handle =
+        crypto::tink::KeysetHandle::GenerateNew(crypto::tink::SignatureKeyTemplates::EcdsaP256Raw(),
+                                                crypto::tink::KeyGenConfigGlobalRegistry());
+    CHECK_OK(keyset_handle.status());
+    keyset_handle_ = std::move(*keyset_handle);
+
+    auto signer = keyset_handle_->GetPrimitive<crypto::tink::PublicKeySign>(
+        crypto::tink::ConfigGlobalRegistry());
+    CHECK_OK(signer.status());
+    signer_ = std::move(*signer);
+
+    auto public_handle =
+        keyset_handle_->GetPublicKeysetHandle(crypto::tink::KeyGenConfigGlobalRegistry());
+    CHECK_OK(public_handle.status());
+
+    auto keyset = crypto::tink::CleartextKeysetHandle::GetKeyset(**public_handle);
+    const std::string& key_data = keyset.key(0).key_data().value();
+    std::string x_bytes;
+    std::string y_bytes;
+    google::protobuf::io::ArrayInputStream array_stream(key_data.data(), key_data.size());
+    google::protobuf::io::CodedInputStream input(&array_stream);
+    uint32_t tag = 0;
+    while ((tag = input.ReadTag()) != 0) {
+      int field_number = tag >> 3;
+      int wire_type = tag & 0x7;
+      if (wire_type == 2) {
+        uint32_t length = 0;
+        CHECK(input.ReadVarint32(&length));
+        std::string bytes;
+        CHECK(input.ReadString(&bytes, length));
+        auto normalize_coordinate = [](std::string b) -> std::string {
+          if (b.size() == 33 && b[0] == '\0') {
+            return b.substr(1);
+          }
+          if (b.size() < 32) {
+            return absl::StrCat(std::string(32 - b.size(), '\0'), b);
+          }
+          if (b.size() > 32) {
+            return b.substr(b.size() - 32);
+          }
+          return b;
+        };
+        if (field_number == 3) {
+          x_bytes = normalize_coordinate(std::move(bytes));
+        } else if (field_number == 4) {
+          y_bytes = normalize_coordinate(std::move(bytes));
+        }
+      } else if (wire_type == 0) {
+        uint64_t dummy = 0;
+        CHECK(input.ReadVarint64(&dummy));
+      } else if (wire_type == 1) {
+        CHECK(input.Skip(8));
+      } else if (wire_type == 5) {
+        CHECK(input.Skip(4));
+      }
+    }
+    CHECK_EQ(x_bytes.size(), 32);
+    CHECK_EQ(y_bytes.size(), 32);
+    public_key_bytes_ = absl::StrCat(x_bytes, y_bytes);
+
+    oak::attestation::v1::ContainerLayerData container_layer_data;
+    container_layer_data.set_signing_public_key(UncompressedPublicKeyBytes());
+    google::protobuf::Any any;
+    any.PackFrom(container_layer_data);
+    oak::attestation::v1::Event event;
+    event.set_tag("ORCHESTRATOR");
+    *event.mutable_event() = any;
+
+    oak::attestation::v1::Event stage0_event;
+    stage0_event.set_tag("Stage0");
+    oak::attestation::v1::Event system_event;
+    system_event.set_tag("stage1");
+
+    endorsed_evidence_.mutable_evidence()->mutable_event_log()->add_encoded_events(
+        stage0_event.SerializeAsString());
+    endorsed_evidence_.mutable_evidence()->mutable_event_log()->add_encoded_events(
+        system_event.SerializeAsString());
+    endorsed_evidence_.mutable_evidence()->mutable_event_log()->add_encoded_events(
+        event.SerializeAsString());
+  }
+
+  std::string Sign(absl::string_view data) const {
+    auto signature = signer_->Sign(data);
+    CHECK_OK(signature.status());
+    return *signature;
+  }
+
+  const std::string& PublicKeyBytes() const { return public_key_bytes_; }
+  const oak::session::v1::EndorsedEvidence& EndorsedEvidence() const { return endorsed_evidence_; }
+
+  // Backwards compatibility forwarders.
+  const std::string& public_key_bytes() const { return PublicKeyBytes(); }
+  const oak::session::v1::EndorsedEvidence& endorsed_evidence() const { return EndorsedEvidence(); }
+
+  std::string UncompressedPublicKeyBytes() const { return absl::StrCat("\x04", public_key_bytes_); }
+
+  oak::session::v1::EndorsedEvidence CreateEndorsedEvidenceWithContainerLayerData() const {
+    return endorsed_evidence_;
+  }
+
+ private:
+  std::unique_ptr<crypto::tink::KeysetHandle> keyset_handle_;
+  std::unique_ptr<crypto::tink::PublicKeySign> signer_;
+  std::string public_key_bytes_;
+  oak::session::v1::EndorsedEvidence endorsed_evidence_;
+};
+
+class TestSigningKeyHandle : public oak::crypto::SigningKeyHandle {
+ public:
+  explicit TestSigningKeyHandle(const TestSigningKey* key) : key_(key) {}
+
+  absl::StatusOr<oak::crypto::v1::Signature> Sign(absl::string_view message) override {
+    oak::crypto::v1::Signature signature_proto;
+    signature_proto.set_signature(key_->Sign(message));
+    return signature_proto;
+  }
+
+ private:
+  const TestSigningKey* key_;
+};
+
+inline const TestSigningKey& GetDefaultTestSigningKey() {
+  static const auto* const key = new TestSigningKey();
+  return *key;
 }
 
 struct MetricEpochSpec {
@@ -95,12 +238,18 @@ inline RunContext CreateValidRunContext(absl::Span<const MetricIdentifierSpec> i
   return run_context;
 }
 
-// Builds a SignedRunContext wrapping serialized RunContext with a dummy valid signature.
-inline SignedRunContext CreateValidSignedRunContext(const RunContext& run_context) {
+// Builds a SignedRunContext wrapping serialized RunContext with a valid signature and evidence.
+inline SignedRunContext CreateValidSignedRunContext(const RunContext& run_context,
+                                                    const TestSigningKey& signing_key) {
   SignedRunContext signed_run_context;
   signed_run_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_run_context.set_signature("valid_dummy_signature");
+  signed_run_context.set_signature(signing_key.Sign(signed_run_context.serialized_run_context()));
+  *signed_run_context.mutable_endorsed_evidence() = signing_key.EndorsedEvidence();
   return signed_run_context;
+}
+
+inline SignedRunContext CreateValidSignedRunContext(const RunContext& run_context) {
+  return CreateValidSignedRunContext(run_context, GetDefaultTestSigningKey());
 }
 
 // Builds a ShuffledMessage proto with the specified customer payload.
@@ -255,25 +404,14 @@ inline SignedRunContext CreateValidSignedRunContext(const int32_t project_id,
                                                     const absl::string_view run_id,
                                                     const int64_t min_epoch_index,
                                                     const int64_t max_epoch_index) {
-  absl::StatusOr<std::string> release_key = ReleaseEncrypter::CreateReleaseKey();
-  CHECK_OK(release_key.status());
-
-  RunContext run_context;
+  const MetricIdentifierSpec identifier = {
+      .project_id = project_id,
+      .metric_id = metric_id,
+  };
+  RunContext run_context =
+      CreateValidRunContext({identifier}, min_epoch_index, max_epoch_index, /*batch_size=*/100);
   run_context.set_run_id(std::string(run_id));
-  run_context.set_run_hash_key(std::string(kRunHashKeyByteLength, 'b'));
-  run_context.set_release_key(*release_key);
-  auto* run_config = run_context.mutable_run_config();
-  RunConfig::MetricIdentifier* metric = run_config->add_metric_identifiers();
-  metric->set_project_id(project_id);
-  metric->set_metric_id(metric_id);
-  run_config->set_min_epoch_index(min_epoch_index);
-  run_config->set_max_epoch_index(max_epoch_index);
-  run_config->set_target_batch_size(100);
-
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature("test_signature");
-  return signed_context;
+  return CreateValidSignedRunContext(run_context);
 }
 
 }  // namespace cobalt::trusted_shuffler::testing

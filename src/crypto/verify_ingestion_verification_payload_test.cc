@@ -30,6 +30,7 @@
 #include "src/proto/fingerprint.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
+#include "src/testing/test_utils.h"
 #include "src/util/metric_epoch_key_utils.h"
 
 namespace cobalt::trusted_shuffler {
@@ -82,10 +83,7 @@ SignedRunContext CreateSignedRunContext(absl::string_view run_id) {
   metric->set_project_id(1);
   metric->set_metric_id(2);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature("valid-signature");
-  return signed_context;
+  return testing::CreateValidSignedRunContext(run_context);
 }
 
 IngestionVerificationResult CreateVerificationResult(

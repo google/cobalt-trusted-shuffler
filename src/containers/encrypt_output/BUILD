@@ -91,6 +91,7 @@ cc_test(
         "//src/proto:release_cc_proto",
         "//src/proto:run_context_cc_proto",
         "//src/testing:fake_context",
+        "//src/testing:test_utils",
         "//src/util:metric_epoch_key_utils",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",

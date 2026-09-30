@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "absl/status/status_matchers.h"
+#include "cc/containers/sdk/orchestrator_client.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "src/containers/run_context_initializer/run_context_initializer_fn.h"
@@ -28,22 +29,21 @@ namespace {
 using ::absl_testing::IsOk;
 using ::testing::NotNull;
 
-TEST(RunContextInitializerTransformTest,
-     CreateRunContextInitializerTransformReturnsNonNull) {
+TEST(RunContextInitializerTransformTest, CreateRunContextInitializerTransformReturnsNonNull) {
+  auto orchestrator_client = std::make_shared<const oak::containers::sdk::OrchestratorClient>();
   std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform>
       run_context_transform = CreateRunContextInitializerTransform(
           std::make_unique<testing::FakeSigningKey>(),
-          std::make_unique<testing::FakeEncryptionKeyHandle>());
+          std::make_unique<testing::FakeEncryptionKeyHandle>(), orchestrator_client);
 
   EXPECT_THAT(run_context_transform, NotNull());
 }
 
-TEST(RunContextInitializerTransformTest,
-     RunContextInitializerFnFactoryReturnsFn) {
+TEST(RunContextInitializerTransformTest, RunContextInitializerFnFactoryReturnsFn) {
   testing::FakeSigningKey key_handle;
-  RunContextInitializerFnFactory factory(&key_handle);
-  absl::StatusOr<std::unique_ptr<confidential_federated_compute::fns::Fn>> fn =
-      factory.CreateFn();
+  oak::containers::sdk::OrchestratorClient orchestrator_client;
+  RunContextInitializerFnFactory factory(&key_handle, &orchestrator_client);
+  absl::StatusOr<std::unique_ptr<confidential_federated_compute::fns::Fn>> fn = factory.CreateFn();
   ASSERT_THAT(fn, IsOk());
 
   RunContextInitializerFn* run_context_fn =

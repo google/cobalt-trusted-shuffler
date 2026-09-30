@@ -35,9 +35,11 @@
 #include "src/proto/config_constraints.pb.h"
 #include "src/proto/ingestion.pb.h"
 #include "src/proto/run_context.pb.h"
+#include "src/testing/fake_orchestrator.h"
 #include "src/testing/integration/do_fn_runner.h"
 #include "src/testing/integration/ingest_uploads_router.h"
 #include "src/testing/integration/records.h"
+#include "src/testing/test_utils.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
 
@@ -53,7 +55,9 @@ absl::StatusOr<PipelineExecutionResult> ExecutePipeline(
   // must be shared across all downstream stages in the run.
   // Output: payload only. Downstream stages take the SignedRunContext as a
   // shared configuration record and have no key to route on.
-  RunContextInitializerFn rci_fn(/*signing_key_handle=*/&signing_key);
+  testing::FakeOrchestratorServer orchestrator(
+      testing::GetDefaultTestSigningKey().EndorsedEvidence());
+  RunContextInitializerFn rci_fn(/*signing_key_handle=*/&signing_key, orchestrator.Client());
   absl::StatusOr<BlobStageOutputs> rci_output =
       DoFnRunner::RunReplicaWithBlobOutput(rci_fn, {.init_config = run_config});
   if (!rci_output.ok()) {

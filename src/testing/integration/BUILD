@@ -170,6 +170,7 @@ cc_library(
 
 cc_library(
     name = "pipeline_runner",
+    testonly = True,
     srcs = ["pipeline_runner.cc"],
     hdrs = ["pipeline_runner.h"],
     deps = [
@@ -196,6 +197,8 @@ cc_library(
         "//src/proto:config_constraints_cc_proto",
         "//src/proto:ingestion_cc_proto",
         "//src/proto:run_context_cc_proto",
+        "//src/testing:fake_orchestrator",
+        "//src/testing:test_utils",
         "//src/util:metric_epoch_key_utils",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/functional:any_invocable",

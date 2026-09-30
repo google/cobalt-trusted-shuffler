@@ -125,6 +125,7 @@ cc_test(
         "//src/proto:run_context_cc_proto",
         "//src/testing:fake_context",
         "//src/testing:fake_keys",
+        "//src/testing:test_utils",
         "//src/testing:testable_transform",
         "@abseil-cpp//absl/status:status_matchers",
         "@abseil-cpp//absl/status:statusor",

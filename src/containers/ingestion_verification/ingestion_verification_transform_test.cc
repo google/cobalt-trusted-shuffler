@@ -42,6 +42,7 @@
 #include "src/testing/fake_context.h"
 #include "src/testing/fake_keys.h"
 #include "src/testing/matchers.h"
+#include "src/testing/test_utils.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -201,9 +202,7 @@ TEST(IngestionVerificationTransformTest, FnFactoryCreatedFnExecutesLifecycleAndE
   metric->set_project_id(1001);
   metric->set_metric_id(2);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature("valid-sig");
+  const SignedRunContext signed_context = testing::CreateValidSignedRunContext(run_context);
 
   auto* const do_fn = dynamic_cast<confidential_federated_compute::fns::DoFn*>(fn.get());
   ASSERT_NE(do_fn, nullptr);

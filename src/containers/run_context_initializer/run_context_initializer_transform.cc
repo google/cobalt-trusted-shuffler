@@ -32,25 +32,24 @@ using confidential_federated_compute::fns::WriteConfigurationMap;
 
 }  // namespace
 
-absl::StatusOr<std::unique_ptr<Fn>> RunContextInitializerFnFactory::CreateFn()
-    const {
-  return std::make_unique<RunContextInitializerFn>(signing_key_handle_);
+absl::StatusOr<std::unique_ptr<Fn>> RunContextInitializerFnFactory::CreateFn() const {
+  return std::make_unique<RunContextInitializerFn>(signing_key_handle_, orchestrator_client_);
 }
 
 std::unique_ptr<FnConfidentialTransform> CreateRunContextInitializerTransform(
     std::unique_ptr<oak::crypto::SigningKeyHandle> signing_key_handle,
-    std::unique_ptr<oak::crypto::EncryptionKeyHandle> encryption_key_handle) {
-  oak::crypto::SigningKeyHandle* raw_signing_key_handle =
-      signing_key_handle.get();
+    std::unique_ptr<oak::crypto::EncryptionKeyHandle> encryption_key_handle,
+    std::shared_ptr<const oak::containers::sdk::OrchestratorClient> orchestrator_client) {
+  oak::crypto::SigningKeyHandle* raw_signing_key_handle = signing_key_handle.get();
   return std::make_unique<FnConfidentialTransform>(
       std::move(signing_key_handle),
-      [raw_signing_key_handle](
+      [raw_signing_key_handle, orchestrator_client](
           const google::protobuf::Any& configuration,
           const google::protobuf::Any& config_constraints,
           const WriteConfigurationMap& write_configuration_map)
           -> absl::StatusOr<std::unique_ptr<FnFactory>> {
-        return std::make_unique<RunContextInitializerFnFactory>(
-            raw_signing_key_handle);
+        return std::make_unique<RunContextInitializerFnFactory>(raw_signing_key_handle,
+                                                                orchestrator_client.get());
       },
       std::move(encryption_key_handle));
 }

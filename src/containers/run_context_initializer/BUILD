@@ -50,6 +50,7 @@ cc_library(
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:statusor",
         "@confidential-federated-compute//containers/fns",
+        "@oak//cc/containers/sdk:orchestrator_client",
         "@oak//cc/crypto:signing_key",
         "@oak//proto/crypto:crypto_cc_proto",
         "@protobuf//:any_cc_proto",
@@ -64,6 +65,7 @@ cc_library(
         ":run_context_initializer_fn",
         "@abseil-cpp//absl/status:statusor",
         "@confidential-federated-compute//containers/fns",
+        "@oak//cc/containers/sdk:orchestrator_client",
         "@oak//cc/crypto:encryption_key",
         "@oak//cc/crypto:signing_key",
     ],
@@ -79,10 +81,16 @@ cc_test(
         "//src/crypto:verify_signed_run_context",
         "//src/proto:run_context_cc_proto",
         "//src/testing:fake_context",
+        "//src/testing:fake_keys",
+        "//src/testing:test_utils",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/status:status_matchers",
         "@googletest//:gtest_main",
+        "@grpc//:grpc++",
+        "@oak//cc/containers/sdk:orchestrator_client",
         "@oak//cc/crypto:signing_key",
+        "@oak//proto/containers:interfaces_cc_grpc",
+        "@oak//proto/session:messages_cc_proto",
     ],
 )
 
@@ -95,6 +103,7 @@ cc_test(
         "//src/testing:fake_keys",
         "@abseil-cpp//absl/status:status_matchers",
         "@googletest//:gtest_main",
+        "@oak//cc/containers/sdk:orchestrator_client",
     ],
 )
 

@@ -96,10 +96,7 @@ SignedRunContext CreateSignedRunContext(absl::string_view run_id_prefix,
   metric_id2->set_project_id(1);
   metric_id2->set_metric_id(3);
 
-  SignedRunContext signed_context;
-  signed_context.set_serialized_run_context(run_context.SerializeAsString());
-  signed_context.set_signature("valid-signature");
-  return signed_context;
+  return testing::CreateValidSignedRunContext(run_context);
 }
 
 IngestionVerificationPayload CreateVerificationPayload(
