@@ -16,7 +16,6 @@ load("@oak//bazel:defs.bzl", "oci_runtime_bundle")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/version:version_bzl.bzl", "version_bzl")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -155,7 +154,3 @@ oci_runtime_bundle(
     name = "oci_runtime_bundle",
     image = ":oci_image",
 )
-
-# Generates version.bzl (GIT_VERSION) as an output artifact alongside the
-# runtime bundle.
-version_bzl(name = "version_bzl")

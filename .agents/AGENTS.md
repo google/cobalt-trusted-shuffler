@@ -203,12 +203,6 @@ Every container package must define:
       image = ":oci_image",
   )
   ```
-- A `version_bzl` target that generates `version.bzl` (setting `GIT_VERSION` to the stamped `STABLE_GIT_COMMIT` from `tools/workspace_status.sh`). This file is shipped as an output artifact alongside `oci_runtime_bundle.tar` and is used to tag imported container versions:
-  ```python
-  load("//src/version:version_bzl.bzl", "version_bzl")
-
-  version_bzl(name = "version_bzl")
-  ```
 
 ### Step 4: Write Unit and Transform Tests
 - **`foo_bar_fn_test.cc`**: Use `//src/testing:fake_context` to verify data emission (`Unencrypted()`, `Encrypted()`, `Releasable()`, `Errors()`). Verify that sensitive fields are never emitted unencrypted.
@@ -233,12 +227,11 @@ When ready for production release, failing to update Kokoro will cause builds an
    cp -Rp ./bazel-bin/src/containers/foo_bar/* ${KOKORO_ARTIFACTS_DIR}/foo_bar/.
    ```
 2. **`kokoro/rbe/presubmit.cfg` & `kokoro/rbe/continuous.cfg`**:
-   Add fileset artifact destination (keep the list of `fileset_artifacts` entries alphabetized by `name`), including both the runtime bundle and the generated `version.bzl` (from the `version_bzl` target in Step 3):
+   Add fileset artifact destination (keep the list of `fileset_artifacts` entries alphabetized by `name`):
    ```protobuf
    fileset_artifacts {
      name: "foo_bar"
      artifact_globs: "foo_bar/oci_runtime_bundle.tar"
-     artifact_globs: "foo_bar/version.bzl"
      strip_prefix: "foo_bar"
      error_if_missing: true
      destinations {
@@ -329,7 +322,7 @@ Before completing a task or submitting a change:
 - [ ] Protos defined in `src/proto/<name>/` (or `src/proto/` for shared schemas) with `BUILD` rules.
 - [ ] `DoFn` and transform service implemented in C++20 following [`.agents/rules/cpp_conventions.md`](rules/cpp_conventions.md).
 - [ ] `main.cc` notifies `OrchestratorClient().NotifyAppReady()`.
-- [ ] Container bundle (`oci_runtime_bundle`) and `version_bzl` target defined in `BUILD`.
+- [ ] Container bundle (`oci_runtime_bundle`) defined in `BUILD`.
 - [ ] Unit tests for `_fn` and `_transform` pass via `bazel test //...`.
 - [ ] Tests verify that confidential data is emitted via `EmitEncrypted`/`EmitReleasable` and never `EmitUnencrypted`.
 - [ ] Tests avoid backdoor constructors, using `InitializeReplica` and designated initializers.
