@@ -417,7 +417,7 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenSignedRunContextNotFirstInput
   };
 
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kPermissionDenied));
 }
 
 TEST(ShufflerFlowIntegrationTest,
@@ -447,10 +447,10 @@ TEST(ShufflerFlowIntegrationTest,
       .ingestion_verification_router = RouteToIngestionVerificationWithLateRunContext,
   };
 
-  // The first partial ingestion report parses as a SignedRunContext but fails verification, so
-  // ingestion_verification signals an integrity fault.
+  // The first record routed to ingestion_verification is a partial ingestion report instead of a
+  // SignedRunContext, so the runner rejects it before calling Do.
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
-              StatusIs(absl::StatusCode::kFailedPrecondition));
+              StatusIs(absl::StatusCode::kPermissionDenied));
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenSecondShardAbortsInMultiShardStage) {
@@ -488,7 +488,7 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenSecondShardAbortsInMultiShard
   };
 
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kPermissionDenied));
 }
 
 TEST(ShufflerFlowIntegrationTest,
@@ -597,7 +597,7 @@ TEST(ShufflerFlowIntegrationTest, ThresholdFilterFailsWhenVerificationPayloadNot
   };
 
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kPermissionDenied));
 }
 
 TEST(ShufflerFlowIntegrationTest, OrchestratorDropsPartialReportCausesThresholdRejection) {
@@ -835,7 +835,7 @@ TEST(ShufflerFlowIntegrationTest,
   };
 
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kPermissionDenied));
 }
 
 TEST(ShufflerFlowIntegrationTest,
@@ -902,7 +902,7 @@ TEST(ShufflerFlowIntegrationTest,
   };
 
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kPermissionDenied));
 }
 
 TEST(ShufflerFlowIntegrationTest,
@@ -1019,7 +1019,7 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenGatherShuffleReceivesLateVeri
   PipelineRouters routers;
   routers.gather_shuffle_router = RouteToGatherShuffleWithLateVerificationPayload;
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kPermissionDenied));
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenGatherShuffleReceivesUnexpectedRecord) {
@@ -1237,7 +1237,7 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenEncryptOutputReceivesLateVeri
   PipelineRouters routers;
   routers.encrypt_output_router = RouteToEncryptOutputWithLateVerificationPayload;
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kPermissionDenied));
 }
 
 TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenEncryptOutputReceivesPartiallyShuffledMessage) {
@@ -1450,7 +1450,46 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenKeyReleaserReceivesLateVerifi
   routers.key_releaser_router = RouteToKeyReleaserWithLateVerificationPayload;
 
   EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
-              StatusIs(absl::StatusCode::kInvalidArgument));
+              StatusIs(absl::StatusCode::kPermissionDenied));
+}
+
+TEST(ShufflerFlowIntegrationTest,
+     PipelineFailsWithPermissionDeniedWhenRecordRoutedFromUnauthorizedNode) {
+  const int32_t project_id = 1001;
+  const int32_t metric_id = 2;
+  TestSigningKey signing_key;
+  const RunConfig run_config =
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/1);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
+  });
+  const std::vector<std::string> checkpoints = {
+      CreateCheckpointFromSpec({
+          .project_id = project_id,
+          .metric_id = metric_id,
+          .payload = "payload_0",
+          .event_time = "1970-01-01T00:00:00Z",
+          .privacy_id = "device_0",
+      }),
+  };
+
+  PipelineRouters routers;
+  routers.encrypt_output_router = [](const EncryptedBlob& verification_payload,
+                                     absl::Span<const EncryptedBlob> gathered_messages)
+      -> absl::StatusOr<std::vector<KVCollection>> {
+    KVCollection shard;
+    shard.push_back(verification_payload.ToKV());
+    for (const EncryptedBlob& msg : gathered_messages) {
+      // Simulate an orchestrator routing a record from ScatterShuffle directly
+      // to EncryptOutput, bypassing GatherShuffle.
+      shard.push_back(EncryptedBlob(Node::kScatteredMessages, msg.ciphertext()).ToKV());
+    }
+    return std::vector<KVCollection>{shard};
+  };
+
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kPermissionDenied));
 }
 
 TEST(ShufflerFlowIntegrationTest,

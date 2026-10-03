@@ -43,10 +43,12 @@ namespace cobalt::trusted_shuffler {
 // exist whenever batch_num exceeds actual_batch_size (see b/564506496); the
 // untrusted orchestrator routes by observed messages and so never raises a
 // replica for one.
-class GatherShuffleFn
-    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
-          EncryptsTo<Node::kGatheredMessages>, Encrypted<ShuffledMessage, Node::kGatheredMessages>,
-          Unencrypted<IntegrityFault>> {
+class GatherShuffleFn : public FirstRecordConfigDoFn<
+                            ConfigFrom<IngestionVerificationPayload, Node::kVerifiedIngestion>,
+                            RecordsFrom<ShuffledMessage, Node::kScatteredMessages>>::
+                            WithOutputs<EncryptsTo<Node::kGatheredMessages>,
+                                        Encrypted<ShuffledMessage, Node::kGatheredMessages>,
+                                        Unencrypted<IntegrityFault>> {
  public:
   GatherShuffleFn() = default;
   ~GatherShuffleFn() override = default;

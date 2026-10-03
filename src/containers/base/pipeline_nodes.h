@@ -15,6 +15,8 @@
 #ifndef SRC_CONTAINERS_BASE_PIPELINE_NODES_H_
 #define SRC_CONTAINERS_BASE_PIPELINE_NODES_H_
 
+#include <string_view>
+
 namespace cobalt::trusted_shuffler {
 
 // A data node of the pipeline: one stream of records flowing between
@@ -25,9 +27,8 @@ namespace cobalt::trusted_shuffler {
 // container one re-encryption key per node it writes.
 //
 // Each enumerator's value is that node's id in the access policy. The ids are
-// not contiguous here: only nodes a container encrypts data to are listed, so
-// the raw client uploads the pipeline reads from Spanner (node 0) are absent,
-// and so is node 4, which no transform reads or writes.
+// not contiguous here because node 4, which no transform reads or writes, is
+// absent.
 //
 // Nodes are named after the records they carry rather than after the container
 // that reads them, because several containers may read the same node.
@@ -35,6 +36,10 @@ enum class Node {
   // Not a data node. Declares an output stream that has no destination, which
   // is every unencrypted stream.
   kNone = -1,
+
+  // Raw client log uploads read from Spanner by ingest_uploads and
+  // message_counter.
+  kClientUploads = 0,
 
   // The SignedRunContext fixing the parameters of a single run, written by
   // run_context_initializer and read by every stage that validates the run.

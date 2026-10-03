@@ -14,31 +14,48 @@
 
 #include "src/testing/integration/do_fn_runner.h"
 
+#include <algorithm>
 #include <functional>
 #include <optional>
 #include <utility>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "containers/fns/do_fn.h"
 #include "containers/session.h"
 #include "google/protobuf/any.pb.h"
 #include "google/protobuf/message.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/testing/integration/records.h"
 #include "src/testing/integration/simulated_context.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
 namespace {
 
+bool IsAllowedSource(absl::Span<const Node> allowed_sources, Node source) {
+  return std::binary_search(allowed_sources.begin(), allowed_sources.end(), source);
+}
+
+absl::Status UnacceptedInputError(Node node) {
+  if (node == Node::kNone) {
+    return absl::PermissionDeniedError("Session does not accept unencrypted input.");
+  }
+  return absl::PermissionDeniedError(
+      absl::StrCat("Session does not accept input from node ", static_cast<int>(node), "."));
+}
+
 // Drives a DoFn through its full replica lifecycle and returns the sink holding
 // everything it emitted. Every record is still key-bearing here; the public
 // methods below project that down to what the stage's host-visible output type
 // actually exposes.
-absl::StatusOr<SimulatedSessionContext> RunReplica(
-    confidential_federated_compute::fns::DoFn& do_fn,
-    const DoFnRunner::ReplicaInputs& replica_inputs) {
-  SimulatedSessionContext context;
+absl::StatusOr<SimulatedSessionContext> RunReplica(confidential_federated_compute::fns::DoFn& do_fn,
+                                                   const DoFnRunner::ReplicaInputs& replica_inputs,
+                                                   std::optional<Node> config_source,
+                                                   absl::Span<const Node> record_sources,
+                                                   absl::Span<const Node> destinations) {
+  SimulatedSessionContext context(destinations);
 
   google::protobuf::Any init_any;
   if (replica_inputs.init_config.has_value()) {
@@ -49,8 +66,17 @@ absl::StatusOr<SimulatedSessionContext> RunReplica(
   }
 
   confidential_federated_compute::fns::DoFn::DoContext do_context(context, {});
-  for (const confidential_federated_compute::Session::KV& input : replica_inputs.inputs) {
-    if (absl::Status status = do_fn.Do(input, do_context); !status.ok()) {
+  for (size_t i = 0; i < replica_inputs.inputs.size(); ++i) {
+    const RoutedKV& input = replica_inputs.inputs[i];
+    const bool is_record_zero_config = (i == 0 && config_source.has_value());
+    const bool is_allowed = is_record_zero_config ? (input.node == *config_source)
+                                                  : IsAllowedSource(record_sources, input.node);
+    if (!is_allowed) {
+      return UnacceptedInputError(input.node);
+    }
+    if (absl::Status status = do_fn.Do(
+            confidential_federated_compute::Session::KV(input.key, input.data), do_context);
+        !status.ok()) {
       return status;
     }
   }
@@ -69,9 +95,12 @@ absl::StatusOr<SimulatedSessionContext> RunReplica(
 
 }  // namespace
 
-absl::StatusOr<BlobStageOutputs> DoFnRunner::RunReplicaWithBlobOutput(
-    confidential_federated_compute::fns::DoFn& do_fn, const ReplicaInputs& replica_inputs) {
-  absl::StatusOr<SimulatedSessionContext> context = RunReplica(do_fn, replica_inputs);
+absl::StatusOr<BlobStageOutputs> DoFnRunner::RunReplicaWithBlobOutputImpl(
+    confidential_federated_compute::fns::DoFn& do_fn, const ReplicaInputs& replica_inputs,
+    std::optional<Node> config_source, absl::Span<const Node> record_sources,
+    absl::Span<const Node> destinations) {
+  absl::StatusOr<SimulatedSessionContext> context =
+      RunReplica(do_fn, replica_inputs, config_source, record_sources, destinations);
   if (!context.ok()) {
     return context.status();
   }
@@ -88,9 +117,12 @@ absl::StatusOr<BlobStageOutputs> DoFnRunner::RunReplicaWithBlobOutput(
   return outputs;
 }
 
-absl::StatusOr<KVBlobStageOutputs> DoFnRunner::RunReplicaWithKVBlobOutput(
-    confidential_federated_compute::fns::DoFn& do_fn, const ReplicaInputs& replica_inputs) {
-  absl::StatusOr<SimulatedSessionContext> context = RunReplica(do_fn, replica_inputs);
+absl::StatusOr<KVBlobStageOutputs> DoFnRunner::RunReplicaWithKVBlobOutputImpl(
+    confidential_federated_compute::fns::DoFn& do_fn, const ReplicaInputs& replica_inputs,
+    std::optional<Node> config_source, absl::Span<const Node> record_sources,
+    absl::Span<const Node> destinations) {
+  absl::StatusOr<SimulatedSessionContext> context =
+      RunReplica(do_fn, replica_inputs, config_source, record_sources, destinations);
   if (!context.ok()) {
     return context.status();
   }

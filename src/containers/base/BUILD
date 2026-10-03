@@ -29,6 +29,7 @@ cc_library(
     hdrs = ["pipeline_nodes.h"],
 )
 
+
 cc_library(
     name = "with_outputs",
     hdrs = ["with_outputs.h"],
@@ -46,6 +47,7 @@ cc_library(
     name = "first_record_config_do_fn",
     hdrs = ["first_record_config_do_fn.h"],
     deps = [
+        ":pipeline_nodes",
         ":with_outputs",
         "@abseil-cpp//absl/status",
         "@abseil-cpp//absl/strings",
@@ -75,6 +77,8 @@ cc_test(
     srcs = ["first_record_config_do_fn_test.cc"],
     deps = [
         ":first_record_config_do_fn",
+        ":pipeline_nodes",
+        ":with_outputs",
         "//src/proto:common_cc_proto",
         "//src/proto:run_context_cc_proto",
         "//src/testing:fake_context",

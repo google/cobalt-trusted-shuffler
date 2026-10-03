@@ -44,11 +44,11 @@ EncryptedKVBlob CreateScatteredBlob(const MetricEpochKey& partition, int32_t gro
   group_key->set_group_id(group_id);
   google::protobuf::Any key;
   key.PackFrom(header);
-  return EncryptedKVBlob(key, ciphertext);
+  return EncryptedKVBlob(Node::kScatteredMessages, key, ciphertext);
 }
 
 TEST(GatherShuffleRouterTest, GroupsByPartitionAndGroupIdAndStripsScatterShuffleHeaderKey) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
   const MetricEpochKey partition_a =
       CreateMetricEpochKey({.project_id = 1001, .metric_id = 2, .epoch_index = 10});
   const MetricEpochKey partition_b =
@@ -82,13 +82,13 @@ TEST(GatherShuffleRouterTest, GroupsByPartitionAndGroupIdAndStripsScatterShuffle
 }
 
 TEST(GatherShuffleRouterTest, RejectsMissingMetricEpochKeyInHeader) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
   ScatterShuffleHeader header;
   header.mutable_scatter_group_key()->set_group_id(0);
   google::protobuf::Any key;
   key.PackFrom(header);
   const std::vector<EncryptedKVBlob> scattered_messages = {
-      EncryptedKVBlob(key, "missing_partition_key"),
+      EncryptedKVBlob(Node::kScatteredMessages, key, "missing_partition_key"),
   };
 
   EXPECT_THAT(RouteToGatherShuffle(verification_payload, scattered_messages),
@@ -96,13 +96,13 @@ TEST(GatherShuffleRouterTest, RejectsMissingMetricEpochKeyInHeader) {
 }
 
 TEST(GatherShuffleRouterTest, RejectsIntegrityFaultHeader) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
   ScatterShuffleHeader header;
   header.mutable_integrity_fault();
   google::protobuf::Any key;
   key.PackFrom(header);
   const std::vector<EncryptedKVBlob> scattered_messages = {
-      EncryptedKVBlob(key, "fault_record"),
+      EncryptedKVBlob(Node::kScatteredMessages, key, "fault_record"),
   };
 
   EXPECT_THAT(RouteToGatherShuffle(verification_payload, scattered_messages),

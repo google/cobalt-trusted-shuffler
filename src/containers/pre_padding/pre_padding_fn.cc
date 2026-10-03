@@ -41,7 +41,7 @@ absl::Status PrePaddingFn::OnConfig(const IngestionVerificationPayload& config,
   return absl::OkStatus();
 }
 
-absl::Status PrePaddingFn::OnRecord(const ShuffledMessage& /*input*/, DoContext& context) {
+absl::Status PrePaddingFn::OnRecord(DoContext& context) {
   context.IncrementCounter(kInputRecordCount);
   context.IncrementCounter(kInputRecordDropped);
   if (fault_handler_.HasFault()) {

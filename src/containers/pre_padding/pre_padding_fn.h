@@ -34,10 +34,11 @@ namespace cobalt::trusted_shuffler {
 // Generates encrypted dummy padding messages for approved partitions so each
 // partition's total message count is an exact multiple of batch_num.
 class PrePaddingFn
-    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
-          EncryptsTo<Node::kPaddingMessages>,
-          EncryptedKV<MetricEpochKey, ShuffledMessage, Node::kPaddingMessages>,
-          Unencrypted<IntegrityFault>> {
+    : public FirstRecordConfigDoFn<
+          ConfigFrom<IngestionVerificationPayload, Node::kVerifiedIngestion>, NoRecords>::
+          WithOutputs<EncryptsTo<Node::kPaddingMessages>,
+                      EncryptedKV<MetricEpochKey, ShuffledMessage, Node::kPaddingMessages>,
+                      Unencrypted<IntegrityFault>> {
  public:
   PrePaddingFn() = default;
   ~PrePaddingFn() override = default;
@@ -46,7 +47,7 @@ class PrePaddingFn
 
  protected:
   absl::Status OnConfig(const IngestionVerificationPayload& config, DoContext& context) override;
-  absl::Status OnRecord(const ShuffledMessage& input, DoContext& context) override;
+  absl::Status OnRecord(DoContext& context) override;
   absl::Status OnFinalize(google::protobuf::Any config, FnContext& context) override;
 
  private:

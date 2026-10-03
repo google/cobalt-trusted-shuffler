@@ -15,6 +15,9 @@
 #ifndef SRC_CONTAINERS_BASE_FIRST_RECORD_CONFIG_DO_FN_H_
 #define SRC_CONTAINERS_BASE_FIRST_RECORD_CONFIG_DO_FN_H_
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -24,9 +27,129 @@
 #include "absl/strings/str_cat.h"
 #include "containers/fns/do_fn.h"
 #include "google/protobuf/message.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/containers/base/with_outputs.h"
 
 namespace cobalt::trusted_shuffler {
+
+// Declares the configuration proto a FirstRecordConfigDoFn reads from record 0
+// and the data node it is read from.
+template <typename ConfigProto, Node Source>
+struct ConfigFrom {
+  static_assert(internal::kAreDataNodes<Source>,
+                "Node::kNone is not a data node and cannot be read from.");
+
+  // The configuration proto parsed from record 0.
+  using Value = ConfigProto;
+
+  // The data node this configuration is read from.
+  inline static constexpr Node kSource = Source;
+};
+
+// Declares the records a FirstRecordConfigDoFn reads after its configuration
+// and the data nodes they are read from.
+//
+// The nodes here must be listed once each and in ascending order. A container
+// that accepts no records after its configuration lists no nodes.
+template <typename RecordType, Node... Sources>
+struct RecordsFrom {
+  static_assert(internal::kAreDataNodes<Sources...>,
+                "Node::kNone is not a data node and cannot be read from.");
+  static_assert(internal::kAreAscending<Sources...>,
+                "The data nodes a container reads records from must be listed once each and in "
+                "ascending order.");
+  static_assert(!std::is_void_v<RecordType> || sizeof...(Sources) == 0,
+                "A config-only container (RecordType is void) cannot declare record sources.");
+
+  // The record type parsed from records 1..N.
+  using Value = RecordType;
+
+  // The data nodes this container reads records from, in ascending order.
+  inline static constexpr std::array<Node, sizeof...(Sources)> kSources = {Sources...};
+};
+
+// Declares that a container accepts no records after its configuration.
+using NoRecords = RecordsFrom<void>;
+
+namespace internal {
+
+// Whether `T` is a ConfigFrom<...> declaration.
+template <typename T>
+inline constexpr bool kIsConfigFrom = false;
+template <typename ConfigProto, Node Source>
+inline constexpr bool kIsConfigFrom<ConfigFrom<ConfigProto, Source>> = true;
+
+// Whether `T` is a RecordsFrom<...> declaration.
+template <typename T>
+inline constexpr bool kIsRecordsFrom = false;
+template <typename RecordType, Node... Sources>
+inline constexpr bool kIsRecordsFrom<RecordsFrom<RecordType, Sources...>> = true;
+
+// Whether a container reads its configuration from a different data node than
+// any of its records.
+template <Node ConfigSource, Node... RecordSources>
+inline constexpr bool kAreDisjointSources = ((RecordSources != ConfigSource) && ...);
+
+// The WithInputs mixin of a FirstRecordConfigDoFn, listing the data node its
+// configuration is read from and the data nodes its records are read from
+// together in ascending order.
+//
+// A malformed declaration yields WithInputs<>, so that it is reported by the
+// assertions in FirstRecordConfigDoFn alone.
+template <typename ConfigInput, typename RecordInput>
+struct FirstRecordInputs {
+  using Type = WithInputs<>;
+};
+
+template <typename ConfigProto, Node ConfigSource, typename RecordType, Node... RecordSources>
+struct FirstRecordInputs<ConfigFrom<ConfigProto, ConfigSource>,
+                         RecordsFrom<RecordType, RecordSources...>> {
+  static_assert(kAreDisjointSources<ConfigSource, RecordSources...>,
+                "A container cannot read its configuration and its records from the same data "
+                "node.");
+
+  static constexpr std::array<Node, 1 + sizeof...(RecordSources)> kSortedSources = [] {
+    std::array<Node, 1 + sizeof...(RecordSources)> sources = {ConfigSource, RecordSources...};
+    std::sort(sources.begin(), sources.end());
+    return sources;
+  }();
+
+  template <size_t... Indices>
+  static WithInputs<kSortedSources[Indices]...> Build(std::index_sequence<Indices...>);
+
+  using Type =
+      std::conditional_t<kAreDisjointSources<ConfigSource, RecordSources...>,
+                         decltype(Build(std::make_index_sequence<kSortedSources.size()>())),
+                         WithInputs<>>;
+};
+
+// Base class defining OnRecord() based on whether RecordType is void.
+template <typename RecordType>
+class RecordHandler {
+ protected:
+  virtual ~RecordHandler() = default;
+
+  // Hook invoked for all subsequent records (records 1..N) after configuration
+  // has succeeded.
+  virtual absl::Status OnRecord(const RecordType& record,
+                                confidential_federated_compute::fns::DoFn::DoContext& context) = 0;
+};
+
+template <>
+class RecordHandler<void> {
+ protected:
+  virtual ~RecordHandler() = default;
+
+  // Hook invoked if a record arrives after configuration in a config-only session.
+  // Defaults to returning FailedPreconditionError. Subclasses (such as PrePaddingFn)
+  // may override this to signal an integrity fault.
+  virtual absl::Status OnRecord(confidential_federated_compute::fns::DoFn::DoContext& /*context*/) {
+    return absl::FailedPreconditionError(
+        "This session is config-only and does not accept data records.");
+  }
+};
+
+}  // namespace internal
 
 // Reusable DoFn base class implementing the First-Record Configuration streaming
 // pattern.
@@ -34,6 +157,10 @@ namespace cobalt::trusted_shuffler {
 // In confidential streaming pipelines where runtime configuration is passed in-band,
 // the configuration proto is written as the initial record (record 0) of the
 // session stream.
+//
+// A container declares its configuration proto and record type together with
+// the data nodes each is read from, as ConfigFrom<ConfigProto, Node> and
+// RecordsFrom<RecordType, Node...>.
 //
 // This base class encapsulates the state machine:
 // - Record 0: Parses ConfigProto from input.data, invokes OnConfig(), and transitions
@@ -43,17 +170,39 @@ namespace cobalt::trusted_shuffler {
 //   RecordType from input.data (or forwards the raw byte string directly when
 //   RecordType is std::string), and routes records to OnRecord(). If configuration
 //   failed on record 0, subsequent records are rejected with kFailedPrecondition.
-template <typename ConfigProto, typename RecordType = std::string>
-class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
+template <typename ConfigInput, typename RecordInput>
+class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn,
+                              public internal::RecordHandler<typename RecordInput::Value> {
+  static_assert(internal::kIsConfigFrom<ConfigInput>,
+                "A container must declare its configuration as ConfigFrom<ConfigProto, Node>, "
+                "naming the data node it is read from.");
+  static_assert(internal::kIsRecordsFrom<RecordInput>,
+                "A container must declare its records as RecordsFrom<RecordType, Node...>, naming "
+                "the data nodes they are read from.");
+
+  // The configuration proto parsed from record 0.
+  using ConfigProto = typename ConfigInput::Value;
+
+  // The record type parsed from records 1..N.
+  using RecordType = typename RecordInput::Value;
+
   static_assert(std::is_base_of_v<google::protobuf::Message, ConfigProto>,
                 "ConfigProto must inherit from google::protobuf::Message.");
-  static_assert(std::is_base_of_v<google::protobuf::Message, RecordType> ||
-                    std::is_same_v<std::string, RecordType>,
-                "RecordType must inherit from google::protobuf::Message or be std::string.");
+  static_assert(
+      std::is_base_of_v<google::protobuf::Message, RecordType> ||
+          std::is_same_v<std::string, RecordType> || std::is_void_v<RecordType>,
+      "RecordType must inherit from google::protobuf::Message, be std::string, or be void.");
 
  public:
-  // Base class combining FirstRecordConfigDoFn<ConfigProto, RecordType> with
-  // the data nodes the container encrypts to and its output declarations.
+  // The data node the container reads its configuration proto from on record 0.
+  inline static constexpr Node kConfigSource = ConfigInput::kSource;
+
+  // The data nodes the container reads records from on records 1..N, in ascending order.
+  inline static constexpr auto kRecordSources = RecordInput::kSources;
+
+  // Base class combining FirstRecordConfigDoFn<ConfigInput, RecordInput> with
+  // the data nodes the container reads from and encrypts to and its output
+  // declarations.
   template <typename Destinations, typename... OutputStreams>
   class WithOutputs;
 
@@ -95,15 +244,17 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
       return absl::OkStatus();
     }
 
-    if constexpr (std::is_same_v<std::string, RecordType>) {
-      return OnRecord(input.data, context);
+    if constexpr (std::is_void_v<RecordType>) {
+      return this->OnRecord(context);
+    } else if constexpr (std::is_same_v<std::string, RecordType>) {
+      return this->OnRecord(input.data, context);
     } else {
       RecordType record;
       if (!record.ParseFromString(input.data)) {
         return absl::InvalidArgumentError(
             "Failed to parse record as record proto: corrupted or invalid payload.");
       }
-      return OnRecord(record, context);
+      return this->OnRecord(record, context);
     }
   }
 
@@ -142,10 +293,6 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
   // validate the configuration proto.
   virtual absl::Status OnConfig(const ConfigProto& config, DoContext& context) = 0;
 
-  // Hook invoked for all subsequent records (records 1..N) after configuration
-  // has succeeded.
-  virtual absl::Status OnRecord(const RecordType& record, DoContext& context) = 0;
-
   // Hook invoked during FinalizeReplica when Do() was called at least once.
   virtual absl::Status OnFinalize(google::protobuf::Any config, FnContext& context) {
     return absl::OkStatus();
@@ -157,14 +304,23 @@ class FirstRecordConfigDoFn : public confidential_federated_compute::fns::DoFn {
   bool is_finalized_ = false;
 };
 
-template <typename ConfigProto, typename RecordType>
+template <typename ConfigInput, typename RecordInput>
 template <typename Destinations, typename... OutputStreams>
-class FirstRecordConfigDoFn<ConfigProto, RecordType>::WithOutputs
-    : public FirstRecordConfigDoFn<ConfigProto, RecordType>,
+class FirstRecordConfigDoFn<ConfigInput, RecordInput>::WithOutputs
+    : public FirstRecordConfigDoFn<ConfigInput, RecordInput>,
+      public internal::FirstRecordInputs<ConfigInput, RecordInput>::Type,
       public ::cobalt::trusted_shuffler::WithOutputs<Destinations, OutputStreams...> {
  public:
-  using FirstRecordConfigDoFn<ConfigProto, RecordType>::FirstRecordConfigDoFn;
+  using FirstRecordConfigDoFn<ConfigInput, RecordInput>::FirstRecordConfigDoFn;
   ~WithOutputs() override = default;
+
+  // The data node the container reads its configuration proto from on record 0.
+  inline static constexpr Node kConfigSource =
+      FirstRecordConfigDoFn<ConfigInput, RecordInput>::kConfigSource;
+
+  // The data nodes the container reads records from on records 1..N, in ascending order.
+  inline static constexpr auto kRecordSources =
+      FirstRecordConfigDoFn<ConfigInput, RecordInput>::kRecordSources;
 };
 
 }  // namespace cobalt::trusted_shuffler

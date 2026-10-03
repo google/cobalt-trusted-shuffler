@@ -23,6 +23,7 @@
 #include "containers/fns/do_fn.h"
 #include "google/protobuf/any.pb.h"
 #include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/crypto/multiset_fingerprint.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/fingerprint.pb.h"
@@ -40,9 +41,10 @@ namespace cobalt::trusted_shuffler {
 // messages across all encrypt_output workers on Records 1..N, and verifies on
 // FinalizeReplica that the complete release multiset fingerprint matches the
 // canonical ingestion fingerprint before releasing the Tink AEAD release_key.
-class KeyReleaserFn
-    : public FirstRecordConfigDoFn<IngestionVerificationPayload, PartialReleaseReport>::WithOutputs<
-          EncryptsTo<>, Unencrypted<DecryptionKeyRelease>> {
+class KeyReleaserFn : public FirstRecordConfigDoFn<
+                          ConfigFrom<IngestionVerificationPayload, Node::kVerifiedIngestion>,
+                          RecordsFrom<PartialReleaseReport, Node::kPartialReleaseReports>>::
+                          WithOutputs<EncryptsTo<>, Unencrypted<DecryptionKeyRelease>> {
  public:
   KeyReleaserFn() = default;
   ~KeyReleaserFn() override = default;

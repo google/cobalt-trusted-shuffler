@@ -90,7 +90,7 @@ absl::StatusOr<std::vector<KVCollection>> RouteToGatherShuffleWithLateVerificati
   }
 
   if (batches->front().size() > 1) {
-    confidential_federated_compute::Session::KV vp = std::move(batches->front().front());
+    RoutedKV vp = std::move(batches->front().front());
     batches->front().erase(batches->front().begin());
     batches->front().push_back(std::move(vp));
   }

@@ -34,7 +34,7 @@ namespace cobalt::trusted_shuffler {
 // The FinalizeReplica config Any is forwarded unchanged as the routing key of
 // the emitted record.
 class RunContextInitializerFn
-    : public TrustedDoFn::WithOutputs<
+    : public TrustedDoFn::WithInputs<>::WithOutputs<
           EncryptsTo<Node::kRunContext>,
           EncryptedKV<google::protobuf::Any, SignedRunContext, Node::kRunContext>> {
  public:

@@ -37,8 +37,7 @@ absl::StatusOr<std::vector<KVCollection>> RouteToScatterShuffle(
     return absl::InvalidArgumentError("target_batch_size must be positive.");
   }
 
-  absl::flat_hash_map<MetricEpochKey, std::vector<confidential_federated_compute::Session::KV>>
-      partition_to_records;
+  absl::flat_hash_map<MetricEpochKey, KVCollection> partition_to_records;
 
   auto process_messages = [&](absl::Span<const EncryptedKVBlob> messages) -> absl::Status {
     for (const EncryptedKVBlob& msg : messages) {
@@ -124,7 +123,7 @@ absl::StatusOr<std::vector<KVCollection>> RouteToScatterShuffleWithLateVerificat
     return batches;
 
   if (batches->front().size() > 1) {
-    confidential_federated_compute::Session::KV vp = std::move(batches->front().front());
+    RoutedKV vp = std::move(batches->front().front());
     batches->front().erase(batches->front().begin());
     batches->front().push_back(std::move(vp));
   }

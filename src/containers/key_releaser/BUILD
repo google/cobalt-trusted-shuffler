@@ -44,6 +44,7 @@ cc_library(
     deps = [
         "//src/containers/base:counter_names",
         "//src/containers/base:first_record_config_do_fn",
+        "//src/containers/base:pipeline_nodes",
         "//src/crypto:multiset_fingerprint",
         "//src/crypto:verify_ingestion_verification_payload",
         "//src/proto:common_cc_proto",

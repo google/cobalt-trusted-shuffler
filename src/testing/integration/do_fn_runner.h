@@ -23,6 +23,7 @@
 #include "containers/fns/do_fn.h"
 #include "containers/session.h"
 #include "google/protobuf/message.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/testing/integration/records.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
@@ -31,10 +32,13 @@ namespace cobalt::trusted_shuffler::testing::integration {
 // complete session replica lifecycle (InitializeReplica -> Do -> FinalizeReplica)
 // and hands back what the host pipeline would see afterwards.
 //
-// If InitializeReplica, Do, or FinalizeReplica returns a non-OK status, the
-// replica immediately aborts (skipping FinalizeReplica if Do fails) and
-// discards all emitted outputs from that replica, matching the host pipeline's
-// replica failure behavior.
+// If InitializeReplica, Do, or FinalizeReplica returns a non-OK status, or if an
+// input record's data node does not match the session's declared input nodes
+// (for FirstRecordConfigDoFn, record 0 must match kConfigSource and records 1..N
+// must be in kRecordSources; for TrustedDoFn, all records must be in kSources),
+// the replica immediately aborts (skipping FinalizeReplica if Do or input routing
+// validation fails) and discards all emitted outputs from that replica,
+// matching the host pipeline's replica failure behavior.
 //
 // A stage declares its host-visible output type by choosing one of the two run
 // methods below. That choice is fixed for the whole stage, so callers cannot
@@ -43,22 +47,56 @@ class DoFnRunner {
  public:
   // Inputs for executing a single DoFn session replica.
   struct ReplicaInputs {
+    // Configuration unpacked during InitializeReplica, if any.
     std::optional<std::reference_wrapper<const google::protobuf::Message>> init_config =
         std::nullopt;
-    absl::Span<const confidential_federated_compute::Session::KV> inputs = {};
+
+    // Input records streamed to Do in order.
+    absl::Span<const RoutedKV> inputs = {};
+
+    // Configuration unpacked during FinalizeReplica, if any.
     std::optional<std::reference_wrapper<const google::protobuf::Message>> finalize_config =
         std::nullopt;
   };
 
   // Executes the replica lifecycle for a stage that discards emitted keys,
   // leaving the host with payloads only.
+  template <typename DoFnType>
   static absl::StatusOr<BlobStageOutputs> RunReplicaWithBlobOutput(
-      confidential_federated_compute::fns::DoFn& do_fn, const ReplicaInputs& replica_inputs);
+      DoFnType& do_fn, const ReplicaInputs& replica_inputs) {
+    if constexpr (requires { DoFnType::kConfigSource; }) {
+      return RunReplicaWithBlobOutputImpl(do_fn, replica_inputs, DoFnType::kConfigSource,
+                                          DoFnType::kRecordSources, DoFnType::kDestinations);
+    } else {
+      return RunReplicaWithBlobOutputImpl(do_fn, replica_inputs, std::nullopt, DoFnType::kSources,
+                                          DoFnType::kDestinations);
+    }
+  }
 
   // Executes the replica lifecycle for a stage that keeps emitted keys, leaving
   // the host a plaintext key to route on alongside each payload.
+  template <typename DoFnType>
   static absl::StatusOr<KVBlobStageOutputs> RunReplicaWithKVBlobOutput(
-      confidential_federated_compute::fns::DoFn& do_fn, const ReplicaInputs& replica_inputs);
+      DoFnType& do_fn, const ReplicaInputs& replica_inputs) {
+    if constexpr (requires { DoFnType::kConfigSource; }) {
+      return RunReplicaWithKVBlobOutputImpl(do_fn, replica_inputs, DoFnType::kConfigSource,
+                                            DoFnType::kRecordSources, DoFnType::kDestinations);
+    } else {
+      return RunReplicaWithKVBlobOutputImpl(do_fn, replica_inputs, std::nullopt, DoFnType::kSources,
+                                            DoFnType::kDestinations);
+    }
+  }
+
+ private:
+  static absl::StatusOr<BlobStageOutputs> RunReplicaWithBlobOutputImpl(
+      confidential_federated_compute::fns::DoFn& do_fn, const ReplicaInputs& replica_inputs,
+      std::optional<Node> config_source, absl::Span<const Node> record_sources,
+      absl::Span<const Node> destinations);
+
+  static absl::StatusOr<KVBlobStageOutputs> RunReplicaWithKVBlobOutputImpl(
+      confidential_federated_compute::fns::DoFn& do_fn, const ReplicaInputs& replica_inputs,
+      std::optional<Node> config_source, absl::Span<const Node> record_sources,
+      absl::Span<const Node> destinations);
 };
 
 }  // namespace cobalt::trusted_shuffler::testing::integration

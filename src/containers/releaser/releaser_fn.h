@@ -18,15 +18,15 @@
 #include <string>
 
 #include "absl/status/status.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/containers/base/with_outputs.h"
 
 namespace cobalt::trusted_shuffler {
 
 // A DoFn class for decrypting messages. It unconditionally decrypts all
 // messages it receives.
-class ReleaserFn
-    : public TrustedDoFn::WithOutputs<EncryptsTo<>,
-                                      Unencrypted<confidential_federated_compute::Session::KV>> {
+class ReleaserFn : public TrustedDoFn::WithInputs<Node::kCountedMessages>::WithOutputs<
+                       EncryptsTo<>, Unencrypted<confidential_federated_compute::Session::KV>> {
  public:
   ReleaserFn() {}
 

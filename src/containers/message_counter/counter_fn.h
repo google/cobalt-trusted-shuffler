@@ -28,10 +28,10 @@ namespace cobalt::trusted_shuffler {
 
 // A DoFn class for counting messages. It keeps track of the number of
 // messages it receives and outputs the total count in the finalize step.
-class CounterFn
-    : public TrustedDoFn::WithOutputs<EncryptsTo<Node::kCountedMessages>,
-                                      EncryptedKV<OutputKey, std::string, Node::kCountedMessages>,
-                                      UnencryptedKV<OutputKey, CountReport>> {
+class CounterFn : public TrustedDoFn::WithInputs<Node::kClientUploads>::WithOutputs<
+                      EncryptsTo<Node::kCountedMessages>,
+                      EncryptedKV<OutputKey, std::string, Node::kCountedMessages>,
+                      UnencryptedKV<OutputKey, CountReport>> {
  public:
   CounterFn() : count_(0L) {}
 

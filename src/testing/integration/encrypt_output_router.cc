@@ -79,7 +79,7 @@ absl::StatusOr<std::vector<KVCollection>> RoutePartiallyShuffledMessageToEncrypt
 
   ShuffledMessage invalid_msg;
   invalid_msg.set_shuffle_count(1);
-  shard.push_back(EncryptedBlob(invalid_msg.SerializeAsString()).ToKV());
+  shard.push_back(EncryptedBlob(Node::kGatheredMessages, invalid_msg.SerializeAsString()).ToKV());
 
   for (const EncryptedBlob& msg : gathered_messages) {
     shard.push_back(msg.ToKV());

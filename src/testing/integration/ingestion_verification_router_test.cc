@@ -30,10 +30,10 @@ using ::absl_testing::IsOk;
 using ::testing::SizeIs;
 
 TEST(IngestionVerificationRouterTest, PrependsSignedRunContextAndPartialReports) {
-  const EncryptedBlob signed_run_context("ctx_ciphertext");
+  const EncryptedBlob signed_run_context(Node::kRunContext, "ctx_ciphertext");
   const std::vector<EncryptedBlob> reports = {
-      EncryptedBlob("report_1"),
-      EncryptedBlob("report_2"),
+      EncryptedBlob(Node::kPartialIngestionReports, "report_1"),
+      EncryptedBlob(Node::kPartialIngestionReports, "report_2"),
   };
 
   const absl::StatusOr<KVCollection> result =
@@ -46,10 +46,10 @@ TEST(IngestionVerificationRouterTest, PrependsSignedRunContextAndPartialReports)
 }
 
 TEST(IngestionVerificationRouterTest, RouteWithLateRunContextPlacesRunContextLast) {
-  const EncryptedBlob signed_run_context("ctx_ciphertext");
+  const EncryptedBlob signed_run_context(Node::kRunContext, "ctx_ciphertext");
   const std::vector<EncryptedBlob> reports = {
-      EncryptedBlob("report_1"),
-      EncryptedBlob("report_2"),
+      EncryptedBlob(Node::kPartialIngestionReports, "report_1"),
+      EncryptedBlob(Node::kPartialIngestionReports, "report_2"),
   };
 
   const absl::StatusOr<KVCollection> result =
@@ -62,9 +62,9 @@ TEST(IngestionVerificationRouterTest, RouteWithLateRunContextPlacesRunContextLas
 }
 
 TEST(IngestionVerificationRouterTest, RouteWithMismatchedRunIdAppendsTamperedReport) {
-  const EncryptedBlob signed_run_context("ctx_ciphertext");
+  const EncryptedBlob signed_run_context(Node::kRunContext, "ctx_ciphertext");
   const std::vector<EncryptedBlob> reports = {
-      EncryptedBlob("report_1"),
+      EncryptedBlob(Node::kPartialIngestionReports, "report_1"),
   };
 
   const absl::StatusOr<KVCollection> result =

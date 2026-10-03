@@ -30,7 +30,7 @@ absl::StatusOr<KVCollection> RouteToPrePadding(const EncryptedBlob& verification
 absl::StatusOr<KVCollection> RouteToPrePaddingWithEmptyInput(
     const EncryptedBlob& /*verification_payload*/) {
   KVCollection inputs;
-  inputs.push_back(confidential_federated_compute::Session::KV(/*data=*/""));
+  inputs.push_back(EncryptedBlob(Node::kVerifiedIngestion, "").ToKV());
   return inputs;
 }
 
@@ -38,7 +38,7 @@ absl::StatusOr<KVCollection> RouteToPrePaddingWithUnexpectedRecord(
     const EncryptedBlob& verification_payload) {
   KVCollection inputs;
   inputs.push_back(verification_payload.ToKV());
-  inputs.push_back(confidential_federated_compute::Session::KV(/*data=*/"unexpected_record"));
+  inputs.push_back(EncryptedBlob(Node::kVerifiedIngestion, "unexpected_record").ToKV());
   return inputs;
 }
 

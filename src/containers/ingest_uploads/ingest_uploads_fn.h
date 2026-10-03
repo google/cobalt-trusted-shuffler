@@ -49,11 +49,13 @@ namespace cobalt::trusted_shuffler {
 // On configuration verification failure, emits an unencrypted IntegrityFault keyed by an
 // IngestMessagesHeader with integrity_fault set, and aborts the session.
 class IngestUploadsFn
-    : public FirstRecordConfigDoFn<SignedRunContext, std::string>::WithOutputs<
-          EncryptsTo<Node::kIngestedMessages, Node::kPartialIngestionReports>,
-          EncryptedKV<IngestMessagesHeader, ShuffledMessage, Node::kIngestedMessages>,
-          EncryptedKV<IngestMessagesHeader, PartialIngestionReport, Node::kPartialIngestionReports>,
-          UnencryptedKV<IngestMessagesHeader, IntegrityFault>> {
+    : public FirstRecordConfigDoFn<ConfigFrom<SignedRunContext, Node::kRunContext>,
+                                   RecordsFrom<std::string, Node::kClientUploads>>::
+          WithOutputs<EncryptsTo<Node::kIngestedMessages, Node::kPartialIngestionReports>,
+                      EncryptedKV<IngestMessagesHeader, ShuffledMessage, Node::kIngestedMessages>,
+                      EncryptedKV<IngestMessagesHeader, PartialIngestionReport,
+                                  Node::kPartialIngestionReports>,
+                      UnencryptedKV<IngestMessagesHeader, IntegrityFault>> {
  public:
   // Project ID, Metric ID, and Epoch Index tuple identifying a data partition.
   using MetricEpochTuple = std::tuple<int32_t, int32_t, int64_t>;

@@ -65,7 +65,7 @@ IngestMessagesHeader CreateIntegrityFaultHeader() {
 }
 
 TEST(IngestUploadsRouterTest, RouteToIngestUploadsPrependsSignedRunContextAndCheckpoints) {
-  const EncryptedBlob signed_run_context("ctx_ciphertext");
+  const EncryptedBlob signed_run_context(Node::kRunContext, "ctx_ciphertext");
   const std::vector<std::string> checkpoints = {"cp_1", "cp_2"};
 
   const absl::StatusOr<std::vector<KVCollection>> result =
@@ -74,26 +74,29 @@ TEST(IngestUploadsRouterTest, RouteToIngestUploadsPrependsSignedRunContextAndChe
   ASSERT_THAT(*result, SizeIs(1));
   const KVCollection& shard = (*result)[0];
   ASSERT_THAT(shard, SizeIs(3));
+  EXPECT_EQ(shard[0].node, Node::kRunContext);
   EXPECT_EQ(shard[0].data, "ctx_ciphertext");
+  EXPECT_EQ(shard[1].node, Node::kClientUploads);
   EXPECT_EQ(shard[1].data, "cp_1");
+  EXPECT_EQ(shard[2].node, Node::kClientUploads);
   EXPECT_EQ(shard[2].data, "cp_2");
 }
 
 TEST(IngestUploadsRouterTest, RouteToIngestUploadsLeavesEveryRecordKeyEmpty) {
-  const EncryptedBlob signed_run_context("ctx_ciphertext");
+  const EncryptedBlob signed_run_context(Node::kRunContext, "ctx_ciphertext");
   const std::vector<std::string> checkpoints = {"cp_1"};
 
   const absl::StatusOr<std::vector<KVCollection>> result =
       RouteToIngestUploads(signed_run_context, checkpoints);
   ASSERT_THAT(result.status(), IsOk());
   ASSERT_THAT(*result, SizeIs(1));
-  for (const confidential_federated_compute::Session::KV& input : (*result)[0]) {
+  for (const RoutedKV& input : (*result)[0]) {
     EXPECT_THAT(input.key.type_url(), IsEmpty());
   }
 }
 
 TEST(IngestUploadsRouterTest, RouteToTwoShardIngestUploadsSplitsCheckpointsAcrossShards) {
-  const EncryptedBlob signed_run_context("ctx_ciphertext");
+  const EncryptedBlob signed_run_context(Node::kRunContext, "ctx_ciphertext");
   const std::vector<std::string> checkpoints = {"cp_1", "cp_2", "cp_3"};
 
   const absl::StatusOr<std::vector<KVCollection>> result =
@@ -115,7 +118,7 @@ TEST(IngestUploadsRouterTest, RouteToTwoShardIngestUploadsSplitsCheckpointsAcros
 
 TEST(IngestUploadsRouterTest,
      RouteToTwoShardIngestUploadsLeavesIdleShardEmptyWhenSingleCheckpointProvided) {
-  const EncryptedBlob signed_run_context("ctx_ciphertext");
+  const EncryptedBlob signed_run_context(Node::kRunContext, "ctx_ciphertext");
   const std::vector<std::string> checkpoints = {"cp_1"};
 
   const absl::StatusOr<std::vector<KVCollection>> result =
@@ -129,7 +132,7 @@ TEST(IngestUploadsRouterTest,
 }
 
 TEST(IngestUploadsRouterTest, RouteToIngestUploadsWithLateRunContextPlacesRunContextLast) {
-  const EncryptedBlob signed_run_context("ctx_ciphertext");
+  const EncryptedBlob signed_run_context(Node::kRunContext, "ctx_ciphertext");
   const std::vector<std::string> checkpoints = {"cp_1"};
 
   const absl::StatusOr<std::vector<KVCollection>> result =
@@ -145,7 +148,7 @@ TEST(IngestUploadsRouterTest, RouteToIngestUploadsWithLateRunContextPlacesRunCon
 
 TEST(IngestUploadsRouterTest,
      RouteToTwoShardIngestUploadsWithSecondShardAbortPlacesRunContextLastInShardOne) {
-  const EncryptedBlob signed_run_context("ctx_ciphertext");
+  const EncryptedBlob signed_run_context(Node::kRunContext, "ctx_ciphertext");
   const std::vector<std::string> checkpoints = {"cp_1", "cp_2"};
 
   const absl::StatusOr<std::vector<KVCollection>> result =
@@ -164,19 +167,23 @@ TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsSeparatesReportsAndDropsM
   const KVBlobStageOutputs ingest_output{
       .encrypted =
           {
-              EncryptedKVBlob(PackToAny(CreateMetricEpochHeader(
+              EncryptedKVBlob(Node::kIngestedMessages,
+                              PackToAny(CreateMetricEpochHeader(
                                   /*project_id=*/1001, /*metric_id=*/2, /*epoch_index=*/5)),
                               "msg_ciphertext"),
-              EncryptedKVBlob(PackToAny(CreatePartialIngestionReportHeader()), "report_ciphertext"),
+              EncryptedKVBlob(Node::kPartialIngestionReports,
+                              PackToAny(CreatePartialIngestionReportHeader()), "report_ciphertext"),
           },
   };
 
   const absl::StatusOr<IngestUploadsOutputs> split = SplitIngestUploadsOutputs(ingest_output);
   ASSERT_THAT(split.status(), IsOk());
   ASSERT_THAT(split->partial_reports, SizeIs(1));
+  EXPECT_EQ(split->partial_reports[0].node(), Node::kPartialIngestionReports);
   EXPECT_EQ(split->partial_reports[0].ciphertext(), "report_ciphertext");
 
   ASSERT_THAT(split->ingested_messages, SizeIs(1));
+  EXPECT_EQ(split->ingested_messages[0].node(), Node::kIngestedMessages);
   EXPECT_EQ(split->ingested_messages[0].ciphertext(), "msg_ciphertext");
 }
 
@@ -184,11 +191,14 @@ TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsWithDroppedReportsDropsLa
   const KVBlobStageOutputs ingest_output{
       .encrypted =
           {
-              EncryptedKVBlob(PackToAny(CreatePartialIngestionReportHeader()),
+              EncryptedKVBlob(Node::kPartialIngestionReports,
+                              PackToAny(CreatePartialIngestionReportHeader()),
                               "report_ciphertext_0"),
-              EncryptedKVBlob(PackToAny(CreatePartialIngestionReportHeader()),
+              EncryptedKVBlob(Node::kPartialIngestionReports,
+                              PackToAny(CreatePartialIngestionReportHeader()),
                               "report_ciphertext_1"),
-              EncryptedKVBlob(PackToAny(CreateMetricEpochHeader(
+              EncryptedKVBlob(Node::kIngestedMessages,
+                              PackToAny(CreateMetricEpochHeader(
                                   /*project_id=*/1001, /*metric_id=*/2, /*epoch_index=*/5)),
                               "msg_ciphertext"),
           },
@@ -207,7 +217,8 @@ TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsFailsOnInvalidHeaderKey) 
   MetricEpochKey non_header_key;
   non_header_key.set_project_id(1001);
   const KVBlobStageOutputs ingest_output{
-      .encrypted = {EncryptedKVBlob(PackToAny(non_header_key), "ciphertext")},
+      .encrypted = {EncryptedKVBlob(Node::kIngestedMessages, PackToAny(non_header_key),
+                                    "ciphertext")},
   };
 
   EXPECT_THAT(SplitIngestUploadsOutputs(ingest_output).status(),
@@ -216,7 +227,8 @@ TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsFailsOnInvalidHeaderKey) 
 
 TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsFailsOnEmptyIngestMessagesHeader) {
   const KVBlobStageOutputs ingest_output{
-      .encrypted = {EncryptedKVBlob(PackToAny(IngestMessagesHeader()), "ciphertext")},
+      .encrypted = {EncryptedKVBlob(Node::kIngestedMessages, PackToAny(IngestMessagesHeader()),
+                                    "ciphertext")},
   };
 
   EXPECT_THAT(SplitIngestUploadsOutputs(ingest_output).status(),
@@ -225,7 +237,8 @@ TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsFailsOnEmptyIngestMessage
 
 TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsFailsOnIntegrityFault) {
   const KVBlobStageOutputs ingest_output{
-      .encrypted = {EncryptedKVBlob(PackToAny(CreateIntegrityFaultHeader()), "ciphertext")},
+      .encrypted = {EncryptedKVBlob(Node::kIngestedMessages,
+                                    PackToAny(CreateIntegrityFaultHeader()), "ciphertext")},
   };
 
   EXPECT_THAT(SplitIngestUploadsOutputs(ingest_output).status(),
@@ -234,7 +247,8 @@ TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsFailsOnIntegrityFault) {
 
 TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsWithInjectedIntegrityFaultFails) {
   const KVBlobStageOutputs ingest_output{
-      .encrypted = {EncryptedKVBlob(PackToAny(CreatePartialIngestionReportHeader()), "ciphertext")},
+      .encrypted = {EncryptedKVBlob(Node::kPartialIngestionReports,
+                                    PackToAny(CreatePartialIngestionReportHeader()), "ciphertext")},
   };
 
   EXPECT_THAT(SplitIngestUploadsOutputsWithInjectedIntegrityFault(ingest_output).status(),
@@ -243,7 +257,8 @@ TEST(IngestUploadsRouterTest, SplitIngestUploadsOutputsWithInjectedIntegrityFaul
 
 TEST(IngestUploadsRouterTest, DroppedReportSplitterDropsPartialReports) {
   const KVBlobStageOutputs ingest_output{
-      .encrypted = {EncryptedKVBlob(PackToAny(CreatePartialIngestionReportHeader()),
+      .encrypted = {EncryptedKVBlob(Node::kPartialIngestionReports,
+                                    PackToAny(CreatePartialIngestionReportHeader()),
                                     "report_ciphertext")},
   };
 

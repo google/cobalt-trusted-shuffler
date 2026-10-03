@@ -30,10 +30,10 @@ using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
 TEST(ThresholdFilterRouterTest, PrependsVerificationPayloadAndIngestedMessages) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
   const std::vector<EncryptedBlob> messages = {
-      EncryptedBlob("msg_1"),
-      EncryptedBlob("msg_2"),
+      EncryptedBlob(Node::kIngestedMessages, "msg_1"),
+      EncryptedBlob(Node::kIngestedMessages, "msg_2"),
   };
 
   const absl::StatusOr<KVCollection> result =
@@ -49,10 +49,10 @@ TEST(ThresholdFilterRouterTest, PrependsVerificationPayloadAndIngestedMessages) 
 }
 
 TEST(ThresholdFilterRouterTest, RouteWithLateVerificationPayloadPlacesPayloadLast) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
   const std::vector<EncryptedBlob> messages = {
-      EncryptedBlob("msg_1"),
-      EncryptedBlob("msg_2"),
+      EncryptedBlob(Node::kIngestedMessages, "msg_1"),
+      EncryptedBlob(Node::kIngestedMessages, "msg_2"),
   };
 
   const absl::StatusOr<KVCollection> result =

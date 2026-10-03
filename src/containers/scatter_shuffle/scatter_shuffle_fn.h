@@ -55,10 +55,12 @@ namespace cobalt::trusted_shuffler {
 //    - Re-encrypts payloads under local output node index 0
 //      and emits with visible unencrypted ScatterShuffleHeader (group_id).
 class ScatterShuffleFn
-    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
-          EncryptsTo<Node::kScatteredMessages>,
-          EncryptedKV<ScatterShuffleHeader, ShuffledMessage, Node::kScatteredMessages>,
-          UnencryptedKV<ScatterShuffleHeader, IntegrityFault>> {
+    : public FirstRecordConfigDoFn<
+          ConfigFrom<IngestionVerificationPayload, Node::kVerifiedIngestion>,
+          RecordsFrom<ShuffledMessage, Node::kFilteredMessages, Node::kPaddingMessages>>::
+          WithOutputs<EncryptsTo<Node::kScatteredMessages>,
+                      EncryptedKV<ScatterShuffleHeader, ShuffledMessage, Node::kScatteredMessages>,
+                      UnencryptedKV<ScatterShuffleHeader, IntegrityFault>> {
  public:
   ScatterShuffleFn();
   ~ScatterShuffleFn() override = default;

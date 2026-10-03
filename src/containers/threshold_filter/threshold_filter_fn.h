@@ -46,10 +46,12 @@ namespace cobalt::trusted_shuffler {
 //   data node with unencrypted MetricEpochKey headers. Messages for unapproved partitions are
 //   discarded.
 class ThresholdFilterFn
-    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
-          EncryptsTo<Node::kFilteredMessages>,
-          EncryptedKV<MetricEpochKey, ShuffledMessage, Node::kFilteredMessages>,
-          UnencryptedKV<IntegrityFault, IntegrityFault>> {
+    : public FirstRecordConfigDoFn<
+          ConfigFrom<IngestionVerificationPayload, Node::kVerifiedIngestion>,
+          RecordsFrom<ShuffledMessage, Node::kIngestedMessages>>::
+          WithOutputs<EncryptsTo<Node::kFilteredMessages>,
+                      EncryptedKV<MetricEpochKey, ShuffledMessage, Node::kFilteredMessages>,
+                      UnencryptedKV<IntegrityFault, IntegrityFault>> {
  public:
   ThresholdFilterFn() = default;
 

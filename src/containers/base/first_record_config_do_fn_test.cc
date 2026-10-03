@@ -14,6 +14,7 @@
 
 #include "src/containers/base/first_record_config_do_fn.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -23,6 +24,8 @@
 #include "absl/status/status_matchers.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/pipeline_nodes.h"
+#include "src/containers/base/with_outputs.h"
 #include "src/proto/common.pb.h"
 #include "src/proto/run_context.pb.h"
 #include "src/testing/fake_context.h"
@@ -38,9 +41,68 @@ using ::testing::Eq;
 using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
+// A misdeclared container is rejected when it is compiled, which no runtime
+// test can reach, so the predicates behind each rejection are pinned here in
+// both polarities.
+namespace compile_time_contract {
+
+// The first template argument is the configuration proto and the data node it
+// is read from.
+static_assert(internal::kIsConfigFrom<ConfigFrom<RunConfig, Node::kRunContext>>);
+static_assert(!internal::kIsConfigFrom<RunConfig>);
+static_assert(!internal::kIsConfigFrom<RecordsFrom<RunConfig, Node::kRunContext>>);
+
+// The second template argument is the record type and the data nodes it is read
+// from, which a container that reads only its configuration leaves empty.
+static_assert(internal::kIsRecordsFrom<RecordsFrom<ShuffledMessage, Node::kIngestedMessages>>);
+static_assert(internal::kIsRecordsFrom<RecordsFrom<ShuffledMessage>>);
+static_assert(!internal::kIsRecordsFrom<ShuffledMessage>);
+static_assert(!internal::kIsRecordsFrom<ConfigFrom<ShuffledMessage, Node::kIngestedMessages>>);
+
+// The configuration and the records are read from different data nodes.
+static_assert(internal::kAreDisjointSources<Node::kVerifiedIngestion>);
+static_assert(internal::kAreDisjointSources<Node::kVerifiedIngestion, Node::kFilteredMessages,
+                                            Node::kPaddingMessages>);
+static_assert(!internal::kAreDisjointSources<Node::kVerifiedIngestion, Node::kVerifiedIngestion>);
+static_assert(!internal::kAreDisjointSources<Node::kVerifiedIngestion, Node::kIngestedMessages,
+                                             Node::kVerifiedIngestion>);
+
+// ConfigFrom exposes kSource, and RecordsFrom exposes kSources.
+static_assert(ConfigFrom<RunConfig, Node::kRunContext>::kSource == Node::kRunContext);
+static_assert(RecordsFrom<ShuffledMessage, Node::kIngestedMessages>::kSources ==
+              std::array{Node::kIngestedMessages});
+static_assert(internal::kIsRecordsFrom<NoRecords>);
+static_assert(NoRecords::kSources.empty());
+
+// A container reads from the data node of its configuration and the data nodes
+// of its records, listed together in ascending order.
+using InterleavedSourcesDoFn = FirstRecordConfigDoFn<
+    ConfigFrom<RunConfig, Node::kVerifiedIngestion>,
+    RecordsFrom<ShuffledMessage, Node::kIngestedMessages,
+                Node::kFilteredMessages>>::WithOutputs<EncryptsTo<>, Unencrypted<IntegrityFault>>;
+static_assert(InterleavedSourcesDoFn::kSources == std::array{Node::kIngestedMessages,
+                                                             Node::kVerifiedIngestion,
+                                                             Node::kFilteredMessages});
+static_assert(InterleavedSourcesDoFn::kConfigSource == Node::kVerifiedIngestion);
+static_assert(InterleavedSourcesDoFn::kRecordSources ==
+              std::array{Node::kIngestedMessages, Node::kFilteredMessages});
+
+// A container that reads only its configuration reads from that data node
+// alone.
+using ConfigOnlyDoFn =
+    FirstRecordConfigDoFn<ConfigFrom<RunConfig, Node::kVerifiedIngestion>,
+                          NoRecords>::WithOutputs<EncryptsTo<>, Unencrypted<IntegrityFault>>;
+static_assert(ConfigOnlyDoFn::kSources == std::array{Node::kVerifiedIngestion});
+static_assert(ConfigOnlyDoFn::kConfigSource == Node::kVerifiedIngestion);
+static_assert(ConfigOnlyDoFn::kRecordSources.empty());
+
+}  // namespace compile_time_contract
+
 // Test implementation of FirstRecordConfigDoFn using RunConfig as config proto
 // and ShuffledMessage as record proto.
-class TestFirstRecordDoFn : public FirstRecordConfigDoFn<RunConfig, ShuffledMessage> {
+class TestFirstRecordDoFn
+    : public FirstRecordConfigDoFn<ConfigFrom<RunConfig, Node::kRunContext>,
+                                   RecordsFrom<ShuffledMessage, Node::kIngestedMessages>> {
  public:
   TestFirstRecordDoFn() = default;
 
@@ -199,7 +261,9 @@ TEST(FirstRecordConfigDoFnTest, OnRecordFailureReturnsErrorStatus) {
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
-class TestRawBytesFirstRecordDoFn : public FirstRecordConfigDoFn<RunConfig, std::string> {
+class TestRawBytesFirstRecordDoFn
+    : public FirstRecordConfigDoFn<ConfigFrom<RunConfig, Node::kRunContext>,
+                                   RecordsFrom<std::string, Node::kClientUploads>> {
  public:
   TestRawBytesFirstRecordDoFn() = default;
 
@@ -238,7 +302,9 @@ TEST(FirstRecordConfigDoFnTest, RoutesRawStringRecordsWithoutProtobufParsing) {
   EXPECT_THAT(fn.ReceivedPayloads()[0], Eq(raw_checkpoint_bytes));
 }
 
-class TestFinalizableFirstRecordDoFn : public FirstRecordConfigDoFn<RunConfig, ShuffledMessage> {
+class TestFinalizableFirstRecordDoFn
+    : public FirstRecordConfigDoFn<ConfigFrom<RunConfig, Node::kRunContext>,
+                                   RecordsFrom<ShuffledMessage, Node::kClientUploads>> {
  public:
   int OnFinalizeCallCount() const { return on_finalize_call_count_; }
 
@@ -311,6 +377,34 @@ TEST(FirstRecordConfigDoFnTest, FinalizeReplicaDelegatesToOnFinalizeWhenConfigur
   EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), do_context), IsOk());
   EXPECT_THAT(fn.OnFinalizeCallCount(), Eq(1));
   EXPECT_TRUE(fn.IsFinalized());
+}
+
+class TestConfigOnlyDoFn
+    : public FirstRecordConfigDoFn<ConfigFrom<RunConfig, Node::kRunContext>, NoRecords> {
+ public:
+  TestConfigOnlyDoFn() = default;
+
+ protected:
+  absl::Status OnConfig(const RunConfig& config, DoContext& context) override {
+    if (config.target_batch_size() <= 0) {
+      return absl::InvalidArgumentError("Invalid target_batch_size");
+    }
+    return absl::OkStatus();
+  }
+};
+
+TEST(FirstRecordConfigDoFnTest, ConfigOnlyDoFnRejectsSubsequentRecords) {
+  TestConfigOnlyDoFn fn;
+  FakeContext context;
+  FakeDoContext do_context(context);
+
+  RunConfig config = CreateValidConfig(101, 202, 50);
+  ASSERT_THAT(fn.Do(TestConfigOnlyDoFn::KV(config.SerializeAsString()), do_context), IsOk());
+  EXPECT_TRUE(fn.HasConfig());
+
+  // Subsequent record is rejected as config-only session does not accept data records.
+  EXPECT_THAT(fn.Do(TestConfigOnlyDoFn::KV("unexpected_record"), do_context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
 }  // namespace

@@ -38,9 +38,12 @@ bool SimulatedSessionContext::EmitUnencrypted(confidential_federated_compute::Se
   return true;
 }
 
-bool SimulatedSessionContext::EmitEncrypted(const int /*reencryption_key_index*/,
+bool SimulatedSessionContext::EmitEncrypted(const int reencryption_key_index,
                                             confidential_federated_compute::Session::KV kv) {
-  encrypted_.push_back(EncryptedKVBlob(std::move(kv.key), std::move(kv.data)));
+  CHECK_GE(reencryption_key_index, 0);
+  CHECK_LT(static_cast<size_t>(reencryption_key_index), destinations_.size());
+  encrypted_.push_back(EncryptedKVBlob(destinations_[reencryption_key_index], std::move(kv.key),
+                                       std::move(kv.data)));
   return true;
 }
 

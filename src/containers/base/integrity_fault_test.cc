@@ -37,21 +37,21 @@ using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
 class TestDefaultContainer
-    : public TrustedDoFn::WithOutputs<EncryptsTo<>, UnencryptedKV<IntegrityFault, IntegrityFault>> {
+    : public TrustedDoFn::WithInputs<>::WithOutputs<EncryptsTo<>,
+                                                    UnencryptedKV<IntegrityFault, IntegrityFault>> {
  public:
   absl::Status Do(KV input, DoContext& context) override { return absl::OkStatus(); }
 };
 
-class TestReleaseContainer
-    : public TrustedDoFn::WithOutputs<EncryptsTo<>,
-                                      UnencryptedKV<ReleaseOutputHeader, IntegrityFault>> {
+class TestReleaseContainer : public TrustedDoFn::WithInputs<>::WithOutputs<
+                                 EncryptsTo<>, UnencryptedKV<ReleaseOutputHeader, IntegrityFault>> {
  public:
   absl::Status Do(KV input, DoContext& context) override { return absl::OkStatus(); }
 };
 
 class TestScatterContainer
-    : public TrustedDoFn::WithOutputs<EncryptsTo<>,
-                                      UnencryptedKV<ScatterShuffleHeader, IntegrityFault>> {
+    : public TrustedDoFn::WithInputs<>::WithOutputs<
+          EncryptsTo<>, UnencryptedKV<ScatterShuffleHeader, IntegrityFault>> {
  public:
   absl::Status Do(KV input, DoContext& context) override { return absl::OkStatus(); }
 };

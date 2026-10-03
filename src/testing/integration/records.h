@@ -21,11 +21,25 @@
 
 #include "containers/session.h"
 #include "google/protobuf/any.pb.h"
+#include "src/containers/base/pipeline_nodes.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
 
-// Sequence of KV records passed into a container session.
-using KVCollection = std::vector<confidential_federated_compute::Session::KV>;
+// A KV record routed into a container session, carrying the data node the
+// payload was encrypted to alongside the key and data the session receives.
+struct RoutedKV {
+  // Data node the payload was encrypted to, or Node::kNone if unencrypted.
+  Node node = Node::kNone;
+
+  // Plaintext routing key passed to the container session.
+  google::protobuf::Any key;
+
+  // Serialized payload passed to the container session.
+  std::string data;
+};
+
+// Sequence of routed KV records passed into a container session.
+using KVCollection = std::vector<RoutedKV>;
 
 // A container session always emits a (key, payload) pair through
 // Session::Context. The host pipeline, however, declares a single element type
@@ -43,17 +57,20 @@ using KVCollection = std::vector<confidential_federated_compute::Session::KV>;
 // cannot read.
 class EncryptedBlob {
  public:
-  explicit EncryptedBlob(std::string ciphertext) : ciphertext_(std::move(ciphertext)) {}
+  EncryptedBlob(Node node, std::string ciphertext)
+      : node_(node), ciphertext_(std::move(ciphertext)) {}
 
+  Node node() const { return node_; }
   const std::string& ciphertext() const { return ciphertext_; }
 
-  // Converts the EncryptedBlob into a Session::KV with an empty key, matching
+  // Converts the EncryptedBlob into a RoutedKV with an empty key, matching
   // what a downstream session receives when the host has no key to pass on.
-  confidential_federated_compute::Session::KV ToKV() const {
-    return confidential_federated_compute::Session::KV(/*data=*/ciphertext_);
+  RoutedKV ToKV() const {
+    return RoutedKV{.node = node_, .key = google::protobuf::Any(), .data = ciphertext_};
   }
 
  private:
+  Node node_;
   std::string ciphertext_;
 };
 
@@ -65,41 +82,34 @@ class UnencryptedBlob {
 
   const std::string& plaintext() const { return plaintext_; }
 
-  // Converts the UnencryptedBlob into a Session::KV with an empty key.
-  confidential_federated_compute::Session::KV ToKV() const {
-    return confidential_federated_compute::Session::KV(/*data=*/plaintext_);
-  }
-
  private:
   std::string plaintext_;
 };
 
 // Routing key plus ciphertext emitted by a stage that keeps the key. The key is
 // plaintext even though the payload is not.
-// TODO(b/$TODO_BUG_ID): Use reencryption_key_index to check encryption to the appropriate node in
-// the access policy.
 class EncryptedKVBlob {
  public:
-  EncryptedKVBlob(google::protobuf::Any key, std::string ciphertext)
-      : key_(std::move(key)), ciphertext_(std::move(ciphertext)) {}
+  EncryptedKVBlob(Node node, google::protobuf::Any key, std::string ciphertext)
+      : node_(node), key_(std::move(key)), ciphertext_(std::move(ciphertext)) {}
 
+  Node node() const { return node_; }
   const google::protobuf::Any& key() const { return key_; }
   const std::string& ciphertext() const { return ciphertext_; }
 
   // Drops the routing key and returns only the encrypted payload.
-  EncryptedBlob DropKey() const { return EncryptedBlob(ciphertext_); }
+  EncryptedBlob DropKey() const { return EncryptedBlob(node_, ciphertext_); }
 
   // Returns a copy with a replaced routing key while preserving the ciphertext.
   EncryptedKVBlob WithKey(google::protobuf::Any new_key) const {
-    return EncryptedKVBlob(std::move(new_key), ciphertext_);
+    return EncryptedKVBlob(node_, std::move(new_key), ciphertext_);
   }
 
-  // Converts the EncryptedKVBlob into a Session::KV.
-  confidential_federated_compute::Session::KV ToKV() const {
-    return confidential_federated_compute::Session::KV(key_, ciphertext_);
-  }
+  // Converts the EncryptedKVBlob into a RoutedKV.
+  RoutedKV ToKV() const { return RoutedKV{.node = node_, .key = key_, .data = ciphertext_}; }
 
  private:
+  Node node_;
   google::protobuf::Any key_;
   std::string ciphertext_;
 };
@@ -119,11 +129,6 @@ class UnencryptedKVBlob {
   // Returns a copy with a replaced routing key while preserving the plaintext.
   UnencryptedKVBlob WithKey(google::protobuf::Any new_key) const {
     return UnencryptedKVBlob(std::move(new_key), plaintext_);
-  }
-
-  // Converts the UnencryptedKVBlob into a Session::KV.
-  confidential_federated_compute::Session::KV ToKV() const {
-    return confidential_federated_compute::Session::KV(key_, plaintext_);
   }
 
  private:

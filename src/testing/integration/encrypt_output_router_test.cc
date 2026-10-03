@@ -35,10 +35,10 @@ using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
 TEST(EncryptOutputRouterTest, PrependsVerificationPayloadBeforeGatheredMessages) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
   const std::vector<EncryptedBlob> messages = {
-      EncryptedBlob("msg_0"),
-      EncryptedBlob("msg_1"),
+      EncryptedBlob(Node::kGatheredMessages, "msg_0"),
+      EncryptedBlob(Node::kGatheredMessages, "msg_1"),
   };
 
   const absl::StatusOr<std::vector<KVCollection>> shards =
@@ -52,11 +52,11 @@ TEST(EncryptOutputRouterTest, PrependsVerificationPayloadBeforeGatheredMessages)
 }
 
 TEST(EncryptOutputRouterTest, DistributesMessagesAcrossTwoShardsWithVerificationPayloadFirst) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
   const std::vector<EncryptedBlob> messages = {
-      EncryptedBlob("msg_0"),
-      EncryptedBlob("msg_1"),
-      EncryptedBlob("msg_2"),
+      EncryptedBlob(Node::kGatheredMessages, "msg_0"),
+      EncryptedBlob(Node::kGatheredMessages, "msg_1"),
+      EncryptedBlob(Node::kGatheredMessages, "msg_2"),
   };
 
   const absl::StatusOr<std::vector<KVCollection>> shards =
@@ -73,7 +73,7 @@ TEST(EncryptOutputRouterTest, DistributesMessagesAcrossTwoShardsWithVerification
 }
 
 TEST(EncryptOutputRouterTest, ReturnsEmptyShardWhenNoGatheredMessagesProvided) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
   const absl::StatusOr<std::vector<KVCollection>> shards =
       RouteToEncryptOutput(verification_payload, /*gathered_messages=*/{});
   ASSERT_THAT(shards, IsOk());
@@ -82,8 +82,10 @@ TEST(EncryptOutputRouterTest, ReturnsEmptyShardWhenNoGatheredMessagesProvided) {
 }
 
 TEST(EncryptOutputRouterTest, TwoShardRouterLeavesSecondShardEmptyWhenSingleMessageProvided) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
-  const std::vector<EncryptedBlob> messages = {EncryptedBlob("msg_0")};
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
+  const std::vector<EncryptedBlob> messages = {
+      EncryptedBlob(Node::kGatheredMessages, "msg_0"),
+  };
 
   const absl::StatusOr<std::vector<KVCollection>> shards =
       RouteToTwoShardEncryptOutput(verification_payload, messages);
@@ -96,8 +98,8 @@ TEST(EncryptOutputRouterTest, TwoShardRouterLeavesSecondShardEmptyWhenSingleMess
 }
 
 TEST(EncryptOutputRouterTest, EmptyInputRouterReturnsSingleEmptyShard) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
-  const std::vector<EncryptedBlob> messages = {EncryptedBlob("msg_0")};
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
+  const std::vector<EncryptedBlob> messages = {EncryptedBlob(Node::kGatheredMessages, "msg_0")};
 
   const absl::StatusOr<std::vector<KVCollection>> shards =
       RouteToEncryptOutputWithEmptyInput(verification_payload, messages);
@@ -107,10 +109,10 @@ TEST(EncryptOutputRouterTest, EmptyInputRouterReturnsSingleEmptyShard) {
 }
 
 TEST(EncryptOutputRouterTest, LateVerificationPayloadRouterAppendsPayloadAfterMessages) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
   const std::vector<EncryptedBlob> messages = {
-      EncryptedBlob("msg_0"),
-      EncryptedBlob("msg_1"),
+      EncryptedBlob(Node::kGatheredMessages, "msg_0"),
+      EncryptedBlob(Node::kGatheredMessages, "msg_1"),
   };
 
   const absl::StatusOr<std::vector<KVCollection>> shards =
@@ -124,8 +126,8 @@ TEST(EncryptOutputRouterTest, LateVerificationPayloadRouterAppendsPayloadAfterMe
 }
 
 TEST(EncryptOutputRouterTest, PartiallyShuffledMessageRouterInjectsShuffleCountOneMessage) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
-  const std::vector<EncryptedBlob> messages = {EncryptedBlob("msg_0")};
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
+  const std::vector<EncryptedBlob> messages = {EncryptedBlob(Node::kGatheredMessages, "msg_0")};
 
   const absl::StatusOr<std::vector<KVCollection>> shards =
       RoutePartiallyShuffledMessageToEncryptOutput(verification_payload, messages);
@@ -152,7 +154,8 @@ TEST(EncryptOutputRouterTest, SplitsMessageOutputsAndPartialReportsByReleaseOutp
 
   KVBlobStageOutputs stage_outputs;
   stage_outputs.unencrypted.emplace_back(msg_key, "encrypted_message_output_bytes");
-  stage_outputs.encrypted.emplace_back(report_key, "partial_release_report_bytes");
+  stage_outputs.encrypted.emplace_back(Node::kPartialReleaseReports, report_key,
+                                       "partial_release_report_bytes");
 
   const absl::StatusOr<EncryptOutputOutputs> split = SplitEncryptOutputOutputs(stage_outputs);
   ASSERT_THAT(split, IsOk());
@@ -182,7 +185,8 @@ TEST(EncryptOutputRouterTest, FailsWithInternalErrorOnUnexpectedEncryptedHeaderT
   msg_key.PackFrom(msg_header);
 
   KVBlobStageOutputs stage_outputs;
-  stage_outputs.encrypted.emplace_back(msg_key, "unexpected_encrypted_record");
+  stage_outputs.encrypted.emplace_back(Node::kPartialReleaseReports, msg_key,
+                                       "unexpected_encrypted_record");
 
   EXPECT_THAT(SplitEncryptOutputOutputs(stage_outputs), StatusIs(absl::StatusCode::kInternal));
 }

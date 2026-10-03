@@ -56,12 +56,14 @@ namespace cobalt::trusted_shuffler {
 //   EncryptedMessageOutput records.
 // - Finalize: Emits PartialReleaseReport encrypted for the downstream key
 //   release verification stage.
-class EncryptOutputFn
-    : public FirstRecordConfigDoFn<IngestionVerificationPayload, ShuffledMessage>::WithOutputs<
-          EncryptsTo<Node::kPartialReleaseReports>,
-          UnencryptedKV<ReleaseOutputHeader, EncryptedMessageOutput>,
-          UnencryptedKV<ReleaseOutputHeader, IntegrityFault>,
-          EncryptedKV<ReleaseOutputHeader, PartialReleaseReport, Node::kPartialReleaseReports>> {
+class EncryptOutputFn : public FirstRecordConfigDoFn<
+                            ConfigFrom<IngestionVerificationPayload, Node::kVerifiedIngestion>,
+                            RecordsFrom<ShuffledMessage, Node::kGatheredMessages>>::
+                            WithOutputs<EncryptsTo<Node::kPartialReleaseReports>,
+                                        UnencryptedKV<ReleaseOutputHeader, EncryptedMessageOutput>,
+                                        UnencryptedKV<ReleaseOutputHeader, IntegrityFault>,
+                                        EncryptedKV<ReleaseOutputHeader, PartialReleaseReport,
+                                                    Node::kPartialReleaseReports>> {
  public:
   EncryptOutputFn();
   ~EncryptOutputFn() override = default;

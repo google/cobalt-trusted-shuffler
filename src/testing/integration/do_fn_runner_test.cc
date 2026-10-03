@@ -25,16 +25,28 @@
 #include "gmock/gmock.h"
 #include "google/protobuf/any.pb.h"
 #include "gtest/gtest.h"
+#include "src/containers/base/first_record_config_do_fn.h"
+#include "src/containers/base/pipeline_nodes.h"
+#include "src/containers/base/with_outputs.h"
+#include "src/proto/common.pb.h"
+#include "src/proto/run_context.pb.h"
 #include "src/testing/integration/records.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
 namespace {
 
+using ::absl_testing::IsOk;
+using ::absl_testing::IsOkAndHolds;
 using ::absl_testing::StatusIs;
+using ::testing::Eq;
+using ::testing::HasSubstr;
+using ::testing::SizeIs;
 
 // Fake DoFn that records lifecycle calls and allows injecting non-OK statuses
 // at InitializeReplica, Do (for a specific record index), or FinalizeReplica.
-class FakeLifecycleDoFn : public confidential_federated_compute::fns::DoFn {
+class FakeLifecycleDoFn : public TrustedDoFn::WithInputs<Node::kClientUploads>::WithOutputs<
+                              EncryptsTo<Node::kCountedMessages>,
+                              Unencrypted<confidential_federated_compute::Session::KV>> {
  public:
   struct Config {
     absl::Status init_status = absl::OkStatus();
@@ -83,8 +95,8 @@ TEST(DoFnRunnerTest, InitializeReplicaFailsAbortsBeforeDoAndFinalize) {
   FakeLifecycleDoFn do_fn({
       .init_status = absl::InvalidArgumentError("Invalid init config"),
   });
-  const std::vector<confidential_federated_compute::Session::KV> inputs = {
-      confidential_federated_compute::Session::KV("record_0"),
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kClientUploads, "record_0").ToKV(),
   };
 
   const absl::StatusOr<BlobStageOutputs> result =
@@ -101,10 +113,10 @@ TEST(DoFnRunnerTest, DoFailsOnMiddleRecordStopsExecutionSkipsFinalizeAndDiscards
       .fail_on_do_index = 1,
       .do_fail_status = absl::DataLossError("Corrupt record"),
   });
-  const std::vector<confidential_federated_compute::Session::KV> inputs = {
-      confidential_federated_compute::Session::KV("record_0"),
-      confidential_federated_compute::Session::KV("record_1"),
-      confidential_federated_compute::Session::KV("record_2"),
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kClientUploads, "record_0").ToKV(),
+      EncryptedBlob(Node::kClientUploads, "record_1").ToKV(),
+      EncryptedBlob(Node::kClientUploads, "record_2").ToKV(),
   };
 
   const absl::StatusOr<KVBlobStageOutputs> result =
@@ -122,9 +134,9 @@ TEST(DoFnRunnerTest, FinalizeReplicaFailsDiscardsEmittedOutputs) {
   FakeLifecycleDoFn do_fn({
       .finalize_status = absl::FailedPreconditionError("Batch size mismatch"),
   });
-  const std::vector<confidential_federated_compute::Session::KV> inputs = {
-      confidential_federated_compute::Session::KV("record_0"),
-      confidential_federated_compute::Session::KV("record_1"),
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kClientUploads, "record_0").ToKV(),
+      EncryptedBlob(Node::kClientUploads, "record_1").ToKV(),
   };
 
   const absl::StatusOr<KVBlobStageOutputs> result =
@@ -147,6 +159,254 @@ TEST(DoFnRunnerTest, EmptyInputStreamRunsInitializeAndFinalizeWithoutCallingDo) 
   EXPECT_TRUE(do_fn.finalize_called());
   EXPECT_EQ(result->unencrypted.size(), 1);
   EXPECT_EQ(result->unencrypted[0].plaintext(), "finalize_summary");
+}
+
+TEST(DoFnRunnerTest, InputFromUndeclaredNodeReturnsPermissionDeniedAndSkipsDoAndFinalize) {
+  FakeLifecycleDoFn do_fn({});
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kClientUploads, "record_0").ToKV(),
+      EncryptedBlob(Node::kRunContext, "misrouted_record").ToKV(),
+      EncryptedBlob(Node::kClientUploads, "record_2").ToKV(),
+  };
+
+  const absl::StatusOr<KVBlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithKVBlobOutput(do_fn, {.inputs = inputs});
+
+  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
+                                        HasSubstr("Session does not accept input from node 1.")));
+  EXPECT_TRUE(do_fn.init_called());
+  EXPECT_EQ(do_fn.do_call_count(), 1);
+  EXPECT_FALSE(do_fn.finalize_called());
+}
+
+TEST(DoFnRunnerTest, InputFromUnencryptedNodeReturnsPermissionDeniedWithSpecificMessage) {
+  FakeLifecycleDoFn do_fn({});
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kClientUploads, "record_0").ToKV(),
+      RoutedKV{
+          .node = Node::kNone,
+          .key = {},
+          .data = "unencrypted_record",
+      },
+  };
+
+  const absl::StatusOr<KVBlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithKVBlobOutput(do_fn, {.inputs = inputs});
+
+  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
+                                        HasSubstr("Session does not accept unencrypted input.")));
+}
+
+TEST(DoFnRunnerTest, TagsEmittedEncryptedRecordsWithDeclaredDestinationNode) {
+  FakeLifecycleDoFn do_fn({});
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kClientUploads, "record_0").ToKV(),
+  };
+
+  const absl::StatusOr<BlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
+
+  ASSERT_THAT(result, IsOk());
+  ASSERT_THAT(result->encrypted, SizeIs(1));
+  EXPECT_THAT(result->encrypted[0].node(), Eq(Node::kCountedMessages));
+  EXPECT_THAT(result->encrypted[0].ciphertext(), Eq("record_0"));
+}
+
+class FakeFirstRecordDoFn
+    : public FirstRecordConfigDoFn<ConfigFrom<RunConfig, Node::kRunContext>,
+                                   RecordsFrom<ShuffledMessage, Node::kClientUploads>>::
+          WithOutputs<EncryptsTo<>, Unencrypted<IntegrityFault>> {
+ public:
+  FakeFirstRecordDoFn() = default;
+
+  bool ConfigCalled() const { return config_called_; }
+  int RecordCallCount() const { return record_call_count_; }
+
+ protected:
+  absl::Status OnConfig(const RunConfig& /*config*/, DoContext& /*context*/) override {
+    config_called_ = true;
+    return absl::OkStatus();
+  }
+
+  absl::Status OnRecord(const ShuffledMessage& /*record*/, DoContext& /*context*/) override {
+    ++record_call_count_;
+    return absl::OkStatus();
+  }
+
+ private:
+  bool config_called_ = false;
+  int record_call_count_ = 0;
+};
+
+class FakeConfigOnlyDoFn
+    : public FirstRecordConfigDoFn<ConfigFrom<RunConfig, Node::kRunContext>, NoRecords>::
+          WithOutputs<EncryptsTo<>, Unencrypted<IntegrityFault>> {
+ public:
+  FakeConfigOnlyDoFn() = default;
+
+  bool ConfigCalled() const { return config_called_; }
+
+ protected:
+  absl::Status OnConfig(const RunConfig& /*config*/, DoContext& /*context*/) override {
+    config_called_ = true;
+    return absl::OkStatus();
+  }
+
+ private:
+  bool config_called_ = false;
+};
+
+RunConfig ValidTestConfig() {
+  RunConfig config;
+  config.set_target_batch_size(10);
+  return config;
+}
+
+ShuffledMessage ValidTestMessage() {
+  ShuffledMessage msg;
+  msg.set_customer_message("test_payload");
+  return msg;
+}
+
+TEST(DoFnRunnerTest, FirstRecordConfigDoFnRejectsRecordZeroFromWrongNode) {
+  FakeFirstRecordDoFn do_fn;
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kClientUploads, ValidTestConfig().SerializeAsString()).ToKV(),
+  };
+
+  const absl::StatusOr<BlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
+
+  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
+                                        HasSubstr("Session does not accept input from node 0.")));
+  EXPECT_FALSE(do_fn.ConfigCalled());
+}
+
+TEST(DoFnRunnerTest, FirstRecordConfigDoFnRejectsUnencryptedRecordZero) {
+  FakeFirstRecordDoFn do_fn;
+  const KVCollection inputs = {
+      RoutedKV{
+          .node = Node::kNone,
+          .key = {},
+          .data = ValidTestConfig().SerializeAsString(),
+      },
+  };
+
+  const absl::StatusOr<BlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
+
+  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
+                                        HasSubstr("Session does not accept unencrypted input.")));
+  EXPECT_FALSE(do_fn.ConfigCalled());
+}
+
+TEST(DoFnRunnerTest, FirstRecordConfigDoFnRejectsSubsequentRecordFromConfigSource) {
+  FakeFirstRecordDoFn do_fn;
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kRunContext, ValidTestConfig().SerializeAsString()).ToKV(),
+      EncryptedBlob(Node::kRunContext, ValidTestMessage().SerializeAsString()).ToKV(),
+  };
+
+  const absl::StatusOr<BlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
+
+  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
+                                        HasSubstr("Session does not accept input from node 1.")));
+  EXPECT_TRUE(do_fn.ConfigCalled());
+  EXPECT_EQ(do_fn.RecordCallCount(), 0);
+}
+
+TEST(DoFnRunnerTest, FirstRecordConfigDoFnRejectsUnencryptedSubsequentRecord) {
+  FakeFirstRecordDoFn do_fn;
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kRunContext, ValidTestConfig().SerializeAsString()).ToKV(),
+      RoutedKV{
+          .node = Node::kNone,
+          .key = {},
+          .data = ValidTestMessage().SerializeAsString(),
+      },
+  };
+
+  const absl::StatusOr<BlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
+
+  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
+                                        HasSubstr("Session does not accept unencrypted input.")));
+  EXPECT_TRUE(do_fn.ConfigCalled());
+  EXPECT_EQ(do_fn.RecordCallCount(), 0);
+}
+
+TEST(DoFnRunnerTest, FirstRecordConfigDoFnAcceptsValidPhasedInputs) {
+  FakeFirstRecordDoFn do_fn;
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kRunContext, ValidTestConfig().SerializeAsString()).ToKV(),
+      EncryptedBlob(Node::kClientUploads, ValidTestMessage().SerializeAsString()).ToKV(),
+  };
+
+  const absl::StatusOr<BlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
+
+  ASSERT_THAT(result, IsOk());
+  EXPECT_TRUE(do_fn.ConfigCalled());
+  EXPECT_EQ(do_fn.RecordCallCount(), 1);
+}
+
+TEST(DoFnRunnerTest, FirstRecordConfigDoFnWorksWithKVBlobOutput) {
+  FakeFirstRecordDoFn do_fn;
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kRunContext, ValidTestConfig().SerializeAsString()).ToKV(),
+      EncryptedBlob(Node::kClientUploads, ValidTestMessage().SerializeAsString()).ToKV(),
+  };
+
+  const absl::StatusOr<KVBlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithKVBlobOutput(do_fn, {.inputs = inputs});
+
+  ASSERT_THAT(result, IsOk());
+  EXPECT_TRUE(do_fn.ConfigCalled());
+  EXPECT_EQ(do_fn.RecordCallCount(), 1);
+}
+
+TEST(DoFnRunnerTest, ConfigOnlyFirstRecordConfigDoFnAcceptsSingleConfigRecord) {
+  FakeConfigOnlyDoFn do_fn;
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kRunContext, ValidTestConfig().SerializeAsString()).ToKV(),
+  };
+
+  const absl::StatusOr<BlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
+
+  ASSERT_THAT(result, IsOk());
+  EXPECT_TRUE(do_fn.ConfigCalled());
+}
+
+TEST(DoFnRunnerTest, ConfigOnlyFirstRecordConfigDoFnRejectsSubsequentRecords) {
+  FakeConfigOnlyDoFn do_fn;
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kRunContext, ValidTestConfig().SerializeAsString()).ToKV(),
+      EncryptedBlob(Node::kClientUploads, "unexpected_data").ToKV(),
+  };
+
+  const absl::StatusOr<BlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
+
+  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
+                                        HasSubstr("Session does not accept input from node 0.")));
+  EXPECT_TRUE(do_fn.ConfigCalled());
+}
+
+TEST(DoFnRunnerTest, ConfigOnlyFirstRecordConfigDoFnRejectsSubsequentRecordFromConfigSource) {
+  FakeConfigOnlyDoFn do_fn;
+  const KVCollection inputs = {
+      EncryptedBlob(Node::kRunContext, ValidTestConfig().SerializeAsString()).ToKV(),
+      EncryptedBlob(Node::kRunContext, ValidTestConfig().SerializeAsString()).ToKV(),
+  };
+
+  const absl::StatusOr<BlobStageOutputs> result =
+      DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
+
+  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
+                                        HasSubstr("Session does not accept input from node 1.")));
+  EXPECT_TRUE(do_fn.ConfigCalled());
 }
 
 }  // namespace

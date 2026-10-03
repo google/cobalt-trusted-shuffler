@@ -63,7 +63,8 @@ absl::StatusOr<KVCollection> RouteToIngestionVerificationWithMismatchedRunId(
   tampered_report.mutable_partial_fingerprint()->set_run_id("mismatched_run_id");
   tampered_report.mutable_partial_fingerprint()->set_stage_id(Stage::STAGE_INGESTION);
   tampered_report.mutable_partial_fingerprint()->set_is_partial(true);
-  inputs.push_back(EncryptedBlob(tampered_report.SerializeAsString()).ToKV());
+  inputs.push_back(
+      EncryptedBlob(Node::kPartialIngestionReports, tampered_report.SerializeAsString()).ToKV());
 
   return inputs;
 }

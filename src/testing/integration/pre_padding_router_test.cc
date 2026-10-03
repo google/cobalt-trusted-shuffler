@@ -29,7 +29,7 @@ using ::testing::IsEmpty;
 using ::testing::SizeIs;
 
 TEST(PrePaddingRouterTest, RoutesIngestionVerificationPayload) {
-  EncryptedBlob payload("test-ciphertext");
+  EncryptedBlob payload(Node::kVerifiedIngestion, "test-ciphertext");
 
   absl::StatusOr<KVCollection> inputs = RouteToPrePadding(payload);
 

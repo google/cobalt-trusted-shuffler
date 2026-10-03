@@ -33,7 +33,8 @@ using ::cobalt::trusted_shuffler::testing::CreateMetricEpochKey;
 using ::testing::HasSubstr;
 using ::testing::SizeIs;
 
-EncryptedKVBlob MakeEncryptedKVBlob(const MetricEpochKey& key, absl::string_view payload) {
+EncryptedKVBlob MakeEncryptedKVBlob(Node node, const MetricEpochKey& key,
+                                    absl::string_view payload) {
   google::protobuf::Any any_key;
   any_key.PackFrom(key);
 
@@ -41,11 +42,11 @@ EncryptedKVBlob MakeEncryptedKVBlob(const MetricEpochKey& key, absl::string_view
   msg.set_shuffle_count(0);
   msg.set_customer_message(std::string(payload));
 
-  return EncryptedKVBlob(any_key, msg.SerializeAsString());
+  return EncryptedKVBlob(node, any_key, msg.SerializeAsString());
 }
 
 TEST(ScatterShuffleRouterTest, GroupsAndBatchesMessagesByPartitionCorrectly) {
-  const EncryptedBlob verification_payload("payload");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "payload");
 
   MetricEpochKey key1 =
       CreateMetricEpochKey({.project_id = 1001, .metric_id = 2, .epoch_index = 0});
@@ -53,15 +54,17 @@ TEST(ScatterShuffleRouterTest, GroupsAndBatchesMessagesByPartitionCorrectly) {
       CreateMetricEpochKey({.project_id = 1001, .metric_id = 3, .epoch_index = 0});
 
   std::vector<EncryptedKVBlob> real_msgs = {
-      MakeEncryptedKVBlob(key1, "real_k1_1"),
-      MakeEncryptedKVBlob(key2, "real_k2_1"),
-      MakeEncryptedKVBlob(key1, "real_k1_2"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key1, "real_k1_1"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key2, "real_k2_1"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key1, "real_k1_2"),
   };
 
   std::vector<EncryptedKVBlob> padding_msgs = {
-      MakeEncryptedKVBlob(key1, "pad_k1_1"), MakeEncryptedKVBlob(key1, "pad_k1_2"),
-      MakeEncryptedKVBlob(key2, "pad_k2_1"), MakeEncryptedKVBlob(key2, "pad_k2_2"),
-      MakeEncryptedKVBlob(key2, "pad_k2_3"),
+      MakeEncryptedKVBlob(Node::kPaddingMessages, key1, "pad_k1_1"),
+      MakeEncryptedKVBlob(Node::kPaddingMessages, key1, "pad_k1_2"),
+      MakeEncryptedKVBlob(Node::kPaddingMessages, key2, "pad_k2_1"),
+      MakeEncryptedKVBlob(Node::kPaddingMessages, key2, "pad_k2_2"),
+      MakeEncryptedKVBlob(Node::kPaddingMessages, key2, "pad_k2_3"),
   };
 
   // For key1: 2 real + 2 padding = 4 msgs
@@ -83,7 +86,7 @@ TEST(ScatterShuffleRouterTest, GroupsAndBatchesMessagesByPartitionCorrectly) {
 }
 
 TEST(ScatterShuffleRouterTest, SplitsMultiplesOfTargetBatchSizeIntoSeparateBatches) {
-  const EncryptedBlob verification_payload("payload");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "payload");
 
   std::vector<EncryptedKVBlob> thresholds;
   std::vector<EncryptedKVBlob> padding;
@@ -99,17 +102,17 @@ TEST(ScatterShuffleRouterTest, SplitsMultiplesOfTargetBatchSizeIntoSeparateBatch
 
   // Partition 1: exactly target_batch_size (3 real, 2 padding)
   for (int i = 0; i < 3; i++)
-    thresholds.push_back(MakeEncryptedKVBlob(key1, "r"));
+    thresholds.push_back(MakeEncryptedKVBlob(Node::kFilteredMessages, key1, "r"));
   for (int i = 0; i < 2; i++)
-    padding.push_back(MakeEncryptedKVBlob(key1, "p"));
+    padding.push_back(MakeEncryptedKVBlob(Node::kPaddingMessages, key1, "p"));
 
   // Partition 2: 2 * target_batch_size (10 real, 0 padding)
   for (int i = 0; i < 10; i++)
-    thresholds.push_back(MakeEncryptedKVBlob(key2, "r"));
+    thresholds.push_back(MakeEncryptedKVBlob(Node::kFilteredMessages, key2, "r"));
 
   // Partition 3: 3 * target_batch_size (0 real, 15 padding)
   for (int i = 0; i < 15; i++)
-    padding.push_back(MakeEncryptedKVBlob(key3, "p"));
+    padding.push_back(MakeEncryptedKVBlob(Node::kPaddingMessages, key3, "p"));
 
   auto batches =
       RouteToScatterShuffle(verification_payload, target_batch_size, thresholds, padding);
@@ -128,18 +131,18 @@ TEST(ScatterShuffleRouterTest, SplitsMultiplesOfTargetBatchSizeIntoSeparateBatch
 }
 
 TEST(ScatterShuffleRouterTest, SplitsRemainderBalancedPartitionIntoActualBatchSizeBatches) {
-  const EncryptedBlob verification_payload("payload");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "payload");
   MetricEpochKey key = CreateMetricEpochKey({.project_id = 1001, .metric_id = 1, .epoch_index = 0});
 
   // 25 real messages + 2 padding messages = 27 messages with target_batch_size = 10
   // -> batch_num = 3, actual_batch_size = 9.
   std::vector<EncryptedKVBlob> real_msgs;
   for (int i = 0; i < 25; ++i) {
-    real_msgs.push_back(MakeEncryptedKVBlob(key, "real"));
+    real_msgs.push_back(MakeEncryptedKVBlob(Node::kFilteredMessages, key, "real"));
   }
   std::vector<EncryptedKVBlob> padding_msgs;
   for (int i = 0; i < 2; ++i) {
-    padding_msgs.push_back(MakeEncryptedKVBlob(key, "pad"));
+    padding_msgs.push_back(MakeEncryptedKVBlob(Node::kPaddingMessages, key, "pad"));
   }
 
   absl::StatusOr<std::vector<KVCollection>> batches = RouteToScatterShuffle(
@@ -152,14 +155,14 @@ TEST(ScatterShuffleRouterTest, SplitsRemainderBalancedPartitionIntoActualBatchSi
 }
 
 TEST(ScatterShuffleRouterTest, FailsWhenInputPartitionSizeIsNotAMultipleOfBatchNum) {
-  const EncryptedBlob verification_payload("payload");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "payload");
   MetricEpochKey key = CreateMetricEpochKey({.project_id = 1001, .metric_id = 1, .epoch_index = 0});
 
   // 3 messages with target_batch_size = 2 -> batch_num = 2, and 3 is not a multiple of 2.
   std::vector<EncryptedKVBlob> real_msgs = {
-      MakeEncryptedKVBlob(key, "real_k1_1"),
-      MakeEncryptedKVBlob(key, "real_k1_2"),
-      MakeEncryptedKVBlob(key, "real_k1_3"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key, "real_k1_1"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key, "real_k1_2"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key, "real_k1_3"),
   };
 
   absl::StatusOr<std::vector<KVCollection>> result =
@@ -169,19 +172,19 @@ TEST(ScatterShuffleRouterTest, FailsWhenInputPartitionSizeIsNotAMultipleOfBatchN
 }
 
 TEST(ScatterShuffleRouterTest, RejectsAnyConfigurationWithATargetBatchSizeOfZero) {
-  const EncryptedBlob verification_payload("payload");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "payload");
   auto batches = RouteToScatterShuffle(verification_payload, /*target_batch_size=*/0, {}, {});
   EXPECT_THAT(batches.status(),
               StatusIs(absl::StatusCode::kInvalidArgument, HasSubstr("must be positive")));
 }
 
 TEST(ScatterShuffleRouterTest, UnderpaddedBatchRouterOutputsShortBatch) {
-  const EncryptedBlob verification_payload("payload");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "payload");
   MetricEpochKey key = CreateMetricEpochKey({.project_id = 1001, .metric_id = 1, .epoch_index = 0});
 
   std::vector<EncryptedKVBlob> real_msgs = {
-      MakeEncryptedKVBlob(key, "real_k1_1"),
-      MakeEncryptedKVBlob(key, "real_k1_2"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key, "real_k1_1"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key, "real_k1_2"),
   };
 
   auto batches = RouteUnderpaddedBatchToScatterShuffle(verification_payload,
@@ -192,12 +195,12 @@ TEST(ScatterShuffleRouterTest, UnderpaddedBatchRouterOutputsShortBatch) {
 }
 
 TEST(ScatterShuffleRouterTest, LateVerificationPayloadRouterShiftsConfigToBack) {
-  const EncryptedBlob verification_payload("payload");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "payload");
   MetricEpochKey key = CreateMetricEpochKey({.project_id = 1001, .metric_id = 1, .epoch_index = 0});
 
   std::vector<EncryptedKVBlob> real_msgs = {
-      MakeEncryptedKVBlob(key, "real_k1_1"),
-      MakeEncryptedKVBlob(key, "real_k1_2"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key, "real_k1_1"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key, "real_k1_2"),
   };
 
   auto batches = RouteToScatterShuffleWithLateVerificationPayload(
@@ -211,17 +214,17 @@ TEST(ScatterShuffleRouterTest, LateVerificationPayloadRouterShiftsConfigToBack) 
 }
 
 TEST(ScatterShuffleRouterTest, MixedPartitionBatchRouterSwapsElementsBetweenBatches) {
-  const EncryptedBlob verification_payload("payload");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "payload");
   MetricEpochKey key1 =
       CreateMetricEpochKey({.project_id = 1001, .metric_id = 1, .epoch_index = 0});
   MetricEpochKey key2 =
       CreateMetricEpochKey({.project_id = 1001, .metric_id = 2, .epoch_index = 0});
 
   std::vector<EncryptedKVBlob> real_msgs = {
-      MakeEncryptedKVBlob(key1, "real_k1_1"),
-      MakeEncryptedKVBlob(key1, "real_k1_2"),
-      MakeEncryptedKVBlob(key2, "real_k2_1"),
-      MakeEncryptedKVBlob(key2, "real_k2_2"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key1, "real_k1_1"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key1, "real_k1_2"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key2, "real_k2_1"),
+      MakeEncryptedKVBlob(Node::kFilteredMessages, key2, "real_k2_2"),
   };
 
   auto normal_batches =

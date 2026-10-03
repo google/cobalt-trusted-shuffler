@@ -39,10 +39,10 @@ using ::testing::ElementsAre;
 using ::testing::SizeIs;
 
 TEST(KeyReleaserRouterTest, PrependsVerificationPayloadBeforePartialReports) {
-  const EncryptedBlob verification_payload("verification_payload_bytes");
+  const EncryptedBlob verification_payload(Node::kVerifiedIngestion, "verification_payload_bytes");
   const std::vector<EncryptedBlob> reports = {
-      EncryptedBlob("report_0"),
-      EncryptedBlob("report_1"),
+      EncryptedBlob(Node::kPartialReleaseReports, "report_0"),
+      EncryptedBlob(Node::kPartialReleaseReports, "report_1"),
   };
 
   const absl::StatusOr<KVCollection> inputs = RouteToKeyReleaser(verification_payload, reports);

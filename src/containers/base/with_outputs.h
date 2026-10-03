@@ -15,6 +15,7 @@
 #ifndef SRC_CONTAINERS_BASE_WITH_OUTPUTS_H_
 #define SRC_CONTAINERS_BASE_WITH_OUTPUTS_H_
 
+#include <array>
 #include <cstddef>
 #include <string>
 #include <tuple>
@@ -54,19 +55,19 @@ inline constexpr int kNotADestination = -1;
 
 namespace internal {
 
-// Whether every node of a destination list is a data node.
-template <Node... Destinations>
-inline constexpr bool kAreDataNodes = ((Destinations != Node::kNone) && ...);
+// Whether every node of a node list is a data node.
+template <Node... Nodes>
+inline constexpr bool kAreDataNodes = ((Nodes != Node::kNone) && ...);
 
-// Whether a destination list is in ascending order, which also rejects the same
-// node being listed twice.
-template <Node... Destinations>
+// Whether a node list is in ascending order, which also rejects the same node
+// being listed twice.
+template <Node... Nodes>
 inline constexpr bool kAreAscending = [] {
-  if constexpr (sizeof...(Destinations) < 2) {
+  if constexpr (sizeof...(Nodes) < 2) {
     return true;
   } else {
-    const Node nodes[] = {Destinations...};
-    for (size_t i = 1; i < sizeof...(Destinations); ++i) {
+    const Node nodes[] = {Nodes...};
+    for (size_t i = 1; i < sizeof...(Nodes); ++i) {
       if (nodes[i - 1] >= nodes[i]) {
         return false;
       }
@@ -82,6 +83,25 @@ inline constexpr bool kDestinationMatchesVisibility =
     (StreamVisibility == Visibility::kUnencrypted) == (Destination == Node::kNone);
 
 }  // namespace internal
+
+// Mixin that declares the data nodes a container reads input from.
+//
+// The nodes here must be listed in ascending order, matching the order the
+// access policy lists the container's input nodes. A container that reads no
+// encrypted input from any data node declares WithInputs<>.
+template <Node... Sources>
+class WithInputs {
+  static_assert(internal::kAreDataNodes<Sources...>,
+                "Node::kNone is not a data node and cannot be read from.");
+  static_assert(internal::kAreAscending<Sources...>,
+                "The data nodes a container reads from must be listed once each and in "
+                "ascending order, matching the order the access policy lists the container's "
+                "input nodes.");
+
+ public:
+  // The data nodes this container reads input from, in ascending order.
+  inline static constexpr std::array<Node, sizeof...(Sources)> kSources = {Sources...};
+};
 
 // The data nodes a container encrypts output to.
 //
@@ -101,6 +121,10 @@ inline constexpr bool kDestinationMatchesVisibility =
 // index.
 template <Node... Destinations>
 struct EncryptsTo {
+  // The data nodes this container encrypts output to, in key-index order.
+  inline static constexpr std::array<Node, sizeof...(Destinations)> kDestinations = {
+      Destinations...};
+
   // Returns the re-encryption key index of `Destination`, or kNotADestination
   // if this container does not encrypt to it.
   template <Node Destination>
@@ -319,6 +343,10 @@ class WithOutputs {
                  ...),
                 "Each declared output stream must have a unique (visibility, value type) pair.");
 
+ public:
+  // The data nodes this container encrypts output to, in key-index order.
+  inline static constexpr auto kDestinations = Destinations::kDestinations;
+
  protected:
   // Emits a value with an empty key, encrypted to the data node declared for
   // its stream.
@@ -408,16 +436,22 @@ class WithOutputs {
   }
 };
 
-// Base struct providing TrustedDoFn::WithOutputs<...> for containers that
-// inherit directly from confidential_federated_compute::fns::DoFn.
+// Base struct providing TrustedDoFn::WithInputs<...>::WithOutputs<...> for
+// containers that inherit directly from confidential_federated_compute::fns::DoFn.
 struct TrustedDoFn {
-  // Base class combining DoFn with strongly typed output declarations.
-  template <typename Destinations, typename... OutputStreams>
-  class WithOutputs
-      : public confidential_federated_compute::fns::DoFn,
-        public ::cobalt::trusted_shuffler::WithOutputs<Destinations, OutputStreams...> {
-   public:
-    ~WithOutputs() override = default;
+  // Declares the data nodes the container reads input from.
+  template <Node... Sources>
+  struct WithInputs {
+    // Base class combining DoFn with strongly typed input and output
+    // declarations.
+    template <typename Destinations, typename... OutputStreams>
+    class WithOutputs
+        : public confidential_federated_compute::fns::DoFn,
+          public ::cobalt::trusted_shuffler::WithInputs<Sources...>,
+          public ::cobalt::trusted_shuffler::WithOutputs<Destinations, OutputStreams...> {
+     public:
+      ~WithOutputs() override = default;
+    };
   };
 };
 

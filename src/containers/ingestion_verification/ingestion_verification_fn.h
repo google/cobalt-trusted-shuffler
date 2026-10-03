@@ -53,11 +53,13 @@ namespace cobalt::trusted_shuffler {
 //   ThresholdReport, canonical RunFingerprint, and SignedRunContext, or
 //   IntegrityFault) for ThresholdFilter.
 class IngestionVerificationFn
-    : public FirstRecordConfigDoFn<SignedRunContext, PartialIngestionReport>::WithOutputs<
-          EncryptsTo<Node::kVerifiedIngestion>,
-          EncryptedKV<IngestionVerificationHeader, IngestionVerificationPayload,
-                      Node::kVerifiedIngestion>,
-          UnencryptedKV<IngestionVerificationHeader, IntegrityFault>> {
+    : public FirstRecordConfigDoFn<
+          ConfigFrom<SignedRunContext, Node::kRunContext>,
+          RecordsFrom<PartialIngestionReport, Node::kPartialIngestionReports>>::
+          WithOutputs<EncryptsTo<Node::kVerifiedIngestion>,
+                      EncryptedKV<IngestionVerificationHeader, IngestionVerificationPayload,
+                                  Node::kVerifiedIngestion>,
+                      UnencryptedKV<IngestionVerificationHeader, IntegrityFault>> {
  public:
   explicit IngestionVerificationFn(TrustedShufflerConfigConstraints config_constraints);
 

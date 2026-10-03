@@ -55,7 +55,8 @@ static_assert(internal::kIsOutputStream<Encrypted<SignedRunContext, Node::kRunCo
 static_assert(internal::kIsOutputStream<UnencryptedKV<MetricEpochKey, IntegrityFault>>);
 static_assert(!internal::kIsOutputStream<EncryptsTo<Node::kRunContext>>);
 
-// Node::kNone is not a data node and cannot be encrypted to.
+// Node::kNone is not a data node and cannot be read from or encrypted to.
+static_assert(internal::kAreDataNodes<Node::kClientUploads>);
 static_assert(internal::kAreDataNodes<Node::kRunContext>);
 static_assert(!internal::kAreDataNodes<Node::kNone>);
 static_assert(!internal::kAreDataNodes<Node::kRunContext, Node::kNone>);
@@ -63,9 +64,18 @@ static_assert(!internal::kAreDataNodes<Node::kRunContext, Node::kNone>);
 // Data nodes are listed once each and in ascending order.
 static_assert(internal::kAreAscending<>);
 static_assert(internal::kAreAscending<Node::kPartialIngestionReports>);
+static_assert(internal::kAreAscending<Node::kClientUploads, Node::kRunContext>);
 static_assert(internal::kAreAscending<Node::kIngestedMessages, Node::kPartialIngestionReports>);
 static_assert(!internal::kAreAscending<Node::kPartialIngestionReports, Node::kIngestedMessages>);
 static_assert(!internal::kAreAscending<Node::kIngestedMessages, Node::kIngestedMessages>);
+
+// WithInputs exposes the declared input sources.
+static_assert(WithInputs<>::kSources.empty());
+static_assert(WithInputs<Node::kClientUploads, Node::kRunContext>::kSources.size() == 2);
+static_assert(WithInputs<Node::kClientUploads, Node::kRunContext>::kSources[0] ==
+              Node::kClientUploads);
+static_assert(WithInputs<Node::kClientUploads, Node::kRunContext>::kSources[1] ==
+              Node::kRunContext);
 
 // An encrypted stream names the data node it is encrypted to; an unencrypted
 // one names none.
@@ -134,8 +144,8 @@ class FailingContext : public testing::FakeContext {
 };
 
 class SingleEncryptedDoFn
-    : public TrustedDoFn::WithOutputs<EncryptsTo<Node::kRunContext>,
-                                      Encrypted<SignedRunContext, Node::kRunContext>> {
+    : public TrustedDoFn::WithInputs<>::WithOutputs<
+          EncryptsTo<Node::kRunContext>, Encrypted<SignedRunContext, Node::kRunContext>> {
  public:
   absl::Status Do(KV input, DoContext& context) override {
     SignedRunContext msg;
@@ -147,7 +157,7 @@ class SingleEncryptedDoFn
 // Declares its two destination nodes in the order the access policy lists them,
 // so kIngestedMessages is key index 0 and kPartialIngestionReports is 1.
 class MultiOutputDoFn
-    : public TrustedDoFn::WithOutputs<
+    : public TrustedDoFn::WithInputs<Node::kClientUploads, Node::kRunContext>::WithOutputs<
           EncryptsTo<Node::kIngestedMessages, Node::kPartialIngestionReports>,
           EncryptedKV<MetricEpochKey, ShuffledMessage, Node::kIngestedMessages>,
           EncryptedKV<MetricEpochKey, PartialIngestionReport, Node::kPartialIngestionReports>,
@@ -175,7 +185,7 @@ class MultiOutputDoFn
 // only encrypted stream emits under key index 1. Its first node is one it never
 // emits to, which still occupies key index 0.
 class SecondDestinationDoFn
-    : public TrustedDoFn::WithOutputs<
+    : public TrustedDoFn::WithInputs<Node::kRunContext>::WithOutputs<
           EncryptsTo<Node::kIngestedMessages, Node::kPartialIngestionReports>,
           Encrypted<PartialIngestionReport, Node::kPartialIngestionReports>> {
  public:
@@ -189,9 +199,9 @@ class SecondDestinationDoFn
 // Sends two value types to a single data node, which they share a re-encryption
 // key for.
 class SharedDestinationDoFn
-    : public TrustedDoFn::WithOutputs<EncryptsTo<Node::kIngestedMessages>,
-                                      Encrypted<ShuffledMessage, Node::kIngestedMessages>,
-                                      Encrypted<PartialIngestionReport, Node::kIngestedMessages>> {
+    : public TrustedDoFn::WithInputs<Node::kRunContext>::WithOutputs<
+          EncryptsTo<Node::kIngestedMessages>, Encrypted<ShuffledMessage, Node::kIngestedMessages>,
+          Encrypted<PartialIngestionReport, Node::kIngestedMessages>> {
  public:
   absl::Status Do(KV input, DoContext& context) override {
     if (absl::Status status = EmitEncrypted(context, ShuffledMessage()); !status.ok()) {
@@ -202,8 +212,8 @@ class SharedDestinationDoFn
 };
 
 // Emits no encrypted data, so it is given no re-encryption keys.
-class NoEncryptedOutputDoFn
-    : public TrustedDoFn::WithOutputs<EncryptsTo<>, UnencryptedKV<MetricEpochKey, IntegrityFault>> {
+class NoEncryptedOutputDoFn : public TrustedDoFn::WithInputs<Node::kRunContext>::WithOutputs<
+                                  EncryptsTo<>, UnencryptedKV<MetricEpochKey, IntegrityFault>> {
  public:
   absl::Status Do(KV input, DoContext& context) override {
     return EmitUnencrypted(context, MetricEpochKey(), IntegrityFault());
@@ -213,7 +223,7 @@ class NoEncryptedOutputDoFn
 // Declares an Any routing key, which is forwarded to KV.key unchanged, and
 // encrypts to the second of the two nodes it holds keys for.
 class AnyKeyDoFn
-    : public TrustedDoFn::WithOutputs<
+    : public TrustedDoFn::WithInputs<Node::kRunContext>::WithOutputs<
           EncryptsTo<Node::kRunContext, Node::kIngestedMessages>,
           EncryptedKV<google::protobuf::Any, SignedRunContext, Node::kIngestedMessages>> {
  public:
@@ -226,8 +236,8 @@ class AnyKeyDoFn
 
 // Forwards whole KV pairs rather than a declared message type.
 class KvPassthroughDoFn
-    : public TrustedDoFn::WithOutputs<EncryptsTo<>,
-                                      Unencrypted<confidential_federated_compute::Session::KV>> {
+    : public TrustedDoFn::WithInputs<Node::kCountedMessages>::WithOutputs<
+          EncryptsTo<>, Unencrypted<confidential_federated_compute::Session::KV>> {
  public:
   absl::Status Do(KV input, DoContext& context) override {
     return EmitUnencrypted(context, std::move(input));
@@ -238,7 +248,7 @@ class KvPassthroughDoFn
 // leave KV.key empty. The encrypted stream uses the third destination node so
 // that the key index (2) is shown to come from the declaration.
 class KeylessOutputsDoFn
-    : public TrustedDoFn::WithOutputs<
+    : public TrustedDoFn::WithInputs<Node::kRunContext>::WithOutputs<
           EncryptsTo<Node::kRunContext, Node::kIngestedMessages, Node::kPartialIngestionReports>,
           Encrypted<SignedRunContext, Node::kPartialIngestionReports>,
           Unencrypted<MetricEpochKey>> {

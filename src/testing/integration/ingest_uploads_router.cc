@@ -41,7 +41,7 @@ KVCollection BuildShardInputs(const EncryptedBlob& signed_run_context,
   inputs.push_back(signed_run_context.ToKV());
 
   for (const std::string& checkpoint : checkpoints) {
-    inputs.push_back(confidential_federated_compute::Session::KV(checkpoint));
+    inputs.push_back(EncryptedBlob(Node::kClientUploads, checkpoint).ToKV());
   }
 
   return inputs;
@@ -71,7 +71,7 @@ absl::StatusOr<std::vector<KVCollection>> RouteToIngestUploadsWithLateRunContext
   inputs.reserve(1 + raw_checkpoints.size());
 
   for (const std::string& checkpoint : raw_checkpoints) {
-    inputs.push_back(confidential_federated_compute::Session::KV(checkpoint));
+    inputs.push_back(EncryptedBlob(Node::kClientUploads, checkpoint).ToKV());
   }
   inputs.push_back(signed_run_context.ToKV());
 
@@ -84,7 +84,7 @@ absl::StatusOr<std::vector<KVCollection>> RouteToTwoShardIngestUploadsWithSecond
   KVCollection shard_1;
   shard_1.reserve(1 + (raw_checkpoints.size() - mid));
   for (const std::string& checkpoint : raw_checkpoints.subspan(mid)) {
-    shard_1.push_back(confidential_federated_compute::Session::KV(checkpoint));
+    shard_1.push_back(EncryptedBlob(Node::kClientUploads, checkpoint).ToKV());
   }
   shard_1.push_back(signed_run_context.ToKV());
 
@@ -137,7 +137,7 @@ absl::StatusOr<IngestUploadsOutputs> SplitIngestUploadsOutputsWithInjectedIntegr
   fault_header.mutable_integrity_fault();
   google::protobuf::Any fault_key;
   fault_key.PackFrom(fault_header);
-  mutated_output.encrypted.emplace_back(std::move(fault_key), "");
+  mutated_output.encrypted.emplace_back(Node::kIngestedMessages, std::move(fault_key), "");
   return SplitIngestUploadsOutputs(mutated_output);
 }
 

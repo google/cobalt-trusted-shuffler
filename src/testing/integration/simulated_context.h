@@ -21,8 +21,10 @@
 
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "containers/session.h"
 #include "fcp/protos/confidentialcompute/confidential_transform.pb.h"
+#include "src/containers/base/pipeline_nodes.h"
 #include "src/testing/integration/records.h"
 
 namespace cobalt::trusted_shuffler::testing::integration {
@@ -35,7 +37,8 @@ namespace cobalt::trusted_shuffler::testing::integration {
 // the host pipeline's job and happens in DoFnRunner.
 class SimulatedSessionContext : public confidential_federated_compute::Session::Context {
  public:
-  SimulatedSessionContext() = default;
+  explicit SimulatedSessionContext(absl::Span<const Node> destinations)
+      : destinations_(destinations.begin(), destinations.end()) {}
   ~SimulatedSessionContext() override = default;
 
   // CHECK-FAILs if called; raw ReadResponse emission is not used in the pipeline.
@@ -62,6 +65,7 @@ class SimulatedSessionContext : public confidential_federated_compute::Session::
   const std::vector<UnencryptedKVBlob>& Unencrypted() const { return unencrypted_; }
 
  private:
+  std::vector<Node> destinations_;
   confidential_federated_compute::Counters counters_;
   std::vector<EncryptedKVBlob> encrypted_;
   std::vector<UnencryptedKVBlob> unencrypted_;
