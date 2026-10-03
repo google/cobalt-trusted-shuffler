@@ -82,6 +82,37 @@ enum class Node {
   kPartialReleaseReports = 11,
 };
 
+// Returns a human-readable string representation of a Node.
+constexpr std::string_view NodeName(Node node) {
+  switch (node) {
+    case Node::kNone:
+      return "kNone";
+    case Node::kClientUploads:
+      return "kClientUploads";
+    case Node::kRunContext:
+      return "kRunContext";
+    case Node::kIngestedMessages:
+      return "kIngestedMessages";
+    case Node::kPartialIngestionReports:
+      return "kPartialIngestionReports";
+    case Node::kVerifiedIngestion:
+      return "kVerifiedIngestion";
+    case Node::kFilteredMessages:
+      return "kFilteredMessages";
+    case Node::kCountedMessages:
+      return "kCountedMessages";
+    case Node::kPaddingMessages:
+      return "kPaddingMessages";
+    case Node::kScatteredMessages:
+      return "kScatteredMessages";
+    case Node::kGatheredMessages:
+      return "kGatheredMessages";
+    case Node::kPartialReleaseReports:
+      return "kPartialReleaseReports";
+  }
+  return "kUnknown";
+}
+
 }  // namespace cobalt::trusted_shuffler
 
 #endif  // SRC_CONTAINERS_BASE_PIPELINE_NODES_H_

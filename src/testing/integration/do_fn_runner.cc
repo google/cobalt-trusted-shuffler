@@ -40,10 +40,11 @@ bool IsAllowedSource(absl::Span<const Node> allowed_sources, Node source) {
 
 absl::Status UnacceptedInputError(Node node) {
   if (node == Node::kNone) {
-    return absl::PermissionDeniedError("Session does not accept unencrypted input.");
+    return absl::PermissionDeniedError("Session does not accept unencrypted input (Node::kNone).");
   }
-  return absl::PermissionDeniedError(
-      absl::StrCat("Session does not accept input from node ", static_cast<int>(node), "."));
+  return absl::PermissionDeniedError(absl::StrCat("Session does not accept input from node ",
+                                                  NodeName(node), " (", static_cast<int>(node),
+                                                  ")."));
 }
 
 // Drives a DoFn through its full replica lifecycle and returns the sink holding

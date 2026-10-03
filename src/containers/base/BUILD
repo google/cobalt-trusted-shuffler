@@ -29,6 +29,14 @@ cc_library(
     hdrs = ["pipeline_nodes.h"],
 )
 
+cc_test(
+    name = "pipeline_nodes_test",
+    srcs = ["pipeline_nodes_test.cc"],
+    deps = [
+        ":pipeline_nodes",
+        "@googletest//:gtest_main",
+    ],
+)
 
 cc_library(
     name = "with_outputs",

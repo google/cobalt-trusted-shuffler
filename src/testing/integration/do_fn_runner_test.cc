@@ -172,8 +172,9 @@ TEST(DoFnRunnerTest, InputFromUndeclaredNodeReturnsPermissionDeniedAndSkipsDoAnd
   const absl::StatusOr<KVBlobStageOutputs> result =
       DoFnRunner::RunReplicaWithKVBlobOutput(do_fn, {.inputs = inputs});
 
-  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
-                                        HasSubstr("Session does not accept input from node 1.")));
+  EXPECT_THAT(result.status(),
+              StatusIs(absl::StatusCode::kPermissionDenied,
+                       HasSubstr("Session does not accept input from node kRunContext (1).")));
   EXPECT_TRUE(do_fn.init_called());
   EXPECT_EQ(do_fn.do_call_count(), 1);
   EXPECT_FALSE(do_fn.finalize_called());
@@ -193,8 +194,9 @@ TEST(DoFnRunnerTest, InputFromUnencryptedNodeReturnsPermissionDeniedWithSpecific
   const absl::StatusOr<KVBlobStageOutputs> result =
       DoFnRunner::RunReplicaWithKVBlobOutput(do_fn, {.inputs = inputs});
 
-  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
-                                        HasSubstr("Session does not accept unencrypted input.")));
+  EXPECT_THAT(result.status(),
+              StatusIs(absl::StatusCode::kPermissionDenied,
+                       HasSubstr("Session does not accept unencrypted input (Node::kNone).")));
 }
 
 TEST(DoFnRunnerTest, TagsEmittedEncryptedRecordsWithDeclaredDestinationNode) {
@@ -277,8 +279,9 @@ TEST(DoFnRunnerTest, FirstRecordConfigDoFnRejectsRecordZeroFromWrongNode) {
   const absl::StatusOr<BlobStageOutputs> result =
       DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
 
-  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
-                                        HasSubstr("Session does not accept input from node 0.")));
+  EXPECT_THAT(result.status(),
+              StatusIs(absl::StatusCode::kPermissionDenied,
+                       HasSubstr("Session does not accept input from node kClientUploads (0).")));
   EXPECT_FALSE(do_fn.ConfigCalled());
 }
 
@@ -295,8 +298,9 @@ TEST(DoFnRunnerTest, FirstRecordConfigDoFnRejectsUnencryptedRecordZero) {
   const absl::StatusOr<BlobStageOutputs> result =
       DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
 
-  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
-                                        HasSubstr("Session does not accept unencrypted input.")));
+  EXPECT_THAT(result.status(),
+              StatusIs(absl::StatusCode::kPermissionDenied,
+                       HasSubstr("Session does not accept unencrypted input (Node::kNone).")));
   EXPECT_FALSE(do_fn.ConfigCalled());
 }
 
@@ -310,8 +314,9 @@ TEST(DoFnRunnerTest, FirstRecordConfigDoFnRejectsSubsequentRecordFromConfigSourc
   const absl::StatusOr<BlobStageOutputs> result =
       DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
 
-  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
-                                        HasSubstr("Session does not accept input from node 1.")));
+  EXPECT_THAT(result.status(),
+              StatusIs(absl::StatusCode::kPermissionDenied,
+                       HasSubstr("Session does not accept input from node kRunContext (1).")));
   EXPECT_TRUE(do_fn.ConfigCalled());
   EXPECT_EQ(do_fn.RecordCallCount(), 0);
 }
@@ -330,8 +335,9 @@ TEST(DoFnRunnerTest, FirstRecordConfigDoFnRejectsUnencryptedSubsequentRecord) {
   const absl::StatusOr<BlobStageOutputs> result =
       DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
 
-  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
-                                        HasSubstr("Session does not accept unencrypted input.")));
+  EXPECT_THAT(result.status(),
+              StatusIs(absl::StatusCode::kPermissionDenied,
+                       HasSubstr("Session does not accept unencrypted input (Node::kNone).")));
   EXPECT_TRUE(do_fn.ConfigCalled());
   EXPECT_EQ(do_fn.RecordCallCount(), 0);
 }
@@ -389,8 +395,9 @@ TEST(DoFnRunnerTest, ConfigOnlyFirstRecordConfigDoFnRejectsSubsequentRecords) {
   const absl::StatusOr<BlobStageOutputs> result =
       DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
 
-  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
-                                        HasSubstr("Session does not accept input from node 0.")));
+  EXPECT_THAT(result.status(),
+              StatusIs(absl::StatusCode::kPermissionDenied,
+                       HasSubstr("Session does not accept input from node kClientUploads (0).")));
   EXPECT_TRUE(do_fn.ConfigCalled());
 }
 
@@ -404,8 +411,9 @@ TEST(DoFnRunnerTest, ConfigOnlyFirstRecordConfigDoFnRejectsSubsequentRecordFromC
   const absl::StatusOr<BlobStageOutputs> result =
       DoFnRunner::RunReplicaWithBlobOutput(do_fn, {.inputs = inputs});
 
-  EXPECT_THAT(result.status(), StatusIs(absl::StatusCode::kPermissionDenied,
-                                        HasSubstr("Session does not accept input from node 1.")));
+  EXPECT_THAT(result.status(),
+              StatusIs(absl::StatusCode::kPermissionDenied,
+                       HasSubstr("Session does not accept input from node kRunContext (1).")));
   EXPECT_TRUE(do_fn.ConfigCalled());
 }
 
