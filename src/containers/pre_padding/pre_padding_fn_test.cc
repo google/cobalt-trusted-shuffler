@@ -136,8 +136,7 @@ TEST(PrePaddingFnTest, EmitsNoPaddingWhenMessageCountEvenlyDividesBatchNum) {
   auto payload = CreateIngestionVerificationPayload(
       testing::kTestRunId,
       /*approved_partitions=*/{partition1},
-      /*canonical_fingerprint=*/{{partition1, /*message_count=*/1000000}},  // Requires no padding,
-                                                                            // just big num
+      /*canonical_fingerprint=*/{{partition1, /*message_count=*/10000}},  // Requires no padding
       signed_run_context);
 
   EXPECT_THAT(fn.Do(PrePaddingFn::KV(payload.SerializeAsString()), do_context), IsOk());

@@ -963,7 +963,8 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenGatherShuffleReceivesEmptyInp
   const int32_t metric_id = 2;
   TestSigningKey signing_key;
   const RunConfig run_config =
-      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}}, 0, 10, 1);
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/2);
   const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
       {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
   });
@@ -995,7 +996,8 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenGatherShuffleReceivesLateVeri
   const int32_t metric_id = 2;
   TestSigningKey signing_key;
   const RunConfig run_config =
-      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}}, 0, 10, 1);
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/2);
   const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
       {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
   });
@@ -1027,7 +1029,8 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenGatherShuffleReceivesUnexpect
   const int32_t metric_id = 2;
   TestSigningKey signing_key;
   const RunConfig run_config =
-      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}}, 0, 10, 1);
+      CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
+                          /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/2);
   const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
       {.project_id = project_id, .metric_id = metric_id, .threshold = 1},
   });
@@ -1094,18 +1097,82 @@ TEST(ShufflerFlowIntegrationTest, PipelineFailsWhenGatherShuffleReceivesMixedGro
               StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
-TEST(ShufflerFlowIntegrationTest, PipelineGathersPartitionWhoseGroupsAreMostlyEmpty) {
-  // target_batch_size 1 over 3 messages gives batch_num = 3 and
-  // actual_batch_size = 1: every scatter batch holds a single message, which is
-  // always at position 0 and so always lands in gather group 0. Gather groups 1
-  // and 2 are therefore expected to hold nothing at all (b/564506496).
-  //
-  // A replica raised for one of those empty groups could not tell which group
-  // it served and would fault, so this pins that the orchestrator routes by the
-  // messages it observes and raises a replica only for the group that has them.
+TEST(ShufflerFlowIntegrationTest,
+     PipelineExcludesPartitionExceedingTargetBatchSizeSquaredAndProcessesValidPartition) {
+  const int32_t project_id = 1001;
+  const int32_t valid_metric_id = 2;
+  const int32_t oversized_metric_id = 3;
+  TestSigningKey signing_key;
+  // With target_batch_size = 2, the maximum number of messages per partition is 2^2 = 4.
+  const RunConfig run_config = CreateTestRunConfig(
+      {
+          {.project_id = project_id, .metric_id = valid_metric_id},
+          {.project_id = project_id, .metric_id = oversized_metric_id},
+      },
+      /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/2);
+  const TrustedShufflerConfigConstraints constraints = CreateTestConstraints({
+      {.project_id = project_id, .metric_id = valid_metric_id, .threshold = 2},
+      {.project_id = project_id, .metric_id = oversized_metric_id, .threshold = 2},
+  });
+
+  std::vector<std::string> checkpoints;
+  // Valid partition has 4 messages (== target_batch_size^2).
+  for (int i = 0; i < 4; ++i) {
+    checkpoints.push_back(CreateCheckpointFromSpec({
+        .project_id = project_id,
+        .metric_id = valid_metric_id,
+        .payload = absl::StrCat("valid_payload_", i),
+        .event_time = "1970-01-01T00:00:00Z",
+        .privacy_id = absl::StrCat("valid_device_", i),
+    }));
+  }
+  // Oversized partition has 5 messages (> target_batch_size^2 = 4).
+  for (int i = 0; i < 5; ++i) {
+    checkpoints.push_back(CreateCheckpointFromSpec({
+        .project_id = project_id,
+        .metric_id = oversized_metric_id,
+        .payload = absl::StrCat("oversized_payload_", i),
+        .event_time = "1970-01-01T00:00:00Z",
+        .privacy_id = absl::StrCat("oversized_device_", i),
+    }));
+  }
+
+  const absl::StatusOr<PipelineExecutionResult> result =
+      ExecutePipeline(PipelineRouters{}, signing_key, run_config, constraints, checkpoints);
+  ASSERT_THAT(result.status(), IsOk());
+
+  // IngestionVerification excludes oversized_metric_id from approved_partitions.
+  ASSERT_THAT(result->ingestion_verification_output.encrypted, SizeIs(1));
+  IngestionVerificationPayload iv_payload;
+  ASSERT_TRUE(
+      iv_payload.ParseFromString(result->ingestion_verification_output.encrypted[0].ciphertext()));
+  ASSERT_TRUE(iv_payload.has_success());
+  ASSERT_EQ(iv_payload.success().threshold_report().approved_partitions_size(), 1);
+  EXPECT_EQ(iv_payload.success().threshold_report().approved_partitions(0).metric_id(),
+            valid_metric_id);
+
+  // ThresholdFilter drops the 5 oversized partition messages and forwards only the 4 valid ones.
+  EXPECT_THAT(result->threshold_filter_output.encrypted, SizeIs(4));
+  EXPECT_THAT(result->scatter_shuffle_output.encrypted, SizeIs(4));
+  EXPECT_THAT(result->gather_shuffle_output.encrypted, SizeIs(4));
+
+  const MetricEpochKey valid_key = CreateMetricEpochKey(
+      {.project_id = project_id, .metric_id = valid_metric_id, .epoch_index = 0});
+  const MetricEpochKey oversized_key = CreateMetricEpochKey(
+      {.project_id = project_id, .metric_id = oversized_metric_id, .epoch_index = 0});
+  EXPECT_TRUE(result->released_customer_messages.contains(valid_key));
+  EXPECT_FALSE(result->released_customer_messages.contains(oversized_key));
+  EXPECT_THAT(result->released_customer_messages.at(valid_key),
+              UnorderedElementsAre("valid_payload_0", "valid_payload_1", "valid_payload_2",
+                                   "valid_payload_3"));
+}
+
+TEST(ShufflerFlowIntegrationTest,
+     PipelineTerminatesWithIntegrityFaultWhenOversizedPartitionRoutedToScatterShuffle) {
   const int32_t project_id = 1001;
   const int32_t metric_id = 2;
   TestSigningKey signing_key;
+  // target_batch_size = 1 over 3 messages exceeds target_batch_size^2 (3 > 1).
   const RunConfig run_config =
       CreateTestRunConfig({{.project_id = project_id, .metric_id = metric_id}},
                           /*min_epoch=*/0, /*max_epoch=*/10, /*batch_size=*/1);
@@ -1123,19 +1190,48 @@ TEST(ShufflerFlowIntegrationTest, PipelineGathersPartitionWhoseGroupsAreMostlyEm
     }));
   }
 
-  const absl::StatusOr<PipelineExecutionResult> result =
-      ExecutePipeline(PipelineRouters{}, signing_key, run_config, constraints, checkpoints);
-  ASSERT_THAT(result.status(), IsOk());
+  // If an IngestionVerificationPayload containing an approved partition whose
+  // message_count exceeds target_batch_size^2 is routed to ScatterShuffle,
+  // ComputeBatchParametersForPartition rejects the oversized partition and
+  // ScatterShuffle terminates with an IntegrityFault.
+  PipelineRouters routers;
+  routers.scatter_shuffle_router =
+      [project_id, metric_id](const EncryptedBlob& verification_payload,
+                              int32_t /*target_batch_size*/,
+                              absl::Span<const EncryptedKVBlob> /*threshold_filter_messages*/,
+                              absl::Span<const EncryptedKVBlob> /*pre_padding_messages*/)
+      -> absl::StatusOr<std::vector<KVCollection>> {
+    IngestionVerificationPayload iv_payload;
+    if (!iv_payload.ParseFromString(verification_payload.ciphertext())) {
+      return absl::InternalError("Failed to parse IngestionVerificationPayload.");
+    }
+    const MetricEpochKey partition_key =
+        CreateMetricEpochKey({.project_id = project_id, .metric_id = metric_id, .epoch_index = 0});
+    *iv_payload.mutable_success()->mutable_threshold_report()->add_approved_partitions() =
+        partition_key;
+    FingerprintEntry* const fp_entry =
+        iv_payload.mutable_success()->mutable_canonical_fingerprint()->add_entries();
+    *fp_entry->mutable_metric_epoch_key() = partition_key;
+    fp_entry->set_message_count(3);
+    fp_entry->set_fingerprint(std::string(32, 'a'));
 
-  // No padding is needed because 3 messages divide evenly into 3 batches.
-  EXPECT_THAT(result->pre_padding_output.encrypted, IsEmpty());
-  EXPECT_THAT(result->scatter_shuffle_output.encrypted, SizeIs(3));
+    ShuffledMessage oversized_msg;
+    oversized_msg.set_run_id(iv_payload.success().threshold_report().run_id());
+    oversized_msg.set_customer_message("payload_0");
+    *oversized_msg.mutable_metric_epoch_key() = partition_key;
 
-  // The single non-empty gather group holds all 3 messages.
-  EXPECT_THAT(result->gather_shuffle_output.encrypted, SizeIs(3));
-  EXPECT_THAT(
-      GatheredPayloads(result->gather_shuffle_output.encrypted),
-      UnorderedElementsAreArray(ScatteredPayloads(result->scatter_shuffle_output.encrypted)));
+    google::protobuf::Any key;
+    key.PackFrom(partition_key);
+    KVCollection batch;
+    batch.push_back(EncryptedBlob(Node::kVerifiedIngestion, iv_payload.SerializeAsString()).ToKV());
+    batch.push_back(
+        EncryptedKVBlob(Node::kFilteredMessages, std::move(key), oversized_msg.SerializeAsString())
+            .ToKV());
+    return std::vector<KVCollection>{std::move(batch)};
+  };
+
+  EXPECT_THAT(ExecutePipeline(routers, signing_key, run_config, constraints, checkpoints).status(),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
 }
 
 TEST(ShufflerFlowIntegrationTest,

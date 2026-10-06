@@ -40,14 +40,17 @@ absl::StatusOr<BatchParameters> ComputeBatchParameters(int64_t message_count,
     return absl::InvalidArgumentError("message_count must be positive.");
   }
 
+  const int64_t max_partition_messages =
+      static_cast<int64_t>(target_batch_size) * static_cast<int64_t>(target_batch_size);
+  if (message_count > max_partition_messages) {
+    return absl::OutOfRangeError("message_count exceeds target_batch_size squared.");
+  }
+
   // Integer ceiling division: ceil(message_count / target_batch_size).
   // Adding (target_batch_size - 1) before integer division rounds up any non-zero
   // remainder to the next integer while keeping exact multiples unchanged.
-  const int64_t batch_num_64 = (message_count + target_batch_size - 1) / target_batch_size;
-  if (batch_num_64 > std::numeric_limits<int32_t>::max()) {
-    return absl::OutOfRangeError("Computed batch_num exceeds int32_t max.");
-  }
-  const int32_t batch_num = static_cast<int32_t>(batch_num_64);
+  const int32_t batch_num =
+      static_cast<int32_t>((message_count + target_batch_size - 1) / target_batch_size);
   const int32_t remainder_count = static_cast<int32_t>(message_count % batch_num);
   const int32_t padding_count = (remainder_count > 0) ? (batch_num - remainder_count) : 0;
   const int64_t total_messages = message_count + padding_count;

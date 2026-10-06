@@ -52,7 +52,8 @@ struct BatchParameters {
 // Validates:
 // 1. result.run_context has target_batch_size > 0.
 // 2. partition_key is an approved partition in result.approved_partitions.
-// 3. partition_key exists in result.canonical_fingerprint with a positive message_count.
+// 3. partition_key exists in result.canonical_fingerprint with a positive message_count
+//    not exceeding target_batch_size squared.
 absl::StatusOr<BatchParameters> ComputeBatchParametersForPartition(
     const VerifiedIngestionVerificationResult& result, const MetricEpochKey& partition_key);
 

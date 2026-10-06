@@ -908,5 +908,98 @@ TEST(IngestionVerificationFnTest, SubsequentRecordProcessingAfterFaultPreservesI
   ExpectIntegrityFaultEmitted(context);
 }
 
+TEST(IngestionVerificationFnTest,
+     PartitionExceedingTargetBatchSizeSquaredIsExcludedFromApprovedPartitions) {
+  const MetricThresholdSpec specs[] = {
+      {.project_id = 1001, .metric_id = 2, .threshold = 2},
+      {.project_id = 1001, .metric_id = 3, .threshold = 2},
+  };
+  const TrustedShufflerConfigConstraints constraints = CreateConfigConstraints(specs);
+  IngestionVerificationFn fn(constraints);
+  FakeContext context;
+
+  // Configure target_batch_size = 3 (so max messages per partition is 3^2 = 9).
+  const RunContext run_context = testing::CreateValidRunContext(
+      {{.project_id = 1001, .metric_id = 2}, {.project_id = 1001, .metric_id = 3}},
+      /*min_epoch=*/10, /*max_epoch=*/20, /*batch_size=*/3);
+  const SignedRunContext signed_context = testing::CreateValidSignedRunContext(run_context);
+  ASSERT_THAT(fn.Do(IngestionVerificationFn::KV(signed_context.SerializeAsString()), context),
+              IsOk());
+
+  // Metric 2 has exactly 9 messages (== 3^2) and 3 devices (>= threshold 2) -> APPROVED.
+  // Metric 3 has 10 messages (> 3^2) and 3 devices (>= threshold 2) -> EXCLUDED.
+  const PartitionSpec partition_specs[] = {
+      {.project_id = 1001,
+       .metric_id = 2,
+       .epoch_index = 15,
+       .message_count = 9,
+       .device_ids = GenerateDeviceIds("m2_dev", 3),
+       .sketch_precision = 14},
+      {.project_id = 1001,
+       .metric_id = 3,
+       .epoch_index = 15,
+       .message_count = 10,
+       .device_ids = GenerateDeviceIds("m3_dev", 3),
+       .sketch_precision = 14},
+  };
+  const PartialIngestionReport report =
+      CreatePartialIngestionReport(run_context.run_id(), partition_specs);
+
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context), IsOk());
+  ASSERT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context), IsOk());
+
+  ASSERT_THAT(context.Encrypted(), SizeIs(1));
+  IngestionVerificationPayload payload;
+  ASSERT_TRUE(payload.ParseFromString(context.Encrypted()[0].second.data));
+  ASSERT_TRUE(payload.has_success());
+  const IngestionVerificationResult& success = payload.success();
+
+  ASSERT_EQ(success.threshold_report().approved_partitions_size(), 1);
+  EXPECT_THAT(success.threshold_report().approved_partitions(0),
+              EquivToProto(CreateMetricEpochKey(1001, 2, 15)));
+
+  ASSERT_EQ(success.canonical_fingerprint().entries_size(), 1);
+  EXPECT_THAT(success.canonical_fingerprint().entries(0).metric_epoch_key(),
+              EquivToProto(CreateMetricEpochKey(1001, 2, 15)));
+  EXPECT_EQ(success.canonical_fingerprint().entries(0).message_count(), 9);
+  EXPECT_THAT(context.GetCounters().at(std::string(kOversizedPartitionDropped)), Eq(1));
+}
+
+TEST(IngestionVerificationFnTest,
+     FinalizeReplicaWithMissingPartitionMessageCountEmitsIntegrityFault) {
+  const MetricThresholdSpec specs[] = {
+      {.project_id = 1001, .metric_id = 2, .threshold = 2},
+  };
+  const TrustedShufflerConfigConstraints constraints = CreateConfigConstraints(specs);
+  IngestionVerificationFn fn(constraints);
+  FakeContext context;
+
+  const SignedRunContext signed_context =
+      CreateValidSignedRunContext(1001, 2, "valid_signature_bytes");
+  ASSERT_THAT(fn.Do(IngestionVerificationFn::KV(signed_context.SerializeAsString()), context),
+              IsOk());
+
+  // Construct a PartialIngestionReport with a sketch for a partition, but no FingerprintEntry.
+  PartialIngestionReport report;
+  RunFingerprint* const fp = report.mutable_partial_fingerprint();
+  fp->set_run_id(std::string(kTestRunId));
+  fp->set_stage_id(Stage::STAGE_INGESTION);
+  fp->set_is_partial(true);
+
+  MetricEpochSketch* const sketch_entry = report.add_metric_epoch_sketches();
+  *sketch_entry->mutable_metric_epoch_key() = CreateMetricEpochKey(1001, 2, 15);
+  HllSketch hll_sketch = HllSketch::Create(14).value();
+  for (const std::string& device_id : GenerateDeviceIds("dev", 5)) {
+    hll_sketch.Insert(device_id);
+  }
+  *sketch_entry->mutable_hyperloglog_sketch() = hll_sketch.ToProto();
+
+  EXPECT_THAT(fn.Do(IngestionVerificationFn::KV(report.SerializeAsString()), context), IsOk());
+  EXPECT_THAT(fn.FinalizeReplica(google::protobuf::Any(), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition));
+
+  ExpectIntegrityFaultEmitted(context);
+}
+
 }  // namespace
 }  // namespace cobalt::trusted_shuffler
