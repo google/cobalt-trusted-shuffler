@@ -73,6 +73,7 @@ absl::Status IngestionVerificationFn::OnConfig(
         .ToStatus();
   }
   run_id_ = verified_run_context->run_id();
+  target_batch_size_ = verified_run_context->run_config().target_batch_size();
   multiset_fingerprint_.emplace(Stage::STAGE_INGESTION, /*is_partial=*/false, *verified_run_context,
                                 MultisetFingerprint::kFingerprintSize);
   LOG(INFO) << "SignedRunContext received.";
@@ -139,50 +140,51 @@ absl::Status IngestionVerificationFn::OnFinalize(google::protobuf::Any config, F
         .ToStatus();
   }
 
+  const RunFingerprint raw_fingerprint = multiset_fingerprint_->Build();
+  absl::flat_hash_map<MetricEpochTuple, const FingerprintEntry*> raw_entries_by_tuple;
+  for (const FingerprintEntry& entry : raw_fingerprint.entries()) {
+    const MetricEpochTuple tuple_key = {entry.metric_epoch_key().project_id(),
+                                        entry.metric_epoch_key().metric_id(),
+                                        entry.metric_epoch_key().epoch_index()};
+    raw_entries_by_tuple[tuple_key] = &entry;
+  }
+
+  const int64_t max_partition_messages =
+      static_cast<int64_t>(target_batch_size_) * static_cast<int64_t>(target_batch_size_);
+
   ThresholdReport threshold_report;
   threshold_report.set_run_id(run_id_);
 
-  absl::flat_hash_set<MetricEpochTuple> approved_partition_set;
-
-  // Evaluate thresholds for all partitions that have sketches.
-  for (const auto& [tuple_key, sketch] : partition_sketches_) {
-    const int64_t unique_device_count = sketch.EstimateCardinality();
-    const int32_t project_id = std::get<0>(tuple_key);
-    const int32_t metric_id = std::get<1>(tuple_key);
-
-    const auto it = threshold_map_.find({project_id, metric_id});
-    if (it != threshold_map_.end() && unique_device_count >= it->second) {
-      const MetricEpochKey& key = partition_keys_[tuple_key];
-      *threshold_report.add_approved_partitions() = key;
-      approved_partition_set.insert(tuple_key);
-    }
-  }
-
-  const RunFingerprint raw_fingerprint = multiset_fingerprint_->Build();
   RunFingerprint canonical_fingerprint;
   canonical_fingerprint.set_run_id(run_id_);
   canonical_fingerprint.set_stage_id(Stage::STAGE_INGESTION);
   canonical_fingerprint.set_is_partial(false);
 
-  // Copy fingerprint entries for approved partitions from the raw fingerprint.
-  absl::flat_hash_set<MetricEpochTuple> added_entries;
-  for (const auto& entry : raw_fingerprint.entries()) {
-    const MetricEpochTuple tuple_key = {entry.metric_epoch_key().project_id(),
-                                        entry.metric_epoch_key().metric_id(),
-                                        entry.metric_epoch_key().epoch_index()};
-    if (approved_partition_set.contains(tuple_key)) {
-      *canonical_fingerprint.add_entries() = entry;
-      added_entries.insert(tuple_key);
+  // Evaluate thresholds and max batch size bounds for all partitions that have sketches.
+  for (const auto& [tuple_key, sketch] : partition_sketches_) {
+    const auto raw_entry_it = raw_entries_by_tuple.find(tuple_key);
+    if (raw_entry_it == raw_entries_by_tuple.end() || raw_entry_it->second->message_count() <= 0) {
+      return fault_handler_.SignalFault("Missing message count for partition.", *this, context)
+          .ToStatus();
     }
-  }
 
-  // Create new entries for approved partitions that were not in the raw fingerprint.
-  for (const auto& tuple_key : approved_partition_set) {
-    if (!added_entries.contains(tuple_key)) {
-      FingerprintEntry* const entry = canonical_fingerprint.add_entries();
-      *entry->mutable_metric_epoch_key() = partition_keys_[tuple_key];
-      entry->set_message_count(partition_sketches_.at(tuple_key).EstimateCardinality());
+    const int64_t unique_device_count = sketch.EstimateCardinality();
+    const int32_t project_id = std::get<0>(tuple_key);
+    const int32_t metric_id = std::get<1>(tuple_key);
+
+    const auto threshold_it = threshold_map_.find({project_id, metric_id});
+    if (threshold_it == threshold_map_.end() || unique_device_count < threshold_it->second) {
+      continue;
     }
+
+    if (raw_entry_it->second->message_count() > max_partition_messages) {
+      context.IncrementCounter(kOversizedPartitionDropped);
+      continue;
+    }
+
+    const MetricEpochKey& key = partition_keys_[tuple_key];
+    *threshold_report.add_approved_partitions() = key;
+    *canonical_fingerprint.add_entries() = *raw_entry_it->second;
   }
 
   IngestionVerificationHeader header;

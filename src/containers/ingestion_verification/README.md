@@ -22,9 +22,11 @@ The `ingestion_verification` container is a confidential data transform in the T
 
 This container implements the `FnConfidentialTransform` / `DoFn` API to serve as the ingestion verification stage in the Trusted Shuffler confidential pipeline.
 
-It processes worker ingestion reports from `IngestUploads`, verifies integrity across the batch, determines which partitions met the minimum unique device privacy thresholds, and emits dual outputs for downstream consumption:
+It processes worker ingestion reports from `IngestUploads`, verifies integrity across the batch, determines which partitions met the minimum unique device privacy thresholds and stayed within the maximum partition message limit (`target_batch_size * target_batch_size`), and emits dual outputs for downstream consumption:
 1. An unencrypted header (`IngestionVerificationHeader`) visible to the untrusted Flume orchestrator (exposes `ingestion_result` on success, or `integrity_fault` on validation/merging failure).
 2. An encrypted payload (`IngestionVerificationPayload`) encrypted to the `kVerifiedIngestion` data node containing `ThresholdReport` (approved partitions), the canonical `RunFingerprint`, and `SignedRunContext`, readable only by downstream confidential TEE stages (`ThresholdFilter`).
+
+Partitions whose `message_count` exceeds `target_batch_size * target_batch_size` are dropped (excluded from `approved_partitions` and `canonical_fingerprint`) and increment the `oversized_partition-dropped` counter. If any partition is missing a positive `message_count` in the merged fingerprint, the container signals an `IntegrityFault`.
 
 ---
 
@@ -68,7 +70,7 @@ Packed in `KV.key` (`google::protobuf::Any`) and visible in plaintext to the unt
 #### 2. Payload (`IngestionVerificationPayload`) — Encrypted
 Serialized in `KV.data` and encrypted to the `kVerifiedIngestion` data node (readable by `ThresholdFilter`):
 - `success`:
-  - `threshold_report`: Contains `run_id` and the list of `approved_partitions` that met or exceeded reporting thresholds.
+  - `threshold_report`: Contains `run_id` and the list of `approved_partitions` that met or exceeded reporting thresholds and did not exceed `target_batch_size * target_batch_size` messages.
   - `canonical_fingerprint`: Canonical merged `RunFingerprint` (`is_partial = false`) containing `FingerprintEntry` records for approved partitions.
   - `signed_run_context`: The `SignedRunContext` received on record 0, passed through for downstream pipeline stages.
 - `integrity_fault`: Emitted if any validation or merging failure occurred.

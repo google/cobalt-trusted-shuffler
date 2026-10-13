@@ -99,9 +99,31 @@ TEST(BatchCalculatorTest, ComputeBatchParametersRejectsNonPositiveMessageCount) 
               StatusIs(absl::StatusCode::kInvalidArgument, "message_count must be positive."));
 }
 
-TEST(BatchCalculatorTest, ComputeBatchParametersRejectsBatchNumExceedingInt32Max) {
-  EXPECT_THAT(ComputeForSinglePartition(/*message_count=*/3'000'000'000LL, /*target_batch_size=*/1),
-              StatusIs(absl::StatusCode::kOutOfRange, "Computed batch_num exceeds int32_t max."));
+TEST(BatchCalculatorTest,
+     ComputeBatchParametersRejectsMessageCountExceedingTargetBatchSizeSquared) {
+  EXPECT_THAT(
+      ComputeForSinglePartition(/*message_count=*/2, /*target_batch_size=*/1),
+      StatusIs(absl::StatusCode::kOutOfRange, "message_count exceeds target_batch_size squared."));
+  EXPECT_THAT(
+      ComputeForSinglePartition(/*message_count=*/101, /*target_batch_size=*/10),
+      StatusIs(absl::StatusCode::kOutOfRange, "message_count exceeds target_batch_size squared."));
+  EXPECT_THAT(
+      ComputeForSinglePartition(/*message_count=*/3'000'000'000LL, /*target_batch_size=*/1),
+      StatusIs(absl::StatusCode::kOutOfRange, "message_count exceeds target_batch_size squared."));
+}
+
+TEST(BatchCalculatorTest, ComputeBatchParametersAtTargetBatchSizeSquaredBoundary) {
+  const absl::StatusOr<BatchParameters> params =
+      ComputeForSinglePartition(/*message_count=*/100, /*target_batch_size=*/10);
+  ASSERT_THAT(params, IsOk());
+
+  const BatchParameters expected{
+      .target_batch_size = 10,
+      .actual_batch_size = 10,
+      .batch_num = 10,
+      .padding_count = 0,
+  };
+  EXPECT_THAT(*params, Eq(expected));
 }
 
 TEST(BatchCalculatorTest, ComputeBatchParametersExactMultipleTargetBatchSize) {
@@ -335,8 +357,8 @@ TEST(BatchCalculatorTest, ExpectedGatherGroupSizeMatchesScatterGroupAssignment) 
       {.target_batch_size = 100, .message_count = 150},
       {.target_batch_size = 4, .message_count = 10},
       {.target_batch_size = 10, .message_count = 10},
-      {.target_batch_size = 7, .message_count = 100},
-      {.target_batch_size = 1, .message_count = 9},
+      {.target_batch_size = 7, .message_count = 45},
+      {.target_batch_size = 3, .message_count = 9},
       {.target_batch_size = 64, .message_count = 1000},
   };
 

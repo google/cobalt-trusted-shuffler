@@ -337,6 +337,31 @@ TEST(ScatterShuffleFnTest, RejectsRecordWithZeroMessageCountInFingerprint) {
   EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
 }
 
+TEST(ScatterShuffleFnTest, RejectsRecordWithMessageCountExceedingTargetBatchSizeSquared) {
+  FakeContext context;
+  ScatterShuffleFn fn;
+
+  // target_batch_size = 5, message_count = 26 (> 5^2 = 25).
+  const IngestionVerificationPayload verification_payload = CreateIngestionVerificationPayload({
+      .target_batch_size = 5,
+      .message_count = 26,
+      .project_id = 100,
+      .metric_id = 200,
+      .epoch_index = 42,
+  });
+  ASSERT_THAT(fn.Do(CreateConfigRecord(verification_payload), context), IsOk());
+
+  const ShuffledMessage message = CreateMessage({.payload = "m1"});
+  EXPECT_THAT(fn.Do(CreateMessageRecord(message), context),
+              StatusIs(absl::StatusCode::kFailedPrecondition,
+                       "IntegrityFault: Failed to compute batch parameters for partition."));
+
+  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
+  ScatterShuffleHeader header;
+  ASSERT_TRUE(context.Unencrypted()[0].key.UnpackTo(&header));
+  EXPECT_EQ(header.header_type_case(), ScatterShuffleHeader::kIntegrityFault);
+}
+
 TEST(ScatterShuffleFnTest, RejectsEmptyBatchWithIntegrityFault) {
   FakeContext context;
   ScatterShuffleFn fn;

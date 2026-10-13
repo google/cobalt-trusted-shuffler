@@ -98,6 +98,7 @@ class IngestionVerificationFn
   absl::flat_hash_map<MetricKey, int32_t> threshold_map_;
 
   std::string run_id_;
+  int32_t target_batch_size_ = 0;
   std::optional<MultisetFingerprint> multiset_fingerprint_;
   std::map<MetricEpochTuple, HllSketch> partition_sketches_;
   std::map<MetricEpochTuple, MetricEpochKey> partition_keys_;

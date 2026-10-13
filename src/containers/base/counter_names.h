@@ -23,6 +23,7 @@ inline constexpr absl::string_view kInputConfigCount = "input_config-count";
 inline constexpr absl::string_view kInputConfigInvalid = "input_config-invalid";
 inline constexpr absl::string_view kInputRecordCount = "input_record-count";
 inline constexpr absl::string_view kInputRecordDropped = "input_record-dropped";
+inline constexpr absl::string_view kOversizedPartitionDropped = "oversized_partition-dropped";
 inline constexpr absl::string_view kEncryptedOutputRecordCount = "encrypted_output_record-count";
 inline constexpr absl::string_view kUnencryptedOutputRecordCount =
     "unencrypted_output_record-count";
