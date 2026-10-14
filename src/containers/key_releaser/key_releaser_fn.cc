@@ -144,6 +144,7 @@ absl::Status KeyReleaserFn::EmitIntegrityFault(absl::string_view reason, FnConte
     release_msg.mutable_integrity_fault();
 
     context.IncrementCounter(kUnencryptedOutputRecordCount);
+    context.IncrementCounter(kIntegrityFaultCount);
     EmitUnencrypted(context, release_msg).IgnoreError();
   }
   return absl::FailedPreconditionError(reason);

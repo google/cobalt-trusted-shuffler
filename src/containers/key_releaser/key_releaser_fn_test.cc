@@ -187,6 +187,7 @@ TEST_F(KeyReleaserFnTest, SingleWorkerHappyPathReleasesKey) {
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
   EXPECT_THAT(context.GetCounters().at(std::string(kUnencryptedOutputRecordCount)), Eq(1));
+  EXPECT_FALSE(context.GetCounters().contains(std::string(kIntegrityFaultCount)));
 }
 
 TEST_F(KeyReleaserFnTest, MultiWorkerHappyPathReleasesKey) {
@@ -365,6 +366,7 @@ TEST_F(KeyReleaserFnTest, TamperedMessageCountEmitsIntegrityFaultAndNeverRelease
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
   EXPECT_THAT(context.GetCounters().at(std::string(kUnencryptedOutputRecordCount)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kIntegrityFaultCount)), Eq(1));
 }
 
 TEST_F(KeyReleaserFnTest, TamperedFingerprintHashEmitsIntegrityFaultAndNeverReleasesKey) {
