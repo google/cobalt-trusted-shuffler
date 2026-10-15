@@ -38,6 +38,13 @@ if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
   echo "${INVOCATION_ID}" >> ${KOKORO_ARTIFACTS_DIR}/bazel_invocation_ids
 fi
 
+log "Checking Apache 2.0 license headers."
+bazel run @addlicense//:bin -- -check -l apache -c "Google LLC" \
+  -ignore ".git/**" \
+  -ignore "bazel-*/**" \
+  -ignore "third_party/**" \
+  "${PWD}"
+
 log "Running bazel test."
 bazel test //... \
   --spawn_strategy=dynamic \

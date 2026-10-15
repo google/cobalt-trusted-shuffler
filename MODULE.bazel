@@ -104,6 +104,18 @@ http_archive(
     url = "https://github.com/google-parfait/tensorflow-federated/archive/590104cb7c358ee5c4efa8937e0ccf93a5925265.tar.gz",
 )
 
+http_archive(
+    name = "addlicense",
+    build_file_content = """sh_binary(
+    name = "bin",
+    srcs = ["addlicense"],
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "6924296771234b1ba6c969e109b4459cff75e15b259676b61df874a92734b242",
+    url = "https://github.com/google/addlicense/releases/download/v1.2.0/addlicense_v1.2.0_Linux_x86_64.tar.gz",
+)
+
 # Allow non-hermetic builds when building in downstream projects inheriting this module.
 llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm", dev_dependency = True)
 llvm.toolchain(
