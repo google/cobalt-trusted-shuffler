@@ -70,12 +70,6 @@ if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
   log "Copying simple container output to kokoro artifacts dir."
   cp -Rp ./bazel-bin/src/containers/simple/* ${KOKORO_ARTIFACTS_DIR}/simple_container/.
 
-  log "Copying message_counter container output to kokoro artifacts dir."
-  cp -Rp ./bazel-bin/src/containers/message_counter/* ${KOKORO_ARTIFACTS_DIR}/message_counter/.
-
-  log "Copying releaser container output to kokoro artifacts dir."
-  cp -Rp ./bazel-bin/src/containers/releaser/* ${KOKORO_ARTIFACTS_DIR}/releaser/.
-
   log "Copying run_context_initializer container output to kokoro artifacts dir."
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/run_context_initializer
   cp -Rp ./bazel-bin/src/containers/run_context_initializer/* ${KOKORO_ARTIFACTS_DIR}/run_context_initializer/.

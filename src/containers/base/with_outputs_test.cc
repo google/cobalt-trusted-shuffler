@@ -234,16 +234,6 @@ class AnyKeyDoFn
   }
 };
 
-// Forwards whole KV pairs rather than a declared message type.
-class KvPassthroughDoFn
-    : public TrustedDoFn::WithInputs<Node::kCountedMessages>::WithOutputs<
-          EncryptsTo<>, Unencrypted<confidential_federated_compute::Session::KV>> {
- public:
-  absl::Status Do(KV input, DoContext& context) override {
-    return EmitUnencrypted(context, std::move(input));
-  }
-};
-
 // Exercises the keyless streams, whose emit overloads take a value alone and
 // leave KV.key empty. The encrypted stream uses the third destination node so
 // that the key index (2) is shown to come from the declaration.
@@ -367,29 +357,6 @@ TEST(WithOutputsTest, ForwardsAnyKeyWithoutNestingIt) {
   MetricEpochKey emitted_key;
   ASSERT_TRUE(context.Encrypted()[0].second.key.UnpackTo(&emitted_key));
   EXPECT_THAT(emitted_key.project_id(), Eq(101));
-}
-
-TEST(WithOutputsTest, ForwardsSessionKvPassthroughUnchanged) {
-  testing::FakeCombinedContext context;
-  KvPassthroughDoFn fn;
-
-  google::protobuf::Any key_any;
-  key_any.PackFrom(SignedRunContext());
-
-  EXPECT_THAT(fn.Do(KvPassthroughDoFn::KV(key_any, "opaque_bytes", "blob-7"), context), IsOk());
-  ASSERT_THAT(context.Unencrypted(), SizeIs(1));
-  EXPECT_THAT(context.Unencrypted()[0].key.type_url(), Eq(key_any.type_url()));
-  EXPECT_THAT(context.Unencrypted()[0].data, Eq("opaque_bytes"));
-  EXPECT_THAT(context.Unencrypted()[0].blob_id, Eq("blob-7"));
-}
-
-TEST(WithOutputsTest, PropagatesInternalErrorWhenUnencryptedPassthroughFails) {
-  FailingContext failing_context;
-  testing::FakeDoContext do_context(failing_context);
-  KvPassthroughDoFn fn;
-
-  EXPECT_THAT(fn.Do(KvPassthroughDoFn::KV("data"), do_context),
-              StatusIs(absl::StatusCode::kInternal));
 }
 
 TEST(WithOutputsTest, EmitsKeylessEncryptedValueAtDeclaredIndexWithEmptyKey) {

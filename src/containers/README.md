@@ -28,8 +28,6 @@ For instructions on developing, modifying, and contributing containers, see [.ag
 | :--- | :--- | :--- | :--- |
 | [`run_context_initializer`](run_context_initializer/) | Bootstraps the pipeline execution. Validates `RunConfig`, generates cryptographically secure `run_id`, `run_hash_key`, and `release_key`, and signs the `RunContext`. | Emits encrypted `SignedRunContext` to the `kRunContext` data node for downstream TEE stages. | [`src/proto/run_context.proto`](../proto/run_context.proto) |
 | [`ingest_uploads`](ingest_uploads/) | Ingests device uploads, validates metric identifiers and epoch bounds against `SignedRunContext`, and updates HyperLogLog cardinality sketches and `MultisetFingerprint`. | Emits encrypted `ShuffledMessage` records to the `kIngestedMessages` data node and `PartialIngestionReport` outputs to `kPartialIngestionReports`; emits `IntegrityFault` (keyed by `IngestMessagesHeader`) via `EmitUnencrypted` on configuration failure. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
-| [`message_counter`](message_counter/) | Counts incoming messages while forwarding them. Outputs a final count summary report. | Emits messages encrypted (`OutputKey.type = MESSAGE`) and final `CountReport` unencrypted (`OutputKey.type = REPORT`). | [`src/proto/message_counter/`](../proto/message_counter/) |
-| [`releaser`](releaser/) | Unconditionally releases messages passed from upstream confidential stages. | Emits messages unencrypted via `EmitUnencrypted` at the pipeline's privacy/release boundary. | None (empty config) |
 | [`simple`](simple/) | Proof-of-concept identity transform. Buffers incoming blobs and forwards them. | Emits buffered blobs encrypted with key index 0 upon commit. | None (empty config) |
 | [`ingestion_verification`](ingestion_verification/) | Verifies runtime configuration, merges partial multiset fingerprints and HyperLogLog cardinality sketches, and evaluates device counts against privacy thresholds. | Emits an unencrypted `IngestionVerificationHeader` labelling the payload variant (`ingestion_result` or `integrity_fault`) for the orchestrator, and an encrypted `IngestionVerificationPayload` to the `kVerifiedIngestion` data node for `ThresholdFilter`. | [`src/proto/config_constraints.proto`](../proto/config_constraints.proto), [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
 | [`threshold_filter`](threshold_filter/) | Filters messages by approved partition thresholds from Ingestion Verification report, drops unapproved partitions, and emits encrypted message streams. | Emits messages encrypted (`EmitEncrypted`) to the `kFilteredMessages` data node with plaintext `MetricEpochKey` headers. Partitions below threshold are dropped completely. | [`src/proto/ingestion.proto`](../proto/ingestion.proto) |
@@ -62,33 +60,7 @@ The **`ingest_uploads`** container is responsible for the First Ingestion Stage 
 
 ---
 
-## 3. `message_counter`
-
-The **`message_counter`** container counts messages during streaming execution and produces an unencrypted aggregation report upon finalization.
-
-- **Purpose**: Forwards user message streams while maintaining a count of processed items.
-- **Configuration**: `CounterConfig` containing a `counter_name`.
-- **Inputs**: Encrypted message payloads processed via `Do`.
-- **Outputs**:
-  - **Streaming**: Emits each message encrypted with key `OutputKey(type = MESSAGE)`.
-  - **Finalize**: Emits an unencrypted `CountReport` with key `OutputKey(type = REPORT)`.
-- **Documentation**: See [`src/containers/message_counter/README.md`](message_counter/README.md).
-
----
-
-## 4. `releaser`
-
-The **`releaser`** container serves as the release stage for messages processed by upstream confidential stages.
-
-- **Purpose**: Releases message payloads to the downstream consumer / untrusted orchestrator.
-- **Configuration**: None.
-- **Inputs**: Forwarded message payloads (e.g. from `message_counter`) with key `OutputKey(type = MESSAGE)`.
-- **Outputs**: Emits message payloads unencrypted via `EmitUnencrypted`.
-- **Documentation**: See [`src/containers/releaser/README.md`](releaser/README.md).
-
----
-
-## 5. `simple`
+## 3. `simple`
 
 The **`simple`** container is a proof-of-concept identity transform container.
 
@@ -100,7 +72,7 @@ The **`simple`** container is a proof-of-concept identity transform container.
 
 ---
 
-## 6. `ingestion_verification`
+## 4. `ingestion_verification`
 
 The **`ingestion_verification`** container is a confidential transform responsible for verifying runtime configuration, aggregating multiset fingerprints, merging HyperLogLog sketches, and evaluating device counts against reporting thresholds.
 
@@ -112,7 +84,7 @@ The **`ingestion_verification`** container is a confidential transform responsib
 
 ---
 
-## 7. `threshold_filter`
+## 5. `threshold_filter`
 
 The **`threshold_filter`** container filters incoming partitions against approved privacy thresholds from Ingestion Verification and emits encrypted message streams for two-pass shuffling.
 
@@ -124,7 +96,7 @@ The **`threshold_filter`** container filters incoming partitions against approve
 
 ---
 
-## 8. `pre_padding`
+## 6. `pre_padding`
 
 The **`pre_padding`** container generates encrypted dummy padding messages for approved metric-epoch partitions before entering the two-pass shuffle.
 
@@ -136,7 +108,7 @@ The **`pre_padding`** container generates encrypted dummy padding messages for a
 
 ---
 
-## 9. `scatter_shuffle`
+## 7. `scatter_shuffle`
 
 The **`scatter_shuffle`** container is responsible for the scatter shuffle and group assignment phase (first pass) of the Trusted Shuffler two-pass shuffle.
 
@@ -148,7 +120,7 @@ The **`scatter_shuffle`** container is responsible for the scatter shuffle and g
 
 ---
 
-## 10. `gather_shuffle`
+## 8. `gather_shuffle`
 
 The **`gather_shuffle`** container is responsible for the second pass of the Trusted Shuffler two-pass cryptographic shuffle.
 
@@ -160,7 +132,7 @@ The **`gather_shuffle`** container is responsible for the second pass of the Tru
 
 ---
 
-## 11. `encrypt_output`
+## 9. `encrypt_output`
 
 The **`encrypt_output`** container is responsible for output encryption and release fingerprinting in the Trusted Shuffler pipeline.
 
@@ -172,7 +144,7 @@ The **`encrypt_output`** container is responsible for output encryption and rele
 
 ---
 
-## 12. `key_releaser`
+## 10. `key_releaser`
 
 The **`key_releaser`** container performs cryptographic multiset fingerprint verification and decryption key release at the end of the pipeline.
 

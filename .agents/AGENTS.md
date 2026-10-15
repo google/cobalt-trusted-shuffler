@@ -62,11 +62,11 @@ Pipelines operate across a strict trust boundary between the **Untrusted Orchest
 
 2. **`context.EmitReleasable(key_id, kv, src_state, dst_state, release_token)`**:
    - **Visibility**: The `kv.key` is plaintext. The `kv.value` is encrypted and **opaque to the untrusted orchestrator** until session finalization conditions are satisfied and the `release_token` is revealed.
-   - **When to Use**: Conditional or deferred release pipelines (e.g. threshold batching, k-anonymity gates, or final release containers like `releaser`).
+   - **When to Use**: Conditional or deferred release pipelines (e.g. threshold batching or k-anonymity gates).
 
 3. **`context.EmitUnencrypted(kv)`**:
    - **Visibility**: **Both `kv.key` and `kv.value` are in plaintext and fully visible to the untrusted orchestrator**, host logging, and downstream consumers.
-   - **When to Use**: Final aggregated summary reports (e.g. `CountReport`) or non-sensitive execution metrics.
+   - **When to Use**: Final release outputs (`DecryptionKeyRelease`, `EncryptedMessageOutput`) or integrity fault reports (`IntegrityFault`).
    - **CRITICAL PRIVACY RULE**: Never emit raw client records, individual identifiers, or unaggregated confidential data with `EmitUnencrypted`.
 
 #### Prescriptive Rules for Secret & Identifier Protection:
@@ -94,7 +94,7 @@ Pipelines operate across a strict trust boundary between the **Untrusted Orchest
 
 **CRITICAL RULE**: Do **NOT** use internal specification stage numbers or terms such as "Stage 3B", "Stage 6A", "Stage 7C", etc.
 
-These labels do not mean anything in isolation to developers, reviewers, or future agents inspecting the codebase. Instead, always use descriptive, functional domain names and explanations that describe what the component actually does (e.g., `ingest_uploads`, `scatter_shuffle`, `releaser`, "upload ingestion", "shuffle grouping", "release batching").
+These labels do not mean anything in isolation to developers, reviewers, or future agents inspecting the codebase. Instead, always use descriptive, functional domain names and explanations that describe what the component actually does (e.g., `ingest_uploads`, `scatter_shuffle`, `key_releaser`, "upload ingestion", "shuffle grouping", "release batching").
 
 Apply this rule across all parts of your contributions:
 - **Code Comments**: Do not refer to spec stage numbers in code comments (file headers, class/function docstrings, inline comments, or TODOs). Describe the actual functional behavior or reference the relevant tracking issue / RFC title instead.

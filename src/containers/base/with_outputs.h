@@ -165,13 +165,7 @@ struct OutputStream {
   static_assert(std::is_same_v<KeyType, NoKey> ||
                     std::is_base_of_v<google::protobuf::Message, KeyType>,
                 "An output stream's key must be a Protobuf message.");
-  // TODO(b/563350645): Remove the std::string and Session::KV exceptions once
-  // the legacy message_counter and releaser containers are deleted.
-  static_assert(std::is_base_of_v<google::protobuf::Message, ValueType> ||
-                    std::is_same_v<ValueType, std::string> ||
-                    (StreamVisibility == Visibility::kUnencrypted &&
-                     std::is_same_v<KeyType, NoKey> &&
-                     std::is_same_v<ValueType, confidential_federated_compute::Session::KV>),
+  static_assert(std::is_base_of_v<google::protobuf::Message, ValueType>,
                 "An output stream's value must be a Protobuf message.");
   static_assert(internal::kDestinationMatchesVisibility<StreamVisibility, Destination>,
                 "An encrypted output stream must name the data node it is encrypted to, and an "
@@ -301,17 +295,6 @@ google::protobuf::Any BuildKey(const KeyType& key) {
   return any;
 }
 
-template <typename ValueArg>
-std::string SerializePayload(ValueArg&& value) {
-  if constexpr (std::is_base_of_v<google::protobuf::Message, std::decay_t<ValueArg>>) {
-    return value.SerializeAsString();
-  } else {
-    // TODO(b/563350645): Remove the std::string branch once the legacy
-    // message_counter container is deleted.
-    return std::string(std::forward<ValueArg>(value));
-  }
-}
-
 }  // namespace internal
 
 // Mixin that declares the data nodes a container encrypts output to and the
@@ -367,7 +350,6 @@ class WithOutputs {
 
   // Emits a plaintext value with an empty key.
   template <typename ValueArg>
-    requires(!std::is_same_v<std::decay_t<ValueArg>, confidential_federated_compute::Session::KV>)
   absl::Status EmitUnencrypted(confidential_federated_compute::fns::Fn::FnContext& context,
                                ValueArg&& value) const {
     return Emit<Visibility::kUnencrypted>(context, NoKey(), std::forward<ValueArg>(value));
@@ -380,26 +362,6 @@ class WithOutputs {
                                KeyArg&& key, ValueArg&& value) const {
     return Emit<Visibility::kUnencrypted>(context, std::forward<KeyArg>(key),
                                           std::forward<ValueArg>(value));
-  }
-
-  // Forwards an already built KV pair to the orchestrator in plaintext.
-  //
-  // Takes its argument by rvalue reference because Session::KV has an implicit
-  // converting constructor that hijacks copy construction from a non-const
-  // lvalue; callers must std::move into this method.
-  //
-  // TODO(b/563350645): Remove once the legacy releaser container is deleted.
-  absl::Status EmitUnencrypted(confidential_federated_compute::fns::Fn::FnContext& context,
-                               confidential_federated_compute::Session::KV&& kv) const {
-    static_assert(internal::FindOutputStream<Visibility::kUnencrypted,
-                                             confidential_federated_compute::Session::KV,
-                                             OutputStreams...>() >= 0,
-                  "Session::KV passthrough is not declared as an Unencrypted stream in this "
-                  "container's WithOutputs list.");
-    if (!context.EmitUnencrypted(std::move(kv))) {
-      return absl::InternalError("Failed to emit unencrypted KV to session context.");
-    }
-    return absl::OkStatus();
   }
 
  private:
@@ -418,9 +380,8 @@ class WithOutputs {
     static_assert(std::is_same_v<typename Stream::Key, std::decay_t<KeyArg>>,
                   "The key passed here is not the key type declared for this output stream.");
 
-    confidential_federated_compute::Session::KV kv(
-        internal::BuildKey(std::forward<KeyArg>(key)),
-        internal::SerializePayload(std::forward<ValueArg>(value)));
+    confidential_federated_compute::Session::KV kv(internal::BuildKey(std::forward<KeyArg>(key)),
+                                                   value.SerializeAsString());
 
     if constexpr (StreamVisibility == Visibility::kEncrypted) {
       constexpr int kKeyIndex = Destinations::template IndexOf<Stream::kDestination>();

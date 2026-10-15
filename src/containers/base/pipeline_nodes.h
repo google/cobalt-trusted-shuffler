@@ -27,8 +27,8 @@ namespace cobalt::trusted_shuffler {
 // container one re-encryption key per node it writes.
 //
 // Each enumerator's value is that node's id in the access policy. The ids are
-// not contiguous here because node 4, which no transform reads or writes, is
-// absent.
+// not contiguous here because nodes 4 and 7, which no transform reads or
+// writes, are absent.
 //
 // Nodes are named after the records they carry rather than after the container
 // that reads them, because several containers may read the same node.
@@ -37,8 +37,7 @@ enum class Node {
   // is every unencrypted stream.
   kNone = -1,
 
-  // Raw client log uploads read from Spanner by ingest_uploads and
-  // message_counter.
+  // Raw client log uploads read from Spanner by ingest_uploads.
   kClientUploads = 0,
 
   // The SignedRunContext fixing the parameters of a single run, written by
@@ -61,9 +60,6 @@ enum class Node {
   // Client messages surviving the threshold filter, written by
   // threshold_filter.
   kFilteredMessages = 6,
-
-  // Client messages forwarded after counting, written by message_counter.
-  kCountedMessages = 7,
 
   // Dummy padding messages rounding each approved partition up to a multiple of
   // the target batch size, written by pre_padding.
@@ -99,8 +95,6 @@ constexpr std::string_view NodeName(Node node) {
       return "kVerifiedIngestion";
     case Node::kFilteredMessages:
       return "kFilteredMessages";
-    case Node::kCountedMessages:
-      return "kCountedMessages";
     case Node::kPaddingMessages:
       return "kPaddingMessages";
     case Node::kScatteredMessages:

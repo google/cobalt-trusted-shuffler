@@ -29,7 +29,6 @@ TEST(PipelineNodesTest, NodeNameReturnsExpectedNameForKnownNodes) {
   EXPECT_EQ(NodeName(Node::kPartialIngestionReports), "kPartialIngestionReports");
   EXPECT_EQ(NodeName(Node::kVerifiedIngestion), "kVerifiedIngestion");
   EXPECT_EQ(NodeName(Node::kFilteredMessages), "kFilteredMessages");
-  EXPECT_EQ(NodeName(Node::kCountedMessages), "kCountedMessages");
   EXPECT_EQ(NodeName(Node::kPaddingMessages), "kPaddingMessages");
   EXPECT_EQ(NodeName(Node::kScatteredMessages), "kScatteredMessages");
   EXPECT_EQ(NodeName(Node::kGatheredMessages), "kGatheredMessages");

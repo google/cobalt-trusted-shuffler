@@ -45,8 +45,7 @@ using ::testing::SizeIs;
 // Fake DoFn that records lifecycle calls and allows injecting non-OK statuses
 // at InitializeReplica, Do (for a specific record index), or FinalizeReplica.
 class FakeLifecycleDoFn : public TrustedDoFn::WithInputs<Node::kClientUploads>::WithOutputs<
-                              EncryptsTo<Node::kCountedMessages>,
-                              Unencrypted<confidential_federated_compute::Session::KV>> {
+                              EncryptsTo<Node::kIngestedMessages>, Unencrypted<MetricEpochKey>> {
  public:
   struct Config {
     absl::Status init_status = absl::OkStatus();
@@ -76,8 +75,9 @@ class FakeLifecycleDoFn : public TrustedDoFn::WithInputs<Node::kClientUploads>::
     if (!config_.finalize_status.ok()) {
       return config_.finalize_status;
     }
-    context.EmitUnencrypted(confidential_federated_compute::Session::KV("finalize_summary"));
-    return absl::OkStatus();
+    MetricEpochKey summary;
+    summary.set_project_id(42);
+    return EmitUnencrypted(context, summary);
   }
 
   bool init_called() const { return init_called_; }
@@ -157,8 +157,10 @@ TEST(DoFnRunnerTest, EmptyInputStreamRunsInitializeAndFinalizeWithoutCallingDo) 
   EXPECT_TRUE(do_fn.init_called());
   EXPECT_EQ(do_fn.do_call_count(), 0);
   EXPECT_TRUE(do_fn.finalize_called());
-  EXPECT_EQ(result->unencrypted.size(), 1);
-  EXPECT_EQ(result->unencrypted[0].plaintext(), "finalize_summary");
+  ASSERT_EQ(result->unencrypted.size(), 1);
+  MetricEpochKey expected_summary;
+  expected_summary.set_project_id(42);
+  EXPECT_EQ(result->unencrypted[0].plaintext(), expected_summary.SerializeAsString());
 }
 
 TEST(DoFnRunnerTest, InputFromUndeclaredNodeReturnsPermissionDeniedAndSkipsDoAndFinalize) {
@@ -210,7 +212,7 @@ TEST(DoFnRunnerTest, TagsEmittedEncryptedRecordsWithDeclaredDestinationNode) {
 
   ASSERT_THAT(result, IsOk());
   ASSERT_THAT(result->encrypted, SizeIs(1));
-  EXPECT_THAT(result->encrypted[0].node(), Eq(Node::kCountedMessages));
+  EXPECT_THAT(result->encrypted[0].node(), Eq(Node::kIngestedMessages));
   EXPECT_THAT(result->encrypted[0].ciphertext(), Eq("record_0"));
 }
 
