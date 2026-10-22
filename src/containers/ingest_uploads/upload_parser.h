@@ -27,7 +27,7 @@
 
 namespace cobalt::trusted_shuffler {
 
-// A single parsed client upload record, containing the record payload and event time.
+// A single parsed upload entry from a client upload checkpoint, with its event time.
 struct ClientUpload {
   TrustedShufflerUpload upload;
 
@@ -36,12 +36,12 @@ struct ClientUpload {
   absl::Time event_time;
 };
 
-// The result of parsing a client upload payload. All records in a checkpoint
-// share a single privacy id.
+// The result of parsing a single client upload checkpoint. All upload entries in
+// the checkpoint share a single privacy id.
 struct ClientUploads {
   std::vector<ClientUpload> uploads;
 
-  // Privacy id shared by all records in the checkpoint (from the
+  // Privacy id shared by all upload entries in the checkpoint (from the
   // "confidential_compute_privacy_id" tensor). Empty if the source checkpoint
   // did not include a privacy id.
   std::string privacy_id;

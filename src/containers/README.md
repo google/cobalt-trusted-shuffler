@@ -56,7 +56,7 @@ The **`run_context_initializer`** container is executed **first** in the pipelin
 
 The **`ingest_uploads`** container is responsible for the First Ingestion Stage of device uploads in the Trusted Shuffler.
 
-- **Purpose**: Parses client device uploads (`TrustedShufflerUpload` and `ClientPayload` input envelopes), validates metric identifiers and epoch bounds against `SignedRunContext`, updates per-partition HyperLogLog (`HllSketch`) sketches and `MultisetFingerprint`, and emits encrypted `ShuffledMessage` records and `PartialIngestionReport` outputs.
+- **Purpose**: Parses client upload checkpoints whose upload entries are `TrustedShufflerUpload` messages, validates each entry's metric identifier and epoch against `SignedRunContext`, updates per-partition HyperLogLog (`HllSketch`) sketches and `MultisetFingerprint`, and emits encrypted `ShuffledMessage` records and `PartialIngestionReport` outputs.
 - **Outputs**: Emits encrypted `ShuffledMessage` records to `Node::kIngestedMessages` and `PartialIngestionReport` to `Node::kPartialIngestionReports` via `EmitEncrypted`. Emits `IntegrityFault` (keyed by `IngestMessagesHeader`) via `EmitUnencrypted` on configuration failure.
 - **Documentation**: See [`src/containers/ingest_uploads/README.md`](ingest_uploads/README.md).
 

@@ -72,7 +72,8 @@ class IngestUploadsFn
   // Ingests SignedRunContext on record 0 and initializes session state.
   absl::Status OnConfig(const SignedRunContext& signed_run_context, DoContext& context) override;
 
-  // Ingests incoming client log records on records 1..N.
+  // Ingests client upload checkpoints on records 1..N. Each checkpoint may contain
+  // multiple upload entries.
   absl::Status OnRecord(const std::string& record_data, DoContext& context) override;
 
   // Finalizes this Fn replica, building and emitting the PartialIngestionReport.

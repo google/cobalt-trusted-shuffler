@@ -22,7 +22,7 @@ The `ingest_uploads` container is the confidential data transformation stage res
 
 This container implements the `DoFn` / `FnConfidentialTransform` API for the First Ingestion Stage.
 
-It parses client device uploads (`TrustedShufflerUpload` as well as `ClientPayload` input envelopes from federated compute), validates metric identifiers and epoch bounds against a `SignedRunContext`, updates per-partition HyperLogLog (`HllSketch`) sketches and `MultisetFingerprint`, and emits encrypted `ShuffledMessage` records and `PartialIngestionReport` outputs.
+It parses client upload checkpoints whose upload entries are `TrustedShufflerUpload` messages, validates each entry's metric identifier and epoch against a `SignedRunContext`, updates per-partition HyperLogLog (`HllSketch`) sketches and `MultisetFingerprint`, and emits encrypted `ShuffledMessage` records and `PartialIngestionReport` outputs.
 
 ---
 

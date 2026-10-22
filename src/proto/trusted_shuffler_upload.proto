@@ -20,7 +20,9 @@ option java_package = "com.google.cobalt.trustedshuffler";
 option java_multiple_files = true;
 option java_outer_classname = "TrustedShufflerUploadProto";
 
-// Payload uploaded by devices to the Trusted Shuffler.
+// A single upload entry logged by a device for the Trusted Shuffler. Devices
+// upload these in Federated Compute checkpoints (as the "upload_query/entry"
+// tensor), and a single checkpoint may contain many entries.
 message TrustedShufflerUpload {
   // A unique identifier for the project.
   int32 project_id = 1;
