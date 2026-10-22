@@ -55,10 +55,11 @@ Counters are aggregate totals only; they never carry metric, epoch, or payload d
 | `input_config-count` | config | `SignedRunContext` records received. |
 | `input_config-invalid` | config | `SignedRunContext` records that failed verification. |
 | `input_record-count` | record | Client upload records received after the config. |
-| `input_record-dropped` | mixed | Sum of all drop reasons below (kept for compatibility). |
+| `input_record-dropped` | record | Records dropped as a whole; the sum of the record drop reasons below. |
 | `input_record-dropped-parse_error` | record | Records whose checkpoint could not be parsed (e.g. missing or empty entries, invalid `TrustedShufflerUpload`, missing or invalid event times). |
 | `input_record-dropped-missing_privacy_id` | record | Records without a `confidential_compute_privacy_id`. |
 | `upload_entry-count` | entry | `TrustedShufflerUpload` entries in successfully parsed records. |
+| `upload_entry-dropped` | entry | Entries dropped from accepted records; the sum of the entry drop reasons below. |
 | `upload_entry-dropped-unknown_metric` | entry | Entries whose `(project_id, metric_id)` is not in the `RunConfig`. |
 | `upload_entry-dropped-out_of_window` | entry | Entries whose event-time epoch is outside `[min_epoch_index, max_epoch_index]`. |
 | `encrypted_output_record-count` | record | Encrypted `ShuffledMessage`s plus the `PartialIngestionReport`. |
