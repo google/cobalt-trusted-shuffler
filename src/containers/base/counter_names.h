@@ -31,6 +31,8 @@ inline constexpr absl::string_view kInputRecordDroppedMissingPrivacyId =
 // Counters for individual entries within a parsed input record (e.g. the
 // `TrustedShufflerUpload`s within a client upload).
 inline constexpr absl::string_view kUploadEntryCount = "upload_entry-count";
+inline constexpr absl::string_view kUploadEntryDropped = "upload_entry-dropped";
+// Per-reason breakdowns of `kUploadEntryDropped`.
 inline constexpr absl::string_view kUploadEntryDroppedUnknownMetric =
     "upload_entry-dropped-unknown_metric";
 inline constexpr absl::string_view kUploadEntryDroppedOutOfWindow =

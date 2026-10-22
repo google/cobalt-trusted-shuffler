@@ -96,7 +96,7 @@ absl::Status IngestUploadsFn::OnRecord(const std::string& record_data, DoContext
     const int32_t metric_id = upload.metric_id();
 
     if (!IsMetricAllowed(project_id, metric_id)) {
-      context.IncrementCounter(kInputRecordDropped);
+      context.IncrementCounter(kUploadEntryDropped);
       context.IncrementCounter(kUploadEntryDroppedUnknownMetric);
       continue;
     }
@@ -104,7 +104,7 @@ absl::Status IngestUploadsFn::OnRecord(const std::string& record_data, DoContext
     const Epoch epoch = Epoch::FromTime(parsed_upload.event_time);
 
     if (!IsEpochInBounds(epoch)) {
-      context.IncrementCounter(kInputRecordDropped);
+      context.IncrementCounter(kUploadEntryDropped);
       context.IncrementCounter(kUploadEntryDroppedOutOfWindow);
       continue;
     }

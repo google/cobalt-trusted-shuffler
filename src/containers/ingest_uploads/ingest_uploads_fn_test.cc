@@ -61,10 +61,14 @@ constexpr uint32_t kPartialIngestionReportsKeyIndex = 1;
 const std::string kTestRunId(kRunIdByteLength, 'a');
 constexpr absl::string_view kTestPrivacyId = "test_privacy_id";
 
-// Per-reason drop counters emitted by IngestUploadsFn.
-constexpr absl::string_view kDropReasonCounters[] = {
+// Per-reason drop counters for whole input records, summed by kInputRecordDropped.
+constexpr absl::string_view kRecordDropReasonCounters[] = {
     kInputRecordDroppedParseError,
     kInputRecordDroppedMissingPrivacyId,
+};
+
+// Per-reason drop counters for upload entries, summed by kUploadEntryDropped.
+constexpr absl::string_view kEntryDropReasonCounters[] = {
     kUploadEntryDroppedUnknownMetric,
     kUploadEntryDroppedOutOfWindow,
 };
@@ -75,19 +79,35 @@ int64_t GetCounterValue(const FakeContext& context, absl::string_view name) {
   return it == counters.end() ? 0 : it->second;
 }
 
-// Expects that the per-reason drop counter `reason` equals `count` and all other per-reason drop
-// counters are zero.
+// Expects that the per-reason drop counter `reason` equals `count`, all other per-reason drop
+// counters are zero, and the record-level and entry-level drop totals match.
 void ExpectOnlyDropReason(const FakeContext& context, absl::string_view reason, int64_t count) {
-  for (absl::string_view name : kDropReasonCounters) {
-    EXPECT_THAT(GetCounterValue(context, name), Eq(name == reason ? count : 0)) << name;
+  int64_t expected_record_drops = 0;
+  for (absl::string_view name : kRecordDropReasonCounters) {
+    const int64_t expected = name == reason ? count : 0;
+    expected_record_drops += expected;
+    EXPECT_THAT(GetCounterValue(context, name), Eq(expected)) << name;
   }
+  int64_t expected_entry_drops = 0;
+  for (absl::string_view name : kEntryDropReasonCounters) {
+    const int64_t expected = name == reason ? count : 0;
+    expected_entry_drops += expected;
+    EXPECT_THAT(GetCounterValue(context, name), Eq(expected)) << name;
+  }
+  EXPECT_THAT(GetCounterValue(context, kInputRecordDropped), Eq(expected_record_drops));
+  EXPECT_THAT(GetCounterValue(context, kUploadEntryDropped), Eq(expected_entry_drops));
 }
 
-// Expects that all per-reason drop counters are zero.
+// Expects that all drop counters are zero.
 void ExpectNoDrops(const FakeContext& context) {
-  for (absl::string_view name : kDropReasonCounters) {
+  for (absl::string_view name : kRecordDropReasonCounters) {
     EXPECT_THAT(GetCounterValue(context, name), Eq(0)) << name;
   }
+  for (absl::string_view name : kEntryDropReasonCounters) {
+    EXPECT_THAT(GetCounterValue(context, name), Eq(0)) << name;
+  }
+  EXPECT_THAT(GetCounterValue(context, kInputRecordDropped), Eq(0));
+  EXPECT_THAT(GetCounterValue(context, kUploadEntryDropped), Eq(0));
 }
 
 IngestUploadsFn::KV CreateBlobRecord(absl::string_view checkpoint_data) {
@@ -243,8 +263,8 @@ TEST(IngestUploadsFnTest, DropsUnallowedMetrics) {
   EXPECT_THAT(report.metric_epoch_sketches(), SizeIs(0));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputConfigCount)), Eq(1));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
-  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
   EXPECT_THAT(GetCounterValue(context, kUploadEntryCount), Eq(1));
+  // The record itself was accepted; only its entry was dropped.
   ExpectOnlyDropReason(context, kUploadEntryDroppedUnknownMetric, 1);
 }
 
@@ -289,8 +309,9 @@ TEST(IngestUploadsFnTest, CountsEntryLevelDropsSeparatelyFromRecords) {
   EXPECT_THAT(GetCounterValue(context, kUploadEntryDroppedOutOfWindow), Eq(1));
   EXPECT_THAT(GetCounterValue(context, kInputRecordDroppedParseError), Eq(0));
   EXPECT_THAT(GetCounterValue(context, kInputRecordDroppedMissingPrivacyId), Eq(0));
-  // The aggregate counter keeps its existing semantics and sums all drop reasons.
-  EXPECT_THAT(GetCounterValue(context, kInputRecordDropped), Eq(2));
+  // Entry-level drops are counted in the entry total, not as dropped records.
+  EXPECT_THAT(GetCounterValue(context, kUploadEntryDropped), Eq(2));
+  EXPECT_THAT(GetCounterValue(context, kInputRecordDropped), Eq(0));
 }
 
 TEST(IngestUploadsFnTest, DropsInvalidCheckpointAndEmitsError) {
@@ -438,7 +459,6 @@ TEST(IngestUploadsFnTest, AllowsOnlyEpochZeroWhenMinAndMaxEpochAreZero) {
       CreateTestFcCheckpoint({upload}, {"1970-01-02T00:00:00Z"}, std::string(kTestPrivacyId));
   ASSERT_THAT(fn.Do(CreateBlobRecord(checkpoint_epoch_1), do_context), IsOk());
   EXPECT_THAT(context.Encrypted(), SizeIs(1));
-  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
   EXPECT_THAT(GetCounterValue(context, kUploadEntryCount), Eq(2));
   ExpectOnlyDropReason(context, kUploadEntryDroppedOutOfWindow, 1);
 }
