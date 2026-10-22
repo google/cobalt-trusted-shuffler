@@ -41,3 +41,25 @@ before finalization, the container emits a single **unencrypted** record keyed b
 `integrity_fault-count`, and aborts the session with `FAILED_PRECONDITION`. No `ShuffledMessage` or
 `PartialIngestionReport` is emitted for a faulted replica. The fault record never contains
 `run_id`, `run_hash_key`, `release_key`, or any client data.
+
+---
+
+## Counters
+
+The container reports these counters through the session metrics. The Brella host wrapper exports
+them as Flume counters prefixed with the stage name (e.g. `IngestUploads-input_record-dropped`).
+Counters are aggregate totals only; they never carry metric, epoch, or payload details.
+
+| Counter | Unit | Meaning |
+| :------ | :--- | :------ |
+| `input_config-count` | config | `SignedRunContext` records received. |
+| `input_config-invalid` | config | `SignedRunContext` records that failed verification. |
+| `input_record-count` | record | Client upload records received after the config. |
+| `input_record-dropped` | mixed | Sum of all drop reasons below (kept for compatibility). |
+| `input_record-dropped-parse_error` | record | Records whose checkpoint could not be parsed (e.g. missing or empty entries, invalid `TrustedShufflerUpload`, missing or invalid event times). |
+| `input_record-dropped-missing_privacy_id` | record | Records without a `confidential_compute_privacy_id`. |
+| `upload_entry-count` | entry | `TrustedShufflerUpload` entries in successfully parsed records. |
+| `upload_entry-dropped-unknown_metric` | entry | Entries whose `(project_id, metric_id)` is not in the `RunConfig`. |
+| `upload_entry-dropped-out_of_window` | entry | Entries whose event-time epoch is outside `[min_epoch_index, max_epoch_index]`. |
+| `encrypted_output_record-count` | record | Encrypted `ShuffledMessage`s plus the `PartialIngestionReport`. |
+| `integrity_fault-count` | record | Integrity faults emitted. |

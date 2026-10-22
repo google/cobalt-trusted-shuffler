@@ -80,12 +80,15 @@ absl::Status IngestUploadsFn::OnRecord(const std::string& record_data, DoContext
   // If the checkpoint is invalid or empty, drop it and record dropped message.
   if (!uploads.ok()) {
     context.IncrementCounter(kInputRecordDropped);
+    context.IncrementCounter(kInputRecordDroppedParseError);
     return absl::OkStatus();
   }
   if (uploads->privacy_id.empty()) {
     context.IncrementCounter(kInputRecordDropped);
+    context.IncrementCounter(kInputRecordDroppedMissingPrivacyId);
     return absl::OkStatus();
   }
+  context.IncrementCounterBy(kUploadEntryCount, static_cast<int64_t>(uploads->uploads.size()));
 
   for (const ClientUpload& parsed_upload : uploads->uploads) {
     const TrustedShufflerUpload& upload = parsed_upload.upload;
@@ -94,6 +97,7 @@ absl::Status IngestUploadsFn::OnRecord(const std::string& record_data, DoContext
 
     if (!IsMetricAllowed(project_id, metric_id)) {
       context.IncrementCounter(kInputRecordDropped);
+      context.IncrementCounter(kUploadEntryDroppedUnknownMetric);
       continue;
     }
 
@@ -101,6 +105,7 @@ absl::Status IngestUploadsFn::OnRecord(const std::string& record_data, DoContext
 
     if (!IsEpochInBounds(epoch)) {
       context.IncrementCounter(kInputRecordDropped);
+      context.IncrementCounter(kUploadEntryDroppedOutOfWindow);
       continue;
     }
 

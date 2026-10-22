@@ -23,6 +23,18 @@ inline constexpr absl::string_view kInputConfigCount = "input_config-count";
 inline constexpr absl::string_view kInputConfigInvalid = "input_config-invalid";
 inline constexpr absl::string_view kInputRecordCount = "input_record-count";
 inline constexpr absl::string_view kInputRecordDropped = "input_record-dropped";
+// Per-reason breakdowns of `kInputRecordDropped` for whole input records.
+inline constexpr absl::string_view kInputRecordDroppedParseError =
+    "input_record-dropped-parse_error";
+inline constexpr absl::string_view kInputRecordDroppedMissingPrivacyId =
+    "input_record-dropped-missing_privacy_id";
+// Counters for individual entries within a parsed input record (e.g. the
+// `TrustedShufflerUpload`s within a client upload).
+inline constexpr absl::string_view kUploadEntryCount = "upload_entry-count";
+inline constexpr absl::string_view kUploadEntryDroppedUnknownMetric =
+    "upload_entry-dropped-unknown_metric";
+inline constexpr absl::string_view kUploadEntryDroppedOutOfWindow =
+    "upload_entry-dropped-out_of_window";
 inline constexpr absl::string_view kOversizedPartitionDropped = "oversized_partition-dropped";
 inline constexpr absl::string_view kEncryptedOutputRecordCount = "encrypted_output_record-count";
 inline constexpr absl::string_view kUnencryptedOutputRecordCount =
