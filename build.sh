@@ -67,9 +67,6 @@ bazel test //... \
 # artifacts directory so that they can be found by the post-build
 # upload artifact globs.
 if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
-  log "Copying simple container output to kokoro artifacts dir."
-  cp -Rp ./bazel-bin/src/containers/simple/* ${KOKORO_ARTIFACTS_DIR}/simple_container/.
-
   log "Copying run_context_initializer container output to kokoro artifacts dir."
   mkdir -p ${KOKORO_ARTIFACTS_DIR}/run_context_initializer
   cp -Rp ./bazel-bin/src/containers/run_context_initializer/* ${KOKORO_ARTIFACTS_DIR}/run_context_initializer/.
