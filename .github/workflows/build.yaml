@@ -1,0 +1,142 @@
+# Copyright 2026 Google LLC.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Build and attest
+
+on:
+  push:
+    branches: [main, test-gha-repro-4180]
+  workflow_dispatch:
+
+# See https://docs.github.com/en/actions/learn-github-actions/workflow-syntax-for-github-actions#example-using-concurrency-to-cancel-any-in-progress-job-or-run
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  # Run a Bazel build and upload the resulting container runtime bundles.
+  build:
+    permissions:
+      contents: read
+
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+      - name: Build
+        run: |
+          bazelisk run -c opt --curses=no --noshow_progress //:install_release_binaries -- --destdir="${{ runner.temp }}/binaries"
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: ${{ runner.temp }}/binaries/
+          if-no-files-found: error
+          retention-days: 5
+
+  # Produce a JSON-encoded list of all binaries produced by the `build` step.
+  list-binaries:
+    needs: build
+
+    outputs:
+      binaries: ${{ steps.list.outputs.binaries }}
+
+    permissions: {}
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: ${{ runner.temp }}/binaries
+
+      - name: List binaries
+        id: list
+        # Set the "binaries" output to a JSON-encoded list of the Bazel build
+        # artifacts (e.g. ["encrypt_output/oci_runtime_bundle.tar", ...]).
+        run: |
+          set -euxo pipefail
+          binaries="$(find "${{ runner.temp }}/binaries" -type f -printf '%P\n' | sort | jq -Rsc 'split("\n")[:-1]')"
+          echo "binaries=${binaries}" >> "$GITHUB_OUTPUT"
+
+  # For each binary listed by the `list-binaries` step, generate signed build
+  # provenance. Provenance needs to be generated for each binary independently
+  # because Oak doesn't support reading multi-subject provenance. Provenance is
+  # then uploaded to Rekor and GCS.
+  attest:
+    if: github.ref == 'refs/heads/main'
+    needs:
+      - build
+      - list-binaries
+
+    permissions:
+      id-token: write
+      attestations: write
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Continue attesting other artifacts even if one fails.
+      fail-fast: false
+      matrix:
+        binary: ${{ fromJson(needs.list-binaries.outputs.binaries) }}
+
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+      - name: Attest
+        id: attest
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: ${{ matrix.binary }}
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_JSON }}
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          skip_install: true
+      - name: Upload provenance
+        if: endsWith(matrix.binary, '.tar')
+        run: |
+          set -euxo pipefail
+
+          binary_path="${{ matrix.binary }}"
+          package_name="${binary_path%%/*}"
+          provenance_path="${{ steps.attest.outputs.bundle-path }}"
+          gcs_provenance_path="provenance/${GITHUB_SHA}/${package_name}/attestation.jsonl"
+
+          gcloud storage cp --no-clobber "${provenance_path}" "gs://oak-bins/${gcs_provenance_path}"
+
+          phash_path=$(mktemp)
+          phash="sha2-256:$(sha256sum "${provenance_path}" | cut -d " " -f 1)"
+          echo "${phash}" > "${phash_path}"
+          gcloud storage cp --no-clobber "${provenance_path}" "gs://oak-files/${phash}"
+          gcloud storage cp --no-clobber "${phash_path}" "gs://oak-index/7/sha1:${GITHUB_SHA}/${package_name}"

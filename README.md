@@ -39,12 +39,18 @@ They can be installed through apt-get:
 sudo apt-get install libxml2
 ```
 
-## Running the shuffler
+## Building containers
 
-To build and run the shuffler, use the following command:
+To build a single container runtime bundle (for example, `encrypt_output`):
 
 ```bash
-bazel run //src:main
+bazelisk build -c opt //src/containers/encrypt_output:oci_runtime_bundle
+```
+
+To build and export all release container runtime bundles to a directory:
+
+```bash
+bazelisk run -c opt //:install_release_binaries -- --destdir=/tmp/binaries
 ```
 
 ## Running tests
