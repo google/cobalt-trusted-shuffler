@@ -24,7 +24,6 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/ingestion_verification/ingestion_verification_transform.h"
-#include "src/version/version.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -36,7 +35,6 @@ using oak::containers::sdk::InstanceSigningKeyHandle;
 using oak::containers::sdk::OrchestratorClient;
 
 void RunServer() {
-  LogContainerStartup("Ingestion Verification");
   const std::string server_address("[::]:8080");
 
   // Runs the ingestion verification transform server, which validates

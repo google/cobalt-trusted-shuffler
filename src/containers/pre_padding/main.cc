@@ -24,7 +24,6 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/pre_padding/pre_padding_transform.h"
-#include "src/version/version.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -37,7 +36,6 @@ using ::oak::containers::sdk::InstanceSigningKeyHandle;
 using ::oak::containers::sdk::OrchestratorClient;
 
 void RunServer() {
-  LogContainerStartup("Pre-Padding");
   const std::string server_address("[::]:8080");
 
   const std::unique_ptr<FnConfidentialTransform> service =

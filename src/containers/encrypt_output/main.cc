@@ -23,7 +23,6 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/encrypt_output/encrypt_output_transform.h"
-#include "src/version/version.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -38,7 +37,6 @@ using ::oak::containers::sdk::OrchestratorClient;
 constexpr char kServerAddress[] = "[::]:8080";
 
 void RunServer() {
-  LogContainerStartup("Encrypt Output");
   const std::unique_ptr<FnConfidentialTransform> service =
       CreateEncryptOutputTransform(std::make_unique<InstanceSigningKeyHandle>(),
                                    std::make_unique<InstanceEncryptionKeyHandle>());

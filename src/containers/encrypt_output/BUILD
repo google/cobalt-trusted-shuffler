@@ -24,7 +24,6 @@ cc_binary(
     srcs = ["main.cc"],
     deps = [
         ":encrypt_output_transform",
-        "//src/version",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
         "@confidential-federated-compute//containers/fns:fns",

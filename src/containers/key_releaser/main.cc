@@ -23,7 +23,6 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/key_releaser/key_releaser_transform.h"
-#include "src/version/version.h"
 #include "tink/aead/aead_config.h"
 
 namespace cobalt::trusted_shuffler {
@@ -39,7 +38,6 @@ using ::oak::containers::sdk::OrchestratorClient;
 constexpr char kServerAddress[] = "[::]:8080";
 
 void RunServer() {
-  LogContainerStartup("Key Releaser");
   CHECK_OK(crypto::tink::AeadConfig::Register());
 
   const std::unique_ptr<FnConfidentialTransform> service =

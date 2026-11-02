@@ -23,7 +23,6 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/run_context_initializer/run_context_initializer_transform.h"
-#include "src/version/version.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -35,7 +34,6 @@ using oak::containers::sdk::InstanceSigningKeyHandle;
 using oak::containers::sdk::OrchestratorClient;
 
 void RunServer() {
-  LogContainerStartup("Run Context Initializer");
   std::string server_address("[::]:8080");
 
   auto orchestrator_client = std::make_shared<const OrchestratorClient>();

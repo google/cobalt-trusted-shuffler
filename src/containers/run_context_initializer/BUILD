@@ -24,7 +24,6 @@ cc_binary(
     srcs = ["main.cc"],
     deps = [
         ":run_context_initializer_transform",
-        "//src/version",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/log:check",
         "@grpc//:grpc++",

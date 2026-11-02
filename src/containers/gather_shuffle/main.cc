@@ -24,7 +24,6 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/gather_shuffle/gather_shuffle_transform.h"
-#include "src/version/version.h"
 
 namespace cobalt::trusted_shuffler {
 namespace {
@@ -37,7 +36,6 @@ using ::oak::containers::sdk::InstanceSigningKeyHandle;
 using ::oak::containers::sdk::OrchestratorClient;
 
 void RunServer() {
-  LogContainerStartup("Gather Shuffle");
   const std::string server_address("[::]:8080");
 
   const std::unique_ptr<FnConfidentialTransform> service =

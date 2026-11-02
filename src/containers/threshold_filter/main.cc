@@ -24,7 +24,6 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/threshold_filter/threshold_filter_transform.h"
-#include "src/version/version.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -36,7 +35,6 @@ namespace cobalt::trusted_shuffler {
 namespace {
 
 void RunServer() {
-  LogContainerStartup("Threshold Filter");
   std::string server_address("[::]:8080");
 
   std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform> service =

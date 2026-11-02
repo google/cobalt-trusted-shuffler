@@ -23,7 +23,6 @@
 #include "grpcpp/server.h"
 #include "grpcpp/server_builder.h"
 #include "src/containers/ingest_uploads/ingest_uploads_transform.h"
-#include "src/version/version.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -35,7 +34,6 @@ namespace cobalt::trusted_shuffler {
 namespace {
 
 void RunServer() {
-  LogContainerStartup("Ingest Uploads");
   std::string server_address("[::]:8080");
 
   std::unique_ptr<confidential_federated_compute::fns::FnConfidentialTransform> service =
