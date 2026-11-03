@@ -23,7 +23,7 @@ The `ingestion_verification` container is a confidential data transform in the T
 This container implements the `FnConfidentialTransform` / `DoFn` API to serve as the ingestion verification stage in the Trusted Shuffler confidential pipeline.
 
 It processes worker ingestion reports from `IngestUploads`, verifies integrity across the batch, determines which partitions met the minimum unique device privacy thresholds and stayed within the maximum partition message limit (`target_batch_size * target_batch_size`), and emits dual outputs for downstream consumption:
-1. An unencrypted header (`IngestionVerificationHeader`) visible to the untrusted Flume orchestrator (exposes `ingestion_result` on success, or `integrity_fault` on validation/merging failure).
+1. An unencrypted header (`IngestionVerificationHeader`) visible to the untrusted orchestrator (exposes `ingestion_result` on success, or `integrity_fault` on validation/merging failure).
 2. An encrypted payload (`IngestionVerificationPayload`) encrypted to the `kVerifiedIngestion` data node containing `ThresholdReport` (approved partitions), the canonical `RunFingerprint`, and `SignedRunContext`, readable only by downstream confidential TEE stages (`ThresholdFilter`).
 
 Partitions whose `message_count` exceeds `target_batch_size * target_batch_size` are dropped (excluded from `approved_partitions` and `canonical_fingerprint`) and increment the `oversized_partition-dropped` counter. If any partition is missing a positive `message_count` in the merged fingerprint, the container signals an `IntegrityFault`.
@@ -50,7 +50,7 @@ During transform initialization (`StreamInitializeTransform`), the transform ing
 
 #### Streaming Input via `Do`
 Inherits from `FirstRecordConfigDoFn<SignedRunContext>`:
-- **Record 0 (Side-Input Configuration)**: Ingests `SignedRunContext` emitted by `run_context_initializer`. Unpacks and parses `RunContext` (validating non-empty `run_id`) and initializes a complete `MultisetFingerprint` with `stage_id = STAGE_INGESTION`.
+- **Record 0 (Run Configuration)**: Ingests `SignedRunContext` emitted by `run_context_initializer`. Unpacks and parses `RunContext` (validating non-empty `run_id`) and initializes a complete `MultisetFingerprint` with `stage_id = STAGE_INGESTION`.
 - **Records 1..N (Ingestion Reports)**: Ingests serialized `PartialIngestionReport` messages from `IngestUploads` workers:
   - Validates matching `run_id`.
   - Merges `partial_fingerprint` into the cumulative multiset fingerprint.
@@ -63,7 +63,7 @@ Inherits from `FirstRecordConfigDoFn<SignedRunContext>`:
 Emitted exactly once during `FinalizeReplica` as `EncryptedKV<IngestionVerificationHeader, IngestionVerificationPayload, Node::kVerifiedIngestion>`:
 
 #### 1. Header (`IngestionVerificationHeader`) — Unencrypted
-Packed in `KV.key` (`google::protobuf::Any`) and visible in plaintext to the untrusted Flume orchestrator. The `result` oneof explicitly labels which payload variant follows, and carries no partition data itself:
+Packed in `KV.key` (`google::protobuf::Any`) and visible in plaintext to the untrusted orchestrator. The `result` oneof explicitly labels which payload variant follows, and carries no partition data itself:
 - `ingestion_result`: Empty marker indicating the payload contains an `IngestionVerificationResult` from successful verification.
 - `integrity_fault`: Emitted if configuration failed, reports could not be parsed, `run_id` mismatched, or fingerprint/sketch merging failed.
 

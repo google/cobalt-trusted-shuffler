@@ -46,8 +46,8 @@ before finalization, the container emits a single **unencrypted** record keyed b
 
 ## Counters
 
-The container reports these counters through the session metrics. The Brella host wrapper exports
-them as Flume counters prefixed with the stage name (e.g. `IngestUploads-input_record-dropped`).
+The container reports these counters through the session metrics. The host wrapper exports
+them as pipeline counters prefixed with the stage name (e.g. `IngestUploads-input_record-dropped`).
 Counters are aggregate totals only; they never carry metric, epoch, or payload details.
 
 | Counter | Unit | Meaning |

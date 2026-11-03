@@ -217,7 +217,7 @@ Every container package must define:
 - Update `src/containers/README.md` to reference the new container.
 
 ### Step 6: Update CI & Kokoro Build Pipeline (Required for Production Containers)
-**IMPORTANT**: **WIP vs. Production Containers**: If you are creating a scaffolded, work-in-progress (WIP), or skeleton container (e.g. while developing stacked CLs), **DO NOT** add it to `build.sh` or Kokoro configs yet. Only wire Kokoro when the container is ready for CI builds and integration. Add `TODO(b/...)` comments following `go/todo-style` to document pending steps.
+**IMPORTANT**: **WIP vs. Production Containers**: If you are creating a scaffolded, work-in-progress (WIP), or skeleton container (e.g. while developing stacked changes), **DO NOT** add it to `build.sh` or Kokoro configs yet. Only wire Kokoro when the container is ready for CI builds and integration. Add `TODO(<issue>)` comments that reference a tracking issue.
 
 When ready for production release, failing to update Kokoro will cause builds and releases to miss the container artifact:
 1. **`build.sh`**:
@@ -240,12 +240,8 @@ When ready for production release, failing to update Kokoro will cause builds an
    }
    ```
 
-### Step 7: Send for Review with Team Visibility
-When pushing changes for review, ensure all team members are included as either reviewers or CCs to maintain team awareness:
-- **Alex Pankhurst** (`pankhurst@google.com`)
-- **Steve Fung** (`stevefung@google.com`)
-- **Anivia Li** (`aniviali@google.com`)
-- **Alex Zani** (`azani@google.com`)
+### Step 7: Send for Review
+When pushing changes for review, ensure relevant reviewers are included on the change to maintain visibility and prevent duplicate implementation efforts.
 
 ---
 
@@ -273,7 +269,7 @@ When pushing changes for review, ensure all team members are included as either 
 ## 6. C++ Architecture & Testing Standards
 
 All C++ implementations, container transforms, and tests must adhere to the conventions documented in [`.agents/rules/cpp_conventions.md`](rules/cpp_conventions.md):
-- **Lifecycle Integrity**: DoFn session configuration must be unpacked inside `InitializeReplica`; never add testing-only backdoor constructors or setters to `DoFn` classes.
+- **Lifecycle Integrity**: DoFn session configuration must be unpacked inside `InitializeReplica`; never add testing-only constructors or setters to `DoFn` classes.
 - **Verified Ingestion Verification Results**: Always use `VerifiedIngestionVerificationResult` (validated via `VerifyIngestionVerificationPayload` in `//src/crypto:verify_ingestion_verification_payload`) instead of the raw `IngestionVerificationPayload` or `IngestionVerificationResult` protos across container state, methods, and downstream libraries.
 - **Explicit Arguments**: Avoid default arguments (`= std::nullopt`, default booleans) in constructors or stage APIs where values must be passed explicitly.
 - **Schema Casing**: Match Protobuf schema casing for accessor methods (`SignedRunContext()`, `ConfigConstraints()`).
@@ -281,34 +277,11 @@ All C++ implementations, container transforms, and tests must adhere to the conv
 
 ---
 
-## 7. Code Review & Team Awareness: Reviewers & CCs
+## 7. Code Review & Visibility
 
-To ensure all team members remain aware of ongoing changes, container additions, and pipeline developments—and to prevent duplicate implementation efforts across developers and agents—**every changelist (CL) created or submitted must include all team members as either a Reviewer or a CC**.
+To ensure maintainers remain aware of ongoing changes, container additions, and pipeline developments—and to prevent duplicate implementation efforts across developers and agents—all contributions require code review.
 
-### Team Members
-
-Whenever creating, sending, uploading, or updating a CL:
-- **Alex Pankhurst** (`pankhurst@google.com`)
-- **Steve Fung** (`stevefung@google.com`)
-- **Anivia Li** (`aniviali@google.com`)
-- **Alex Zani** (`azani@google.com`)
-
-Ensure that whoever is authoring the change includes the other team members as either a reviewer or a CC.
-
-### Workflow Commands
-
-For example, when Alex Zani (`azani@google.com`) is authoring a change, the remaining team members can be added via the Gerrit CLI:
-```bash
-/google/bin/releases/gemini-agents-gerrit/gerrit reviewers add \
-  --change=<change_id> \
-  --host=https://cobalt-internal-review.git.corp.google.com \
-  --reviewer=pankhurst@google.com,stevefung@google.com \
-  --cc=aniviali@google.com
-```
-Alternatively, specify reviewers and CCs during `git push`:
-```bash
-git push origin HEAD:refs/for/main%r=pankhurst@google.com,r=stevefung@google.com,cc=aniviali@google.com
-```
+Ensure that relevant collaborators and reviewers are included on the change before submission.
 
 ---
 
@@ -316,7 +289,7 @@ git push origin HEAD:refs/for/main%r=pankhurst@google.com,r=stevefung@google.com
 
 Before completing a task or submitting a change:
 - [ ] Avoided spec jargon and stage numbers (e.g. "Stage 3B") in comments, descriptions, and names; used descriptive domain terms throughout.
-- [ ] Team awareness satisfied: Alex Pankhurst (`pankhurst@google.com`), Steve Fung (`stevefung@google.com`), Anivia Li (`aniviali@google.com`), and Alex Zani (`azani@google.com`) are each included as either a reviewer or a CC on the CL.
+- [ ] Code review requested: Relevant reviewers or maintainers are included on the change.
 - [ ] Verified that `run_id`, `fingerprint_key` (`run_hash_key`), `customer_message`, and `is_padding` are never given to the orchestrator in emitted messages, error messages (`absl::Status` / `EmitError`), or logs (`LOG`), and that `release_key` is only ever emitted to the orchestrator by the final release stage.
 - [ ] Verified that containers consuming configuration on Record 0 validate `IngestionVerificationPayload` via `VerifyIngestionVerificationPayload` and always use `VerifiedIngestionVerificationResult` instead of raw protos.
 - [ ] Protos defined in `src/proto/<name>/` (or `src/proto/` for shared schemas) with `BUILD` rules.
@@ -325,8 +298,8 @@ Before completing a task or submitting a change:
 - [ ] Container bundle (`oci_runtime_bundle`) defined in `BUILD`.
 - [ ] Unit tests for `_fn` and `_transform` pass via `bazel test //...`.
 - [ ] Tests verify that confidential data is emitted via `EmitEncrypted`/`EmitReleasable` and never `EmitUnencrypted`.
-- [ ] Tests avoid backdoor constructors, using `InitializeReplica` and designated initializers.
+- [ ] Tests avoid testing-only constructors, using `InitializeReplica` and designated initializers.
 - [ ] Container `README.md` and `src/containers/README.md` updated.
-- [ ] If container is production-ready, `build.sh` and Kokoro configs updated (keeping `fileset_artifacts` alphabetized by `name`); if WIP, kept excluded from Kokoro with `TODO(b/...)` comments.
+- [ ] If container is production-ready, `build.sh` and Kokoro configs updated (keeping `fileset_artifacts` alphabetized by `name`); if WIP, kept excluded from Kokoro with `TODO(<issue>)` comments.
 - [ ] `git restore MODULE.bazel.lock` run if the lockfile was modified unintentionally.
 - [ ] All code formatted with `.clang-format` and license header included.

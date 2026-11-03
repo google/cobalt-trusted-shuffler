@@ -28,7 +28,7 @@ This document specifies repository-wide C++ standards and testing patterns for c
 ## 1. Lifecycle Integrity over Testing Shortcuts
 
 ### Rule
-Components that implement lifecycle initialization contracts (such as `confidential_federated_compute::fns::DoFn::InitializeReplica` or `FinalizeReplica`) must receive session configuration strictly through those lifecycle hooks. **Never add testing-only backdoor constructors or state-injection setters.**
+Components that implement lifecycle initialization contracts (such as `confidential_federated_compute::fns::DoFn::InitializeReplica` or `FinalizeReplica`) must receive session configuration strictly through those lifecycle hooks. **Never add testing-only constructors or state-injection setters.**
 
 DoFn instances must be constructed only via parameters provided by the corresponding `FnFactory`. If a container requires session configuration (e.g. `SignedRunContext`, configuration protos), that configuration must be unpacked from `google::protobuf::Any` inside `InitializeReplica`.
 
@@ -79,7 +79,7 @@ class IngestionVerificationFn : public DoFn {
 // BAD: Defaulting thread compatibility on a pipeline stage.
 class ReleaserStage {
  public:
-  explicit ReleaserStage(std::string container_mpm, bool thread_compatible = true);
+  explicit ReleaserStage(std::string container_image_uri, bool thread_compatible = true);
 };
 ```
 
@@ -94,7 +94,7 @@ class IngestionVerificationFn : public DoFn {
 
 class ReleaserStage {
  public:
-  explicit ReleaserStage(std::string container_mpm, bool thread_compatible);
+  explicit ReleaserStage(std::string container_image_uri, bool thread_compatible);
 };
 ```
 
