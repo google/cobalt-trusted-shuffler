@@ -221,10 +221,13 @@ Every container package must define:
 
 When ready for production release, failing to update Kokoro will cause builds and releases to miss the container artifact:
 1. **`build.sh`**:
-   Add artifact copy step:
+   Add the container name to `RELEASE_CONTAINERS` (keep the list alphabetized):
    ```bash
-   log "Copying foo_bar container output to kokoro artifacts dir."
-   cp -Rp ./bazel-bin/src/containers/foo_bar/* ${KOKORO_ARTIFACTS_DIR}/foo_bar/.
+   RELEASE_CONTAINERS=(
+     ...
+     foo_bar
+     ...
+   )
    ```
 2. **`kokoro/rbe/presubmit.cfg` & `kokoro/rbe/continuous.cfg`**:
    Add fileset artifact destination (keep the list of `fileset_artifacts` entries alphabetized by `name`):

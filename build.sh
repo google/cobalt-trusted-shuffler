@@ -70,45 +70,27 @@ bazel test //... \
   --remote_default_exec_properties=cache-silo-key=${SILO_KEY=${USER}} \
   --invocation_id=${INVOCATION_ID}
 
+RELEASE_CONTAINERS=(
+  encrypt_output
+  gather_shuffle
+  ingest_uploads
+  ingestion_verification
+  key_releaser
+  pre_padding
+  run_context_initializer
+  scatter_shuffle
+  threshold_filter
+)
+
 # If running in Kokoro, copy any potential output artifacts to the
 # artifacts directory so that they can be found by the post-build
 # upload artifact globs.
 if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
-  log "Copying run_context_initializer container output to kokoro artifacts dir."
-  mkdir -p ${KOKORO_ARTIFACTS_DIR}/run_context_initializer
-  cp -Rp ./bazel-bin/src/containers/run_context_initializer/* ${KOKORO_ARTIFACTS_DIR}/run_context_initializer/.
-
-  log "Copying ingestion_verification container output to kokoro artifacts dir."
-  mkdir -p ${KOKORO_ARTIFACTS_DIR}/ingestion_verification
-  cp -Rp ./bazel-bin/src/containers/ingestion_verification/* ${KOKORO_ARTIFACTS_DIR}/ingestion_verification/.
-
-  log "Copying ingest_uploads container output to kokoro artifacts dir."
-  mkdir -p ${KOKORO_ARTIFACTS_DIR}/ingest_uploads
-  cp -Rp ./bazel-bin/src/containers/ingest_uploads/* ${KOKORO_ARTIFACTS_DIR}/ingest_uploads/.
-
-  log "Copying threshold_filter container output to kokoro artifacts dir."
-  mkdir -p ${KOKORO_ARTIFACTS_DIR}/threshold_filter
-  cp -Rp ./bazel-bin/src/containers/threshold_filter/* ${KOKORO_ARTIFACTS_DIR}/threshold_filter/.
-
-  log "Copying pre_padding container output to kokoro artifacts dir."
-  mkdir -p ${KOKORO_ARTIFACTS_DIR}/pre_padding
-  cp -Rp ./bazel-bin/src/containers/pre_padding/* ${KOKORO_ARTIFACTS_DIR}/pre_padding/.
-
-  log "Copying scatter_shuffle container output to kokoro artifacts dir."
-  mkdir -p ${KOKORO_ARTIFACTS_DIR}/scatter_shuffle
-  cp -Rp ./bazel-bin/src/containers/scatter_shuffle/* ${KOKORO_ARTIFACTS_DIR}/scatter_shuffle/.
-
-  log "Copying gather_shuffle container output to kokoro artifacts dir."
-  mkdir -p ${KOKORO_ARTIFACTS_DIR}/gather_shuffle
-  cp -Rp ./bazel-bin/src/containers/gather_shuffle/* ${KOKORO_ARTIFACTS_DIR}/gather_shuffle/.
-
-  log "Copying encrypt_output container output to kokoro artifacts dir."
-  mkdir -p ${KOKORO_ARTIFACTS_DIR}/encrypt_output
-  cp -Rp ./bazel-bin/src/containers/encrypt_output/* ${KOKORO_ARTIFACTS_DIR}/encrypt_output/.
-
-  log "Copying key_releaser container output to kokoro artifacts dir."
-  mkdir -p ${KOKORO_ARTIFACTS_DIR}/key_releaser
-  cp -Rp ./bazel-bin/src/containers/key_releaser/* ${KOKORO_ARTIFACTS_DIR}/key_releaser/.
+  for container in "${RELEASE_CONTAINERS[@]}"; do
+    log "Copying ${container} container output to kokoro artifacts dir."
+    mkdir -p "${KOKORO_ARTIFACTS_DIR}/${container}"
+    cp -Rp "./bazel-bin/src/containers/${container}/"* "${KOKORO_ARTIFACTS_DIR}/${container}/."
+  done
 
   # Kokoro tooling uses the `bazel_invocation_ids` file, but add a .txt
   # extension to it before also uploading it as an output artifact so
