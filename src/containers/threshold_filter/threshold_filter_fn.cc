@@ -67,8 +67,8 @@ absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message
   }
 
   if (!shuffled_message.has_metric_epoch_key()) {
-    // TODO(b/555372765): Add separate counters for dropped due to thresholding vs invalid records.
     context.IncrementCounter(kInputRecordDropped);
+    context.IncrementCounter(kInputRecordDroppedInvalid);
     return absl::InvalidArgumentError(
         "ThresholdFilterFn::OnRecord: ShuffledMessage missing required MetricEpochKey.");
   }
@@ -91,8 +91,8 @@ absl::Status ThresholdFilterFn::OnRecord(const ShuffledMessage& shuffled_message
     context.IncrementCounter(kEncryptedOutputRecordCount);
     EmitEncrypted(context, shuffled_message.metric_epoch_key(), shuffled_message).IgnoreError();
   } else {
-    // TODO(b/555372765): Add separate counters for dropped due to thresholding vs invalid records.
     context.IncrementCounter(kInputRecordDropped);
+    context.IncrementCounter(kInputRecordDroppedThresholding);
   }
   // If not approved, message is discarded per specification.
   return absl::OkStatus();

@@ -28,6 +28,9 @@ inline constexpr absl::string_view kInputRecordDroppedParseError =
     "input_record-dropped-parse_error";
 inline constexpr absl::string_view kInputRecordDroppedMissingPrivacyId =
     "input_record-dropped-missing_privacy_id";
+inline constexpr absl::string_view kInputRecordDroppedThresholding =
+    "input_record-dropped-thresholding";
+inline constexpr absl::string_view kInputRecordDroppedInvalid = "input_record-dropped-invalid";
 // Counters for individual entries within a parsed input record (e.g. the
 // `TrustedShufflerUpload`s within a client upload).
 inline constexpr absl::string_view kUploadEntryCount = "upload_entry-count";
