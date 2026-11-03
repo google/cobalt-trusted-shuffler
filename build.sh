@@ -31,12 +31,15 @@ log() {
   echo "+ $1"
 }
 
-# Generate an invocation ID.
-INVOCATION_ID=`cat /proc/sys/kernel/random/uuid`
-if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
-  # If KOKORO_ARTIFACTS_DIR is set, append to the list of invocation ids.
-  echo "${INVOCATION_ID}" >> ${KOKORO_ARTIFACTS_DIR}/bazel_invocation_ids
-fi
+# Generates a fresh Bazel invocation ID and records it for Kokoro.
+new_invocation_id() {
+  local invocation_id
+  invocation_id=$(cat /proc/sys/kernel/random/uuid)
+  if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
+    echo "${invocation_id}" >> "${KOKORO_ARTIFACTS_DIR}/bazel_invocation_ids"
+  fi
+  echo "${invocation_id}"
+}
 
 log "Checking Apache 2.0 license headers."
 bazel run @addlicense//:bin -- -check -l apache -c "Google LLC" \
@@ -45,30 +48,35 @@ bazel run @addlicense//:bin -- -check -l apache -c "Google LLC" \
   -ignore "third_party/**" \
   "${PWD}"
 
+BAZEL_RBE_FLAGS=(
+  --spawn_strategy=dynamic
+  --strategy=Javac=dynamic
+  --strategy=Closure=dynamic
+  --genrule_strategy=dynamic
+  --google_default_credentials=true
+  --google_auth_scopes=https://www.googleapis.com/auth/cloud-platform
+  --remote_cache=${KOKORO_FOUNDRY_BACKEND_ADDRESS=remotebuildexecution.googleapis.com}
+  --remote_executor=remotebuildexecution.googleapis.com
+  --bes_backend=${KOKORO_BES_BACKEND_ADDRESS=buildeventservice.googleapis.com}
+  --bes_timeout=20s
+  --remote_timeout=20s
+  --project_id=cobalt-tee-shuffler
+  --remote_instance_name=projects/cobalt-tee-shuffler/instances/default_instance
+  --remote_local_fallback=true
+  --remote_retries=1
+  --show_timestamps
+  --internal_spawn_scheduler
+  --strategy=Javac=dynamic
+  --dynamic_local_strategy=sandboxed,worker,local
+  --remote_accept_cached=true
+  --remote_default_exec_properties=cache-silo-key=${SILO_KEY=${USER}}
+)
+
 log "Running bazel test."
+TEST_INVOCATION_ID=$(new_invocation_id)
 bazel test //... \
-  --spawn_strategy=dynamic \
-  --strategy=Javac=dynamic \
-  --strategy=Closure=dynamic \
-  --genrule_strategy=dynamic \
-  --google_default_credentials=true \
-  --google_auth_scopes=https://www.googleapis.com/auth/cloud-platform \
-  --remote_cache=${KOKORO_FOUNDRY_BACKEND_ADDRESS=remotebuildexecution.googleapis.com} \
-  --remote_executor=remotebuildexecution.googleapis.com \
-  --bes_backend=${KOKORO_BES_BACKEND_ADDRESS=buildeventservice.googleapis.com} \
-  --bes_timeout=20s \
-  --remote_timeout=20s \
-  --project_id=cobalt-tee-shuffler \
-  --remote_instance_name=projects/cobalt-tee-shuffler/instances/default_instance \
-  --remote_local_fallback=true \
-  --remote_retries=1 \
-  --show_timestamps \
-  --internal_spawn_scheduler \
-  --strategy=Javac=dynamic \
-  --dynamic_local_strategy=sandboxed,worker,local \
-  --remote_accept_cached=true \
-  --remote_default_exec_properties=cache-silo-key=${SILO_KEY=${USER}} \
-  --invocation_id=${INVOCATION_ID}
+  "${BAZEL_RBE_FLAGS[@]}" \
+  --invocation_id="${TEST_INVOCATION_ID}"
 
 RELEASE_CONTAINERS=(
   encrypt_output
@@ -82,10 +90,22 @@ RELEASE_CONTAINERS=(
   threshold_filter
 )
 
-# If running in Kokoro, copy any potential output artifacts to the
+# If running in Kokoro, build and copy release container artifacts to the
 # artifacts directory so that they can be found by the post-build
 # upload artifact globs.
 if [[ -n "${KOKORO_ARTIFACTS_DIR}" ]]; then
+  RELEASE_CONTAINER_TARGETS=()
+  for container in "${RELEASE_CONTAINERS[@]}"; do
+    RELEASE_CONTAINER_TARGETS+=("//src/containers/${container}:oci_runtime_bundle")
+  done
+
+  log "Building release containers in opt mode."
+  BUILD_INVOCATION_ID=$(new_invocation_id)
+  bazel build -c opt \
+    "${RELEASE_CONTAINER_TARGETS[@]}" \
+    "${BAZEL_RBE_FLAGS[@]}" \
+    --invocation_id="${BUILD_INVOCATION_ID}"
+
   for container in "${RELEASE_CONTAINERS[@]}"; do
     log "Copying ${container} container output to kokoro artifacts dir."
     mkdir -p "${KOKORO_ARTIFACTS_DIR}/${container}"
