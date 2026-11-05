@@ -332,6 +332,7 @@ TEST(ThresholdFilterFnTest, FiltersMessagesForApprovedPartitions) {
   EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(2));
   EXPECT_THAT(context.GetCounters().at(std::string(kEncryptedOutputRecordCount)), Eq(1));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDroppedThresholding)), Eq(1));
 }
 
 TEST(ThresholdFilterFnTest, ForwardsApprovedPartitionWithStrippedHeaderKey) {
@@ -383,6 +384,7 @@ TEST(ThresholdFilterFnTest, OnRecordRejectsMissingMetricEpochKey) {
               StatusIs(absl::StatusCode::kInvalidArgument));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordCount)), Eq(1));
   EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDropped)), Eq(1));
+  EXPECT_THAT(context.GetCounters().at(std::string(kInputRecordDroppedInvalid)), Eq(1));
 }
 
 TEST(ThresholdFilterFnTest, OnRecordRejectsRunIdMismatch) {
