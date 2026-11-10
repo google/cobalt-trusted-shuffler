@@ -217,10 +217,21 @@ Every container package must define:
 - Update `src/containers/README.md` to reference the new container.
 
 ### Step 6: Update CI & Kokoro Build Pipeline (Required for Production Containers)
-**IMPORTANT**: **WIP vs. Production Containers**: If you are creating a scaffolded, work-in-progress (WIP), or skeleton container (e.g. while developing stacked changes), **DO NOT** add it to `build.sh` or Kokoro configs yet. Only wire Kokoro when the container is ready for CI builds and integration. Add `TODO(<issue>)` comments that reference a tracking issue.
+**IMPORTANT**: **WIP vs. Production Containers**: If you are creating a scaffolded, work-in-progress (WIP), or skeleton container (e.g. while developing stacked changes), **DO NOT** add it to `BUILD`, `build.sh`, or Kokoro configs yet. Only wire release and Kokoro builds when the container is ready for CI builds and integration. Add `TODO(<issue>)` comments that reference a tracking issue.
 
-When ready for production release, failing to update Kokoro will cause builds and releases to miss the container artifact:
-1. **`build.sh`**:
+When ready for production release, failing to update all three places will cause Kokoro or GitHub provenance builds to miss the container artifact:
+1. **`BUILD`**:
+   Add the container's `:oci_runtime_bundle` target to `_RELEASE_BINARIES` (keep the map sorted):
+   ```python
+   _RELEASE_BINARIES = {
+       # keep-sorted start
+       ...
+       "//src/containers/foo_bar:oci_runtime_bundle": "foo_bar/oci_runtime_bundle.tar",
+       ...
+       # keep-sorted end
+   }
+   ```
+2. **`build.sh`**:
    Add the container name to `RELEASE_CONTAINERS` (keep the list alphabetized):
    ```bash
    RELEASE_CONTAINERS=(
@@ -229,7 +240,7 @@ When ready for production release, failing to update Kokoro will cause builds an
      ...
    )
    ```
-2. **`kokoro/rbe/presubmit.cfg` & `kokoro/rbe/continuous.cfg`**:
+3. **`kokoro/rbe/presubmit.cfg` & `kokoro/rbe/continuous.cfg`**:
    Add fileset artifact destination (keep the list of `fileset_artifacts` entries alphabetized by `name`):
    ```protobuf
    fileset_artifacts {
@@ -303,6 +314,6 @@ Before completing a task or submitting a change:
 - [ ] Tests verify that confidential data is emitted via `EmitEncrypted`/`EmitReleasable` and never `EmitUnencrypted`.
 - [ ] Tests avoid testing-only constructors, using `InitializeReplica` and designated initializers.
 - [ ] Container `README.md` and `src/containers/README.md` updated.
-- [ ] If container is production-ready, `build.sh` and Kokoro configs updated (keeping `fileset_artifacts` alphabetized by `name`); if WIP, kept excluded from Kokoro with `TODO(<issue>)` comments.
+- [ ] If container is production-ready, `BUILD` (`_RELEASE_BINARIES`), `build.sh`, and Kokoro configs updated (keeping `fileset_artifacts` alphabetized by `name`); if WIP, kept excluded from release and Kokoro configs with `TODO(<issue>)` comments.
 - [ ] `git restore MODULE.bazel.lock` run if the lockfile was modified unintentionally.
 - [ ] All code formatted with `.clang-format` and license header included.

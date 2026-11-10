@@ -21,6 +21,9 @@ on:
 jobs:
   # Run a Bazel build and upload the resulting container runtime bundles.
   build:
+    outputs:
+      binaries: ${{ steps.list.outputs.binaries }}
+
     permissions:
       contents: read
 
@@ -44,12 +47,22 @@ jobs:
         run: |
           bazelisk run -c opt --curses=no --noshow_progress //:install_release_binaries -- --destdir="${{ runner.temp }}/binaries"
       - name: Print SHA-256 digests
+        env:
+          BINARIES_DIR: ${{ runner.temp }}/binaries
         run: |
           set -euo pipefail
-          cd "${{ runner.temp }}/binaries"
+          cd "${BINARIES_DIR}"
           echo '```text' >> "$GITHUB_STEP_SUMMARY"
           sha256sum */oci_runtime_bundle.tar | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: List binaries
+        id: list
+        env:
+          BINARIES_DIR: ${{ runner.temp }}/binaries
+        run: |
+          set -euo pipefail
+          binaries="$(find "${BINARIES_DIR}" -type f -printf '%P\n' | sort | jq -Rsc 'split("\n")[:-1]')"
+          echo "binaries=${binaries}" >> "$GITHUB_OUTPUT"
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
@@ -57,3 +70,71 @@ jobs:
           path: ${{ runner.temp }}/binaries/
           if-no-files-found: error
           retention-days: 5
+
+  # Generate per-package build provenance and publish binaries and attestations
+  # to the Oak GCS buckets.
+  attest:
+    needs: build
+
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    runs-on: ubuntu-24.04
+
+    strategy:
+      # Continue attesting other containers even if one fails.
+      fail-fast: false
+      matrix:
+        binary: ${{ fromJson(needs.build.outputs.binaries) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: ${{ runner.temp }}/binaries
+      - name: Parse package metadata
+        id: metadata
+        env:
+          BINARY_RELPATH: ${{ matrix.binary }}
+        run: |
+          set -euo pipefail
+          echo "package-name=${BINARY_RELPATH%%/*}" >> "$GITHUB_OUTPUT"
+      - name: Attest
+        id: attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ runner.temp }}/binaries/${{ matrix.binary }}
+          subject-name: ${{ steps.metadata.outputs.package-name }}
+      - name: Upload attestation
+        uses: actions/upload-artifact@v4
+        with:
+          name: provenance-${{ steps.metadata.outputs.package-name }}
+          path: ${{ steps.attest.outputs.bundle-path }}
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 5
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_JSON }}
+      - name: Setup Google Cloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          skip_install: true
+      - name: Publish provenance
+        env:
+          BINARY_FILE: ${{ runner.temp }}/binaries/${{ matrix.binary }}
+          PROVENANCE_FILE: ${{ steps.attest.outputs.bundle-path }}
+          PACKAGE_NAME: ${{ steps.metadata.outputs.package-name }}
+        run: |
+          set -euo pipefail
+          ./scripts/publish \
+            "${BINARY_FILE}" \
+            "${PROVENANCE_FILE}" \
+            "sha1:${GITHUB_SHA}" \
+            "${PACKAGE_NAME}"
